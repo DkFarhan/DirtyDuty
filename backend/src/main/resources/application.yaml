@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: dirty-duty
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/dirtyduty}
+    username: ${DB_USERNAME:dirtyduty_user}
+    password: ${DB_PASSWORD:dirtyduty_dev_password}
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+
+  flyway:
+    enabled: true
+
+server:
+  port: 8080
