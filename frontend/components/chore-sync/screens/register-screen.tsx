@@ -1,6 +1,8 @@
 "use client"
 
 import { useState } from "react"
+import { ApiError } from "@/lib/auth/api"
+import { useAuth } from "@/lib/auth/auth-context"
 import { useChoreSync } from "@/lib/chore-sync/store"
 import { ChevronLeftIcon } from "../icons"
 
@@ -16,7 +18,31 @@ const fields = [
 
 export function RegisterScreen() {
   const { navigate } = useChoreSync()
+  const { register } = useAuth()
   const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "" })
+  const [error, setError] = useState("")
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const handleSubmit = async () => {
+    if (isSubmitting) return
+    setError("")
+
+    if (form.password !== form.confirm) {
+      setError("Passwords do not match.")
+      return
+    }
+
+    setIsSubmitting(true)
+    try {
+      await register({ displayName: form.name, email: form.email, password: form.password })
+      navigate("login")
+    } catch (error) {
+      if (error instanceof ApiError) setError(error.message)
+      else setError("Unable to create your account. Please try again.")
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
 
   return (
     <div className="flex flex-col min-h-screen bg-white px-6 pt-12 pb-10">
@@ -46,11 +72,14 @@ export function RegisterScreen() {
         ))}
       </div>
 
+      {error && <p className="mb-4 text-sm text-rose-600" role="alert">{error}</p>}
+
       <button
-        onClick={() => navigate("welcome")}
-        className="w-full bg-teal-600 text-white font-bold text-[15px] py-4 rounded-xl shadow-lg shadow-teal-200 hover:bg-teal-700 active:scale-[0.98] transition-all"
+        onClick={handleSubmit}
+        disabled={isSubmitting}
+        className="w-full bg-teal-600 text-white font-bold text-[15px] py-4 rounded-xl shadow-lg shadow-teal-200 hover:bg-teal-700 active:scale-[0.98] transition-all disabled:cursor-not-allowed disabled:opacity-60"
       >
-        Create Account
+        {isSubmitting ? "Creating Account..." : "Create Account"}
       </button>
 
       <p className="text-center text-xs text-slate-400 mt-4">

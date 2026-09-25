@@ -1,6 +1,8 @@
 "use client"
 
 import { useState } from "react"
+import { ApiError } from "@/lib/auth/api"
+import { useAuth } from "@/lib/auth/auth-context"
 import { useChoreSync } from "@/lib/chore-sync/store"
 
 const inputClass =
@@ -8,8 +10,27 @@ const inputClass =
 
 export function LoginScreen() {
   const { navigate } = useChoreSync()
+  const { login } = useAuth()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [error, setError] = useState("")
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const handleSubmit = async () => {
+    if (isSubmitting) return
+    setError("")
+    setIsSubmitting(true)
+
+    try {
+      await login(email, password)
+      navigate("welcome")
+    } catch (error) {
+      if (error instanceof ApiError) setError(error.message)
+      else setError("Unable to sign in. Please try again.")
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
 
   return (
     <div className="flex flex-col min-h-screen bg-white px-6 pt-16 pb-10">
@@ -51,11 +72,14 @@ export function LoginScreen() {
         <button className="text-right text-sm text-teal-600 font-semibold -mt-2">Forgot password?</button>
       </div>
 
+      {error && <p className="mb-4 text-sm text-rose-600" role="alert">{error}</p>}
+
       <button
-        onClick={() => navigate("dashboard")}
-        className="w-full bg-teal-600 text-white font-bold text-[15px] py-4 rounded-xl shadow-lg shadow-teal-200 hover:bg-teal-700 active:scale-[0.98] transition-all"
+        onClick={handleSubmit}
+        disabled={isSubmitting}
+        className="w-full bg-teal-600 text-white font-bold text-[15px] py-4 rounded-xl shadow-lg shadow-teal-200 hover:bg-teal-700 active:scale-[0.98] transition-all disabled:cursor-not-allowed disabled:opacity-60"
       >
-        Sign In
+        {isSubmitting ? "Signing In..." : "Sign In"}
       </button>
 
       <div className="flex items-center gap-3 my-6">

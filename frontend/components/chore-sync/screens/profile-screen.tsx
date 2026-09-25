@@ -1,5 +1,8 @@
 "use client"
 
+import { useState } from "react"
+import { ApiError } from "@/lib/auth/api"
+import { useAuth } from "@/lib/auth/auth-context"
 import { useChoreSync } from "@/lib/chore-sync/store"
 import { memberStats } from "@/lib/chore-sync/selectors"
 import { BottomNav } from "../bottom-nav"
@@ -23,6 +26,9 @@ const rewardChips = ["⚡ Streaks", "🏅 Badges", "📊 Stats"]
 
 export function ProfileScreen() {
   const { state, navigate } = useChoreSync()
+  const { logout } = useAuth()
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [error, setError] = useState("")
   const { currentUser, household } = state
   const stats = memberStats(state, currentUser.id)
 
@@ -31,6 +37,22 @@ export function ProfileScreen() {
     { value: stats.completed, label: "Completed" },
     { value: `${stats.completionRate}%`, label: "Rate" },
   ]
+
+  const handleLogout = async () => {
+    if (isSubmitting) return
+    setError("")
+    setIsSubmitting(true)
+
+    try {
+      await logout()
+      navigate("login")
+    } catch (error) {
+      if (error instanceof ApiError) setError(error.message)
+      else setError("Unable to sign out. Please try again.")
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 pb-20">
@@ -97,11 +119,13 @@ export function ProfileScreen() {
           ))}
         </div>
 
+        {error && <p className="text-sm text-rose-600" role="alert">{error}</p>}
         <button
-          onClick={() => navigate("login")}
-          className="w-full border border-rose-200 text-rose-500 font-bold py-3.5 rounded-xl hover:bg-rose-50 transition-colors"
+          onClick={handleLogout}
+          disabled={isSubmitting}
+          className="w-full border border-rose-200 text-rose-500 font-bold py-3.5 rounded-xl hover:bg-rose-50 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Sign Out
+          {isSubmitting ? "Signing Out..." : "Sign Out"}
         </button>
       </div>
 

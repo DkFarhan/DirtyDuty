@@ -1,7 +1,7 @@
 "use client"
 
 import { createContext, useCallback, useContext, useMemo, useState } from "react"
-import type { AppState, Chore, Screen } from "./types"
+import type { AppState, Chore, Member, Screen } from "./types"
 import { initialState } from "./mock-data"
 
 /**
@@ -14,6 +14,7 @@ interface ChoreSyncContextValue {
   state: AppState
   screen: Screen
   navigate: (screen: Screen) => void
+  setCurrentUser: (user: Member) => void
   markComplete: (choreId: string) => void
   addChore: (chore: Chore) => void
   removeChore: (choreId: string) => void
@@ -26,6 +27,10 @@ export function ChoreSyncProvider({ children }: { children: React.ReactNode }) {
   const [screen, setScreen] = useState<Screen>("login")
 
   const navigate = useCallback((next: Screen) => setScreen(next), [])
+
+  const setCurrentUser = useCallback((user: Member) => {
+    setState((s) => ({ ...s, currentUser: user }))
+  }, [])
 
   const markComplete = useCallback((choreId: string) => {
     setState((s) => ({
@@ -43,8 +48,8 @@ export function ChoreSyncProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const value = useMemo(
-    () => ({ state, screen, navigate, markComplete, addChore, removeChore }),
-    [state, screen, navigate, markComplete, addChore, removeChore],
+    () => ({ state, screen, navigate, setCurrentUser, markComplete, addChore, removeChore }),
+    [state, screen, navigate, setCurrentUser, markComplete, addChore, removeChore],
   )
 
   return <ChoreSyncContext.Provider value={value}>{children}</ChoreSyncContext.Provider>

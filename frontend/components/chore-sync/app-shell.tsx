@@ -1,5 +1,8 @@
 "use client"
 
+import { useEffect } from "react"
+import { AuthProvider, useAuth } from "@/lib/auth/auth-context"
+import { getAuthRedirect } from "@/lib/auth/routing"
 import { ChoreSyncProvider, useChoreSync } from "@/lib/chore-sync/store"
 import { LoginScreen } from "./screens/login-screen"
 import { RegisterScreen } from "./screens/register-screen"
@@ -14,7 +17,42 @@ import { CreateChoreScreen } from "./screens/create-chore-screen"
 import { ProfileScreen } from "./screens/profile-screen"
 
 function ScreenRouter() {
-  const { screen } = useChoreSync()
+  const { screen, navigate, setCurrentUser } = useChoreSync()
+  const { user, isAuthenticated, isLoading, authError, refreshUser } = useAuth()
+
+  useEffect(() => {
+    if (user) {
+      setCurrentUser({
+        id: user.userId,
+        name: user.displayName,
+        avatar: user.displayName.slice(0, 1).toUpperCase(),
+        isAdmin: false,
+      })
+    }
+  }, [setCurrentUser, user])
+
+  useEffect(() => {
+    const redirect = getAuthRedirect(screen, isAuthenticated, isLoading)
+    if (redirect) navigate(redirect)
+  }, [isAuthenticated, isLoading, navigate, screen])
+
+  if (isLoading) {
+    return <div className="flex min-h-screen items-center justify-center bg-white text-sm text-slate-400">Loading...</div>
+  }
+
+  if (authError) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-white px-6 text-center">
+        <p className="text-sm text-slate-600">{authError}</p>
+        <button
+          onClick={() => refreshUser().catch(() => undefined)}
+          className="rounded-xl bg-teal-600 px-5 py-3 text-sm font-bold text-white"
+        >
+          Try Again
+        </button>
+      </div>
+    )
+  }
 
   switch (screen) {
     case "login":
@@ -46,12 +84,14 @@ function ScreenRouter() {
 
 export function AppShell() {
   return (
-    <ChoreSyncProvider>
-      <div className="min-h-screen bg-slate-200 flex items-start justify-center">
-        <div className="w-full max-w-sm bg-white min-h-screen relative overflow-hidden shadow-2xl">
-          <ScreenRouter />
+    <AuthProvider>
+      <ChoreSyncProvider>
+        <div className="min-h-screen bg-slate-200 flex items-start justify-center">
+          <div className="w-full max-w-sm bg-white min-h-screen relative overflow-hidden shadow-2xl">
+            <ScreenRouter />
+          </div>
         </div>
-      </div>
-    </ChoreSyncProvider>
+      </ChoreSyncProvider>
+    </AuthProvider>
   )
 }
