@@ -63,15 +63,15 @@ public class User {
     @Override
     public String toString() {
         return "User{" +
-            "id=" + id +
-            ", email='" + email + '\'' +
-            ", displayName='" + displayName + '\'' +
-            ", avatarUrl='" + avatarUrl + '\'' +
-            ", timezone='" + timezone + '\'' +
-            ", accountStatus=" + accountStatus +
-            ", emailVerifiedAt=" + emailVerifiedAt +
-            ", createdAt=" + createdAt +
-            ", updatedAt=" + updatedAt +
-            '}';
+                "id=" + id +
+                ", email='" + email + '\'' +
+                ", displayName='" + displayName + '\'' +
+                ", avatarUrl='" + avatarUrl + '\'' +
+                ", timezone='" + timezone + '\'' +
+                ", accountStatus=" + accountStatus +
+                ", emailVerifiedAt=" + emailVerifiedAt +
+                ", createdAt=" + createdAt +
+                ", updatedAt=" + updatedAt +
+                '}';
     }
 }

@@ -10,16 +10,12 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 @Entity
-@Table(
-    name = "household_memberships",
-    uniqueConstraints = {
-        @UniqueConstraint(name = "uq_household_membership", columnNames = {"household_id", "user_id"})
-    },
-    indexes = {
+@Table(name = "household_memberships", uniqueConstraints = {
+        @UniqueConstraint(name = "uq_household_membership", columnNames = { "household_id", "user_id" })
+}, indexes = {
         @Index(name = "ix_memberships_user", columnList = "user_id"),
         @Index(name = "ix_memberships_household_status", columnList = "household_id, status")
-    }
-)
+})
 @Getter
 @Setter
 @NoArgsConstructor

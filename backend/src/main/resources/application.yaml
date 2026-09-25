@@ -15,5 +15,24 @@ spring:
   flyway:
     enabled: true
 
+  session:
+    store-type: jdbc
+    timeout: ${SESSION_TIMEOUT:24h}
+    jdbc:
+      initialize-schema: never
+
+app:
+  frontend:
+    origins: ${FRONTEND_ORIGINS:http://localhost:3000}
+  security:
+    session-cookie-secure: ${SESSION_COOKIE_SECURE:true}
+
 server:
   port: 8080
+  servlet:
+    session:
+      cookie:
+        http-only: true
+        secure: ${SESSION_COOKIE_SECURE:true}
+        same-site: lax
+        path: /

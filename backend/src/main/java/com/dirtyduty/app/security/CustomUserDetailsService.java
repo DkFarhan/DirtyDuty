@@ -20,16 +20,16 @@ public class CustomUserDetailsService implements UserDetailsService {
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
         User user = userRepository.findByEmailIgnoreCase(username)
-            .orElseThrow(() -> new UsernameNotFoundException("User not found: " + username));
+                .orElseThrow(() -> new UsernameNotFoundException("Invalid credentials"));
 
         boolean enabled = user.getAccountStatus() == AccountStatus.ACTIVE;
 
         return org.springframework.security.core.userdetails.User
-            .withUsername(user.getEmail())
-            .password(user.getPasswordHash())
-            .authorities("ROLE_USER")
-            .accountLocked(!enabled)
-            .disabled(!enabled)
-            .build();
+                .withUsername(user.getEmail())
+                .password(user.getPasswordHash())
+                .authorities("ROLE_USER")
+                .accountLocked(!enabled)
+                .disabled(!enabled)
+                .build();
     }
 }

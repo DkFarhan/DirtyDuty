@@ -13,14 +13,14 @@ public class HouseholdService {
     private final UserRepository userRepository;
 
     public HouseholdService(
-        HouseholdRepository householdRepository,
-        HouseholdMembershipRepository householdMembershipRepository,
-        UserRepository userRepository
-    ) {
+            HouseholdRepository householdRepository,
+            HouseholdMembershipRepository householdMembershipRepository,
+            UserRepository userRepository) {
         this.householdRepository = householdRepository;
         this.householdMembershipRepository = householdMembershipRepository;
         this.userRepository = userRepository;
     }
 
-    // TODO: implement household creation, membership logic, and authorization checks.
+    // TODO: implement household creation, membership logic, and authorization
+    // checks.
 }
