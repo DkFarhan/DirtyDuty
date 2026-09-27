@@ -1,12 +1,37 @@
 "use client"
 
 import { useChoreSync } from "@/lib/chore-sync/store"
+import { useAuth } from "@/lib/auth/auth-context"
+import { useState } from "react"
 
 export function WelcomeScreen() {
   const { navigate } = useChoreSync()
+  const { logout } = useAuth()
+  const [loggingOut, setLoggingOut] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleLogout = async () => {
+    setLoggingOut(true)
+    setError(null)
+    try {
+      await logout()
+      navigate("login")
+    } catch {
+      setError("Unable to sign out. Please try again.")
+      setLoggingOut(false)
+    }
+  }
 
   return (
     <div className="flex flex-col min-h-screen bg-white px-6 pt-20 pb-10">
+      <button
+        onClick={handleLogout}
+        disabled={loggingOut}
+        className="absolute right-6 top-5 text-xs font-medium text-slate-400 hover:text-slate-600 disabled:opacity-50"
+      >
+        {loggingOut ? "Signing out..." : "Sign out"}
+      </button>
+      {error && <p role="alert" className="mb-4 text-center text-sm text-rose-600">{error}</p>}
       <div className="flex flex-col items-center text-center mb-12">
         <div className="w-20 h-20 bg-teal-50 rounded-3xl flex items-center justify-center mb-6">
           <span className="text-5xl">🎉</span>

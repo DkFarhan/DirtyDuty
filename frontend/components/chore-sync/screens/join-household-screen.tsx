@@ -2,12 +2,31 @@
 
 import { useState } from "react"
 import { useChoreSync } from "@/lib/chore-sync/store"
+import { useHouseholds } from "@/lib/household/household-context"
 import { cn } from "@/lib/utils"
 import { ChevronLeftIcon } from "../icons"
 
 export function JoinHouseholdScreen() {
   const { navigate } = useChoreSync()
+  const { join } = useHouseholds()
   const [code, setCode] = useState("")
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleJoin = async () => {
+    const inviteCode = code.trim()
+    if (submitting || !inviteCode) return
+    setSubmitting(true)
+    setError(null)
+    try {
+      await join(inviteCode)
+      setCode("")
+      navigate("dashboard")
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to join household. Please try again.")
+      setSubmitting(false)
+    }
+  }
 
   return (
     <div className="flex flex-col min-h-screen bg-white px-6 pt-12 pb-10">
@@ -29,34 +48,25 @@ export function JoinHouseholdScreen() {
         <input
           id="invite-code"
           value={code}
-          onChange={(e) => setCode(e.target.value.toUpperCase())}
+          onChange={(e) => setCode(e.target.value)}
           placeholder="e.g. ABC123"
-          maxLength={6}
           className="w-full px-4 py-3.5 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent text-2xl font-black text-center tracking-[0.3em] transition-all"
         />
       </div>
 
-      {code.length === 6 && (
-        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 mb-6 flex items-center gap-3">
-          <span className="text-2xl">✅</span>
-          <div>
-            <p className="text-emerald-800 font-semibold text-sm">Household found!</p>
-            <p className="text-emerald-600 text-xs">Apartment 305 · 3 members</p>
-          </div>
-        </div>
-      )}
+      {error && <p role="alert" className="mb-6 text-sm text-rose-600">{error}</p>}
 
       <button
-        onClick={() => navigate("dashboard")}
-        disabled={code.length < 3}
+        onClick={() => void handleJoin()}
+        disabled={submitting || !code.trim()}
         className={cn(
           "w-full font-bold text-[15px] py-4 rounded-xl transition-all",
-          code.length >= 3
+          code.trim()
             ? "bg-teal-600 text-white shadow-lg shadow-teal-200 hover:bg-teal-700 active:scale-[0.98]"
             : "bg-slate-100 text-slate-400 cursor-not-allowed",
         )}
       >
-        Join Household
+        {submitting ? "Joining..." : "Join Household"}
       </button>
     </div>
   )

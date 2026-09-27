@@ -53,16 +53,19 @@ describe("authentication screens", () => {
         fetchMock.mockReturnValueOnce(new Promise((resolve) => {
             resolveMe = resolve
         }))
+        fetchMock.mockResolvedValueOnce(jsonResponse([]))
 
         render(<AppShell />)
         expect(screen.getByText("Loading...")).toBeTruthy()
         expect(screen.queryByRole("button", { name: "Sign In" })).toBeNull()
+        expect(fetchMock).toHaveBeenCalledTimes(1)
 
         resolveMe(jsonResponse(user))
         expect(await screen.findByText("Welcome to ChoreSync!")).toBeTruthy()
         expect(fetchMock).toHaveBeenCalledWith("http://localhost:8080/api/auth/me", expect.objectContaining({
             credentials: "include",
         }))
+        expect(fetchMock.mock.calls[1][0]).toBe("http://localhost:8080/api/households")
     })
 
     it("registers with CSRF and returns to login without authenticating", async () => {
@@ -123,6 +126,7 @@ describe("authentication screens", () => {
             .mockResolvedValueOnce(jsonResponse(user))
             .mockResolvedValueOnce(jsonResponse({ token: "post-login-csrf", headerName: "X-CSRF-TOKEN" }))
             .mockResolvedValueOnce(jsonResponse(user))
+            .mockResolvedValueOnce(jsonResponse([]))
 
         await openLogin()
         fireEvent.change(screen.getByLabelText("Email"), { target: { value: user.email } })
@@ -140,7 +144,8 @@ describe("authentication screens", () => {
         expect(fetchMock.mock.calls[3][0]).toBe("http://localhost:8080/api/auth/csrf")
         expect(fetchMock.mock.calls[4][0]).toBe("http://localhost:8080/api/auth/me")
         expect(fetchMock.mock.calls[4][1]).toMatchObject({ credentials: "include" })
-        expect(fetchMock).toHaveBeenCalledTimes(5)
+        expect(fetchMock.mock.calls[5][0]).toBe("http://localhost:8080/api/households")
+        expect(fetchMock).toHaveBeenCalledTimes(6)
     })
 
     it("shows generic credential failure for login 401 responses", async () => {

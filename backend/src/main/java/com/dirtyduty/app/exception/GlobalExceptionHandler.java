@@ -32,6 +32,29 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.CONFLICT, "Conflict", ex.getMessage(), request.getRequestURI());
     }
 
+    @ExceptionHandler(InvalidHouseholdException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidHousehold(
+            InvalidHouseholdException ex,
+            HttpServletRequest request) {
+        return buildResponse(HttpStatus.BAD_REQUEST, "Bad Request", ex.getMessage(), request.getRequestURI());
+    }
+
+    @ExceptionHandler(InvalidInvitationException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidInvitation(HttpServletRequest request) {
+        return buildResponse(
+                HttpStatus.BAD_REQUEST,
+                "Bad Request",
+                "Invite code is invalid or no longer available.",
+                request.getRequestURI());
+    }
+
+    @ExceptionHandler(HouseholdAccessDeniedException.class)
+    public ResponseEntity<ApiErrorResponse> handleHouseholdAccessDenied(
+            HouseholdAccessDeniedException ex,
+            HttpServletRequest request) {
+        return buildResponse(HttpStatus.FORBIDDEN, "Forbidden", ex.getMessage(), request.getRequestURI());
+    }
+
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ApiErrorResponse> handleDataIntegrityViolation(
             DataIntegrityViolationException ex,
@@ -39,7 +62,7 @@ public class GlobalExceptionHandler {
         return buildResponse(
                 HttpStatus.CONFLICT,
                 "Conflict",
-                "A user with this email already exists.",
+                "The request conflicts with existing data.",
                 request.getRequestURI());
     }
 
@@ -63,7 +86,7 @@ public class GlobalExceptionHandler {
             errors.put(fieldError.getField(), fieldError.getDefaultMessage());
         }
 
-        String message = errors.isEmpty() ? "Validation failed" : errors.toString();
+        String message = errors.isEmpty() ? "Validation failed." : errors.toString();
         return buildResponse(HttpStatus.BAD_REQUEST, "Bad Request", message, request.getRequestURI());
     }
 
@@ -71,7 +94,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiErrorResponse> handleConstraintViolation(
             ConstraintViolationException ex,
             HttpServletRequest request) {
-        return buildResponse(HttpStatus.BAD_REQUEST, "Bad Request", ex.getMessage(), request.getRequestURI());
+        return buildResponse(HttpStatus.BAD_REQUEST, "Bad Request", "Request validation failed.", request.getRequestURI());
     }
 
     @ExceptionHandler(Exception.class)

@@ -149,12 +149,19 @@ describe("auth API client", () => {
     })
 
     it("normalizes duplicate and validation responses without exposing backend internals", async () => {
-        fetchMock.mockResolvedValueOnce(
-            new Response(JSON.stringify({ message: "A user with this email already exists." }), {
-                status: 409,
-                headers: { "content-type": "application/json" },
-            }),
-        )
+        fetchMock
+            .mockResolvedValueOnce(
+                new Response(JSON.stringify({ token: "csrf-token", headerName: "X-CSRF-TOKEN" }), {
+                    status: 200,
+                    headers: { "content-type": "application/json" },
+                }),
+            )
+            .mockResolvedValueOnce(
+                new Response(JSON.stringify({ message: "A user with this email already exists." }), {
+                    status: 409,
+                    headers: { "content-type": "application/json" },
+                }),
+            )
 
         const error = await api.post("/api/auth/register", { email: "user@example.com" }).catch((requestError) => requestError)
 
@@ -165,19 +172,12 @@ describe("auth API client", () => {
         expect(error.message).toBe("An account with this email already exists.")
         expect(error.message).not.toContain("SQL")
 
-        fetchMock
-            .mockResolvedValueOnce(
-                new Response(JSON.stringify({ token: "csrf-token", headerName: "X-CSRF-TOKEN" }), {
-                    status: 200,
-                    headers: { "content-type": "application/json" },
-                }),
-            )
-            .mockResolvedValueOnce(
-                new Response(JSON.stringify({ message: "<img src=x onerror=alert(1)> internal stack trace" }), {
-                    status: 400,
-                    headers: { "content-type": "application/json" },
-                }),
-            )
+        fetchMock.mockResolvedValueOnce(
+            new Response(JSON.stringify({ message: "<img src=x onerror=alert(1)> internal stack trace" }), {
+                status: 400,
+                headers: { "content-type": "application/json" },
+            }),
+        )
 
         const validationError = await api.post("/api/auth/register", {}).catch((requestError) => requestError)
         expect(validationError).toBeInstanceOf(ApiError)

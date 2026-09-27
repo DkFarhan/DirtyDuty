@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useChoreSync } from "@/lib/chore-sync/store"
+import { useHouseholds } from "@/lib/household/household-context"
 import { ChevronLeftIcon } from "../icons"
 
 const inputClass =
@@ -9,8 +10,25 @@ const inputClass =
 
 export function CreateHouseholdScreen() {
   const { navigate } = useChoreSync()
+  const { create, queueCreatedHouseholdInvite } = useHouseholds()
   const [name, setName] = useState("")
   const [desc, setDesc] = useState("")
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleCreate = async () => {
+    if (submitting || !name.trim()) return
+    setSubmitting(true)
+    setError(null)
+    try {
+      const created = await create({ name: name.trim(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone })
+      queueCreatedHouseholdInvite(created)
+      navigate("dashboard")
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to create household. Please try again.")
+      setSubmitting(false)
+    }
+  }
 
   return (
     <div className="flex flex-col min-h-screen bg-white px-6 pt-12 pb-10">
@@ -59,11 +77,13 @@ export function CreateHouseholdScreen() {
         </p>
       </div>
 
+      {error && <p role="alert" className="mb-4 text-sm text-rose-600">{error}</p>}
       <button
-        onClick={() => navigate("dashboard")}
-        className="w-full bg-teal-600 text-white font-bold text-[15px] py-4 rounded-xl shadow-lg shadow-teal-200 hover:bg-teal-700 active:scale-[0.98] transition-all"
+        onClick={() => void handleCreate()}
+        disabled={submitting || !name.trim()}
+        className="w-full bg-teal-600 text-white font-bold text-[15px] py-4 rounded-xl shadow-lg shadow-teal-200 hover:bg-teal-700 active:scale-[0.98] transition-all disabled:cursor-not-allowed disabled:opacity-50"
       >
-        Create Household
+        {submitting ? "Creating..." : "Create Household"}
       </button>
     </div>
   )

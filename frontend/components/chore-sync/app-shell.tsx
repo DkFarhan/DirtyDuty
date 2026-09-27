@@ -4,6 +4,8 @@ import { useEffect } from "react"
 import { AuthProvider, useAuth } from "@/lib/auth/auth-context"
 import { getAuthRedirect } from "@/lib/auth/routing"
 import { ChoreSyncProvider, useChoreSync } from "@/lib/chore-sync/store"
+import { HouseholdProvider, useHouseholds } from "@/lib/household/household-context"
+import { getHouseholdRedirect } from "@/lib/household/routing"
 import { LoginScreen } from "./screens/login-screen"
 import { RegisterScreen } from "./screens/register-screen"
 import { WelcomeScreen } from "./screens/welcome-screen"
@@ -19,6 +21,7 @@ import { ProfileScreen } from "./screens/profile-screen"
 function ScreenRouter() {
   const { screen, navigate, setCurrentUser } = useChoreSync()
   const { user, isAuthenticated, isLoading, authError, refreshUser } = useAuth()
+  const { households, status: householdStatus, error: householdError, refresh: refreshHouseholds } = useHouseholds()
 
   useEffect(() => {
     if (user) {
@@ -32,9 +35,11 @@ function ScreenRouter() {
   }, [setCurrentUser, user])
 
   useEffect(() => {
-    const redirect = getAuthRedirect(screen, isAuthenticated, isLoading)
+    const redirect = isAuthenticated
+      ? getHouseholdRedirect(screen, true, householdStatus, households.length)
+      : getAuthRedirect(screen, false, isLoading)
     if (redirect) navigate(redirect)
-  }, [isAuthenticated, isLoading, navigate, screen])
+  }, [householdStatus, households.length, isAuthenticated, isLoading, navigate, screen])
 
   if (isLoading) {
     return <div className="flex min-h-screen items-center justify-center bg-white text-sm text-slate-400">Loading...</div>
@@ -46,6 +51,24 @@ function ScreenRouter() {
         <p className="text-sm text-slate-600">{authError}</p>
         <button
           onClick={() => refreshUser().catch(() => undefined)}
+          className="rounded-xl bg-teal-600 px-5 py-3 text-sm font-bold text-white"
+        >
+          Try Again
+        </button>
+      </div>
+    )
+  }
+
+  if (isAuthenticated && householdStatus === "loading") {
+    return <div className="flex min-h-screen items-center justify-center bg-white text-sm text-slate-400">Loading...</div>
+  }
+
+  if (isAuthenticated && householdStatus === "error") {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-white px-6 text-center">
+        <p role="alert" className="text-sm text-slate-600">{householdError}</p>
+        <button
+          onClick={() => refreshHouseholds().catch(() => undefined)}
           className="rounded-xl bg-teal-600 px-5 py-3 text-sm font-bold text-white"
         >
           Try Again
@@ -85,13 +108,15 @@ function ScreenRouter() {
 export function AppShell() {
   return (
     <AuthProvider>
-      <ChoreSyncProvider>
-        <div className="min-h-screen bg-slate-200 flex items-start justify-center">
-          <div className="w-full max-w-sm bg-white min-h-screen relative overflow-hidden shadow-2xl">
-            <ScreenRouter />
+      <HouseholdProvider>
+        <ChoreSyncProvider>
+          <div className="min-h-screen bg-slate-200 flex items-start justify-center">
+            <div className="w-full max-w-sm bg-white min-h-screen relative overflow-hidden shadow-2xl">
+              <ScreenRouter />
+            </div>
           </div>
-        </div>
-      </ChoreSyncProvider>
+        </ChoreSyncProvider>
+      </HouseholdProvider>
     </AuthProvider>
   )
 }

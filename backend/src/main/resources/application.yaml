@@ -24,6 +24,8 @@ spring:
 app:
   frontend:
     origins: ${FRONTEND_ORIGINS:http://localhost:3000}
+  households:
+    invitation-expiration: ${HOUSEHOLD_INVITATION_EXPIRATION:7d}
   security:
     session-cookie-secure: ${SESSION_COOKIE_SECURE:true}
 

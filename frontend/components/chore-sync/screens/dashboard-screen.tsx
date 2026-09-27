@@ -1,12 +1,17 @@
 "use client"
 
-import { useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useChoreSync } from "@/lib/chore-sync/store"
 import { householdStats, todayChores, upcomingWeekChores } from "@/lib/chore-sync/selectors"
+import { useHouseholds } from "@/lib/household/household-context"
+import type { Household } from "@/lib/household/api"
+import { Button } from "@/components/ui/button"
 import { BottomNav } from "../bottom-nav"
 import { TodayChoreCard, WeekChoreCard } from "../chore-card"
 import { BellIcon, HouseGlyphIcon } from "../icons"
+import { InviteHousemateDialog } from "../invite-housemate-dialog"
 import { Avatar, ProgressBar, SectionHeader } from "../primitives"
+import { UserPlus } from "lucide-react"
 
 function greetingForNow() {
   const hour = new Date().getHours()
@@ -21,12 +26,30 @@ const notifications = [
 
 export function DashboardScreen() {
   const { state, navigate, markComplete } = useChoreSync()
+  const { households, createdHouseholdInvite, queueCreatedHouseholdInvite } = useHouseholds()
   const [showNotif, setShowNotif] = useState(false)
+  const [inviteHousehold, setInviteHousehold] = useState<Household | null>(null)
 
   const today = todayChores(state)
   const week = upcomingWeekChores(state)
   const stats = householdStats(state)
   const greeting = greetingForNow()
+  const household = households[0]
+  const canInvite = household?.currentUserRole === "OWNER" || household?.currentUserRole === "ADMIN"
+
+  useEffect(() => {
+    if (!createdHouseholdInvite) return
+    setInviteHousehold(createdHouseholdInvite)
+    queueCreatedHouseholdInvite(null)
+  }, [createdHouseholdInvite, queueCreatedHouseholdInvite])
+
+  const openInvite = useCallback(() => {
+    if (household && canInvite) setInviteHousehold(household)
+  }, [canInvite, household])
+
+  const setInviteOpen = useCallback((open: boolean) => {
+    if (!open) setInviteHousehold(null)
+  }, [])
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 pb-20">
@@ -48,11 +71,34 @@ export function DashboardScreen() {
             <Avatar initial={state.currentUser.avatar} className="w-10 h-10 text-sm" />
           </div>
         </div>
-        <div className="flex items-center gap-1.5 mt-2">
-          <HouseGlyphIcon className="w-3.5 h-3.5 text-teal-600" />
-          <span className="text-teal-600 text-xs font-semibold">{state.household.name}</span>
+        <div className="mt-2 flex min-w-0 items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <HouseGlyphIcon className="h-3.5 w-3.5 shrink-0 text-teal-600" />
+            <span className="truncate text-xs font-semibold text-teal-600">
+              {household?.name ?? state.household.name}
+            </span>
+          </div>
+          {household && canInvite && (
+            <Button
+              className="h-8 shrink-0 gap-1.5 rounded-lg border-teal-100 bg-teal-50 px-2.5 text-xs font-semibold text-teal-700 hover:bg-teal-100"
+              onClick={openInvite}
+              type="button"
+              variant="outline"
+            >
+              <UserPlus aria-hidden="true" />
+              Invite housemate
+            </Button>
+          )}
         </div>
       </header>
+
+      {household && canInvite && (
+        <InviteHousemateDialog
+          household={inviteHousehold ?? household}
+          onOpenChange={setInviteOpen}
+          open={inviteHousehold !== null}
+        />
+      )}
 
       {showNotif && (
         <div className="mx-4 mt-2 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden z-10 relative">

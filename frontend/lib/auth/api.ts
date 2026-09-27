@@ -43,8 +43,16 @@ function messageFor(status: number, path: string): string {
         return "Unable to confirm sign out. Your session may still be active."
     }
     if (status === 401) return "Your session could not be verified. Please sign in again."
+    if (status === 400 && path === "/api/households/join") {
+        return "Invite code is invalid or no longer available."
+    }
+    if (status === 403 && path.startsWith("/api/households")) {
+        return "You are not authorized to perform this household action."
+    }
     if (status === 403) return "Your security token expired. Please try again."
-    if (status === 409) return "An account with this email already exists."
+    if (status === 409 && path === "/api/auth/register") return "An account with this email already exists."
+    if (status === 409 && path === "/api/households/join") return "You are already a member of this household."
+    if (status === 409) return "This request conflicts with the current state."
     if (status >= 400 && status < 500) return "Please check your information and try again."
     return "Something went wrong. Please try again."
 }
