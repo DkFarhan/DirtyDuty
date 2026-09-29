@@ -13,7 +13,10 @@ import { initialState } from "./mock-data"
 interface ChoreSyncContextValue {
   state: AppState
   screen: Screen
-  navigate: (screen: Screen) => void
+  adminTab: "members" | "chores"
+  editingChoreId: string | null
+  navigate: (screen: Screen, adminTab?: "members" | "chores") => void
+  editChore: (choreId: string) => void
   setCurrentUser: (user: Member) => void
   markComplete: (choreId: string) => void
   addChore: (chore: Chore) => void
@@ -25,8 +28,18 @@ const ChoreSyncContext = createContext<ChoreSyncContextValue | null>(null)
 export function ChoreSyncProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AppState>(initialState)
   const [screen, setScreen] = useState<Screen>("login")
+  const [adminTab, setAdminTab] = useState<"members" | "chores">("members")
+  const [editingChoreId, setEditingChoreId] = useState<string | null>(null)
 
-  const navigate = useCallback((next: Screen) => setScreen(next), [])
+  const navigate = useCallback((next: Screen, nextAdminTab?: "members" | "chores") => {
+    if (nextAdminTab) setAdminTab(nextAdminTab)
+    setScreen(next)
+  }, [])
+
+  const editChore = useCallback((choreId: string) => {
+    setEditingChoreId(choreId)
+    setScreen("edit-chore")
+  }, [])
 
   const setCurrentUser = useCallback((user: Member) => {
     setState((s) => ({ ...s, currentUser: user }))
@@ -48,8 +61,8 @@ export function ChoreSyncProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const value = useMemo(
-    () => ({ state, screen, navigate, setCurrentUser, markComplete, addChore, removeChore }),
-    [state, screen, navigate, setCurrentUser, markComplete, addChore, removeChore],
+    () => ({ state, screen, adminTab, editingChoreId, navigate, editChore, setCurrentUser, markComplete, addChore, removeChore }),
+    [state, screen, adminTab, editingChoreId, navigate, editChore, setCurrentUser, markComplete, addChore, removeChore],
   )
 
   return <ChoreSyncContext.Provider value={value}>{children}</ChoreSyncContext.Provider>

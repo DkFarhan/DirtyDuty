@@ -9,6 +9,7 @@ export type Screen =
   | "household"
   | "admin"
   | "create-chore"
+  | "edit-chore"
   | "profile"
 
 export type ChoreStatus = "pending" | "completed"
@@ -53,7 +54,6 @@ export interface Chore {
 export interface Household {
   id: string
   name: string
-  code: string
   members: Member[]
 }
 

@@ -10,7 +10,6 @@ export const initialState: AppState = {
   household: {
     id: "1",
     name: "Apartment 305",
-    code: "APT305",
     members: [
       { id: "1", name: "Jahid", avatar: "J", isAdmin: true },
       { id: "2", name: "Ahmed", avatar: "A", isAdmin: false },

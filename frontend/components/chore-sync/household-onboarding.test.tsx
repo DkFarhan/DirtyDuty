@@ -19,6 +19,11 @@ const household = {
   currentUserRole: "OWNER",
   createdAt: "2026-09-25T12:00:00Z",
 }
+const dashboard = {
+  weekSummary: { completedCount: 0, totalCount: 0, completionPercentage: 0 },
+  today: [],
+  thisWeek: [],
+}
 
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -31,6 +36,7 @@ function startAuthenticated(households: unknown[] = []) {
   fetchMock
     .mockResolvedValueOnce(jsonResponse(user))
     .mockResolvedValueOnce(jsonResponse(households))
+  if (households.length > 0) fetchMock.mockResolvedValueOnce(jsonResponse(dashboard))
   render(<AppShell />)
 }
 
@@ -63,6 +69,7 @@ describe("household onboarding", () => {
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       "http://localhost:8080/api/auth/me",
       "http://localhost:8080/api/households",
+      "http://localhost:8080/api/households/home-1/dashboard",
     ])
   })
 
@@ -85,6 +92,7 @@ describe("household onboarding", () => {
       .mockResolvedValueOnce(jsonResponse({ token: "household-csrf", headerName: "X-CSRF-TOKEN" }))
       .mockResolvedValueOnce(jsonResponse(household, 201))
       .mockResolvedValueOnce(jsonResponse([household]))
+      .mockResolvedValueOnce(jsonResponse(dashboard))
 
     fireEvent.click(screen.getByRole("button", { name: /Create a Household/ }))
     fireEvent.change(screen.getByLabelText(/Household Name/), { target: { value: "  Our Place  " } })
@@ -107,11 +115,12 @@ describe("household onboarding", () => {
     expect(sessionStorage.length).toBe(0)
   })
 
-  it("generates and displays an invite from the dashboard using the household context", async () => {
+  it("generates and displays a secure invite from Household Admin Actions", async () => {
     startAuthenticated([household])
     expect(await screen.findByText("Today")).toBeTruthy()
 
-    fireEvent.click(screen.getByRole("button", { name: "Invite housemate" }))
+    fireEvent.click(screen.getByRole("button", { name: "Household" }))
+    fireEvent.click(screen.getByRole("button", { name: /Invite Member/ }))
     expect(screen.getByRole("dialog", { name: "Invite a housemate" })).toBeTruthy()
     expect(screen.queryByText("one-time-code-from-server")).toBeNull()
 
@@ -147,6 +156,38 @@ describe("household onboarding", () => {
 
     expect(await screen.findByText("Today")).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Invite housemate" })).toBeNull()
+
+    fireEvent.click(screen.getByRole("button", { name: "Household" }))
+    expect(await screen.findByRole("heading", { name: "Members" })).toBeTruthy()
+    expect(screen.queryByRole("heading", { name: "Admin Actions" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Invite Member" })).toBeNull()
+  })
+
+  it("restores owner admin actions and routes secure invitations and chore management", async () => {
+    startAuthenticated([household])
+    expect(await screen.findByText("Today")).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("button", { name: "Household" }))
+    expect(await screen.findByRole("heading", { name: "Admin Actions" })).toBeTruthy()
+    expect(screen.queryByText("APT305")).toBeNull()
+
+    fireEvent.click(screen.getByRole("button", { name: /Invite Member/ }))
+    expect(screen.getByRole("dialog", { name: "Invite a housemate" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Generate invite" })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Close invitation dialog" }))
+
+    fireEvent.click(screen.getByRole("button", { name: /Manage Chores/ }))
+    expect(await screen.findByRole("heading", { name: "Household Management" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Create a chore" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /Invite Member/ })).toBeNull()
+  })
+
+  it("shows household admin actions to admins", async () => {
+    startAuthenticated([{ ...household, currentUserRole: "ADMIN" }])
+    expect(await screen.findByText("Today")).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("button", { name: "Household" }))
+    expect(await screen.findByRole("heading", { name: "Admin Actions" })).toBeTruthy()
   })
 
   it("guards against duplicate create submissions while a request is pending", async () => {
@@ -156,6 +197,7 @@ describe("household onboarding", () => {
       .mockResolvedValueOnce(jsonResponse({ token: "csrf", headerName: "X-CSRF-TOKEN" }))
       .mockReturnValueOnce(new Promise((resolve) => { resolveCreate = resolve }))
       .mockResolvedValueOnce(jsonResponse([household]))
+      .mockResolvedValueOnce(jsonResponse(dashboard))
 
     fireEvent.click(screen.getByRole("button", { name: /Create a Household/ }))
     fireEvent.change(screen.getByLabelText(/Household Name/), { target: { value: household.name } })
@@ -190,6 +232,7 @@ describe("household onboarding", () => {
       .mockResolvedValueOnce(jsonResponse({ token: "join-csrf", headerName: "X-CSRF-TOKEN" }))
       .mockResolvedValueOnce(jsonResponse(household))
       .mockResolvedValueOnce(jsonResponse([household]))
+      .mockResolvedValueOnce(jsonResponse(dashboard))
 
     fireEvent.click(screen.getByRole("button", { name: /Join a Household/ }))
     fireEvent.change(screen.getByLabelText("Invite Code"), { target: { value: "  abCd12 \n" } })
@@ -213,6 +256,7 @@ describe("household onboarding", () => {
       .mockResolvedValueOnce(jsonResponse({ token: "csrf", headerName: "X-CSRF-TOKEN" }))
       .mockReturnValueOnce(new Promise((resolve) => { resolveJoin = resolve }))
       .mockResolvedValueOnce(jsonResponse([household]))
+      .mockResolvedValueOnce(jsonResponse(dashboard))
 
     fireEvent.click(screen.getByRole("button", { name: /Join a Household/ }))
     fireEvent.change(screen.getByLabelText("Invite Code"), { target: { value: "AbC123" } })

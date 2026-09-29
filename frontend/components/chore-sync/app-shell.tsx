@@ -15,11 +15,11 @@ import { DashboardScreen } from "./screens/dashboard-screen"
 import { MyChoresScreen } from "./screens/my-chores-screen"
 import { HouseholdScreen } from "./screens/household-screen"
 import { AdminScreen } from "./screens/admin-screen"
-import { CreateChoreScreen } from "./screens/create-chore-screen"
+import { ChoreFormScreen } from "./screens/chore-form-screen"
 import { ProfileScreen } from "./screens/profile-screen"
 
 function ScreenRouter() {
-  const { screen, navigate, setCurrentUser } = useChoreSync()
+  const { screen, adminTab, navigate, setCurrentUser } = useChoreSync()
   const { user, isAuthenticated, isLoading, authError, refreshUser } = useAuth()
   const { households, status: householdStatus, error: householdError, refresh: refreshHouseholds } = useHouseholds()
 
@@ -95,9 +95,11 @@ function ScreenRouter() {
     case "household":
       return <HouseholdScreen />
     case "admin":
-      return <AdminScreen />
+      return <AdminScreen initialTab={adminTab} />
     case "create-chore":
-      return <CreateChoreScreen />
+      return <ChoreFormScreen />
+    case "edit-chore":
+      return <ChoreFormScreen />
     case "profile":
       return <ProfileScreen />
     default:

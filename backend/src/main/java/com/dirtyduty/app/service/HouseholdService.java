@@ -18,6 +18,7 @@ import com.dirtyduty.app.mapper.HouseholdMapper;
 import com.dirtyduty.app.repository.HouseholdInvitationRepository;
 import com.dirtyduty.app.repository.HouseholdMembershipRepository;
 import com.dirtyduty.app.repository.HouseholdRepository;
+import com.dirtyduty.app.repository.ChoreCategoryRepository;
 import com.dirtyduty.app.repository.UserRepository;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -43,10 +44,10 @@ public class HouseholdService {
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final int INVITE_TOKEN_BYTES = 32;
     private static final HouseholdRole INVITATION_ROLE = HouseholdRole.MEMBER;
-
     private final HouseholdRepository householdRepository;
     private final HouseholdMembershipRepository householdMembershipRepository;
     private final HouseholdInvitationRepository householdInvitationRepository;
+    private final ChoreCategoryRepository choreCategoryRepository;
     private final UserRepository userRepository;
     private final Duration invitationExpiration;
 
@@ -54,11 +55,13 @@ public class HouseholdService {
             HouseholdRepository householdRepository,
             HouseholdMembershipRepository householdMembershipRepository,
             HouseholdInvitationRepository householdInvitationRepository,
+            ChoreCategoryRepository choreCategoryRepository,
             UserRepository userRepository,
             @Value("${app.households.invitation-expiration:7d}") Duration invitationExpiration) {
         this.householdRepository = householdRepository;
         this.householdMembershipRepository = householdMembershipRepository;
         this.householdInvitationRepository = householdInvitationRepository;
+        this.choreCategoryRepository = choreCategoryRepository;
         this.userRepository = userRepository;
         if (invitationExpiration.isZero() || invitationExpiration.isNegative()) {
             throw new IllegalArgumentException("Household invitation expiration must be positive.");
@@ -89,6 +92,8 @@ public class HouseholdService {
         household.setTimezone(timezone);
         household.setCreatedByUser(user);
         householdRepository.save(household);
+
+        ChoreCategoryDefaults.ensureFor(household, choreCategoryRepository);
 
         HouseholdMembership ownerMembership = new HouseholdMembership();
         ownerMembership.setHousehold(household);
@@ -189,4 +194,5 @@ public class HouseholdService {
             throw new IllegalStateException("SHA-256 is unavailable.", exception);
         }
     }
+
 }

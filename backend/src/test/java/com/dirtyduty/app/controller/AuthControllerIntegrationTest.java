@@ -9,8 +9,10 @@ import com.dirtyduty.app.entity.enums.AccountStatus;
 import com.dirtyduty.app.exception.DuplicateResourceException;
 import com.dirtyduty.app.repository.UserRepository;
 import com.dirtyduty.app.service.AuthService;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
-import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -19,6 +21,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 
 @SpringBootTest
 class AuthControllerIntegrationTest {
+
+    private final List<String> testEmails = new ArrayList<>();
 
     @Autowired
     private UserRepository userRepository;
@@ -29,19 +33,23 @@ class AuthControllerIntegrationTest {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
-    @BeforeEach
-    void setUp() {
-        userRepository.deleteAll();
+    @AfterEach
+    void cleanUpTestUsers() {
+        for (String email : testEmails) {
+            userRepository.findByEmailIgnoreCase(email).ifPresent(userRepository::delete);
+        }
+        testEmails.clear();
     }
 
     @Test
     void register_shouldCreateUserWithNormalizedEmailAndHashedPassword() {
         String rawPassword = "StrongPassword123!";
-        authService.register(new RegisterRequest("  Alice Smith  ", "  Alice@Example.com  ", rawPassword));
+        String email = uniqueEmail("alice").toUpperCase(Locale.ROOT);
+        authService.register(new RegisterRequest("  Alice Smith  ", email, rawPassword));
 
-        User savedUser = userRepository.findByEmailIgnoreCase("alice@example.com").orElseThrow();
+        User savedUser = userRepository.findByEmailIgnoreCase(email).orElseThrow();
         assertThat(savedUser.getDisplayName()).isEqualTo("Alice Smith");
-        assertThat(savedUser.getEmail()).isEqualTo("alice@example.com");
+        assertThat(savedUser.getEmail()).isEqualTo(email.toLowerCase(Locale.ROOT));
         assertThat(savedUser.getAccountStatus()).isEqualTo(AccountStatus.ACTIVE);
         assertThat(savedUser.getEmailVerifiedAt()).isNull();
         assertThat(savedUser.getPasswordHash()).doesNotContain(rawPassword);
@@ -59,10 +67,11 @@ class AuthControllerIntegrationTest {
 
     @Test
     void register_shouldRejectDuplicateEmailIgnoringCase() {
-        userRepository.saveAndFlush(buildUser("existing@example.com", "Existing User", "Password123!"));
+        String email = uniqueEmail("existing");
+        userRepository.saveAndFlush(buildUser(email, "Existing User", "Password123!"));
 
         assertThatThrownBy(() -> authService.register(
-                new RegisterRequest("New User", "  EXISTING@EXAMPLE.com  ", "Password123456!")))
+                new RegisterRequest("New User", "  " + email.toUpperCase(Locale.ROOT) + "  ", "Password123456!")))
                 .isInstanceOf(DuplicateResourceException.class);
     }
 
@@ -74,5 +83,11 @@ class AuthControllerIntegrationTest {
         user.setTimezone("UTC");
         user.setAccountStatus(AccountStatus.ACTIVE);
         return user;
+    }
+
+    private String uniqueEmail(String prefix) {
+        String email = prefix + "-" + java.util.UUID.randomUUID() + "@example.com";
+        testEmails.add(email);
+        return email;
     }
 }

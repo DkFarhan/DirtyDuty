@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.mockito.ArgumentMatchers.any;
@@ -22,7 +23,10 @@ import jakarta.servlet.http.Cookie;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.OffsetDateTime;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -109,6 +113,11 @@ class HouseholdControllerIntegrationTest {
 
         UUID householdId = UUID.fromString(objectMapper.readTree(result.getResponse().getContentAsString())
                 .get("id").asText());
+        assertThat(jdbcTemplate.queryForList(
+                "SELECT name FROM chore_categories WHERE household_id = ? ORDER BY sort_order",
+                String.class,
+                householdId))
+                .containsExactly("Kitchen", "Bathroom", "Laundry", "Trash", "Cleaning", "General");
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT created_by_user_id FROM households WHERE id = ?",
                 UUID.class,
@@ -126,6 +135,504 @@ class HouseholdControllerIntegrationTest {
                 Integer.class,
                 householdId,
                 UUID.fromString(spoofedUser.userId()))).isZero();
+    }
+
+    @Test
+    void choreManagementSupportsScopedLifecycleAndKeepsArchivedHistory() throws Exception {
+        WebSession owner = login("choreowner");
+        UUID householdId = createHousehold(owner, "Chore Home", "UTC");
+        UUID categoryId = jdbcTemplate.queryForObject(
+                "SELECT id FROM chore_categories WHERE household_id = ? AND name = ?",
+                UUID.class, householdId, "Cleaning");
+        String base = "/api/households/" + householdId;
+
+        mockMvc.perform(get(base + "/chore-categories").cookie(owner.cookie()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[4].id").value(categoryId.toString()))
+                .andExpect(jsonPath("$[4].name").value("Cleaning"));
+
+        WebSession activeMember = login("optionsmember");
+        join(activeMember, createInvitation(owner, householdId)).andExpect(status().isOk());
+        mockMvc.perform(get(base + "/chore-management-options").cookie(owner.cookie()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.activeMembers.length()").value(2))
+                .andExpect(jsonPath("$.activeMembers[?(@.userId == '%s')].displayName",
+                        activeMember.userId()).value("Test User"));
+        jdbcTemplate.update(
+                "UPDATE household_memberships SET status = 'LEFT', left_at = NOW() WHERE household_id = ? AND user_id = ?",
+                householdId, UUID.fromString(activeMember.userId()));
+        mockMvc.perform(get(base + "/chore-management-options").cookie(owner.cookie()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.categories[4].id").value(categoryId.toString()))
+                .andExpect(jsonPath("$.activeMembers.length()").value(1))
+                .andExpect(jsonPath("$.activeMembers[0].userId").value(owner.userId()))
+                .andExpect(jsonPath("$.activeMembers[0].displayName").value("Test User"));
+
+        String request = """
+                {
+                  "title": "  Sweep kitchen  ",
+                  "description": "After dinner",
+                  "categoryId": "%s",
+                  "defaultPriority": "HIGH",
+                  "difficulty": 3,
+                  "estimatedMinutes": 15,
+                  "requiresVerification": true,
+                  "schedule": {
+                    "recurrenceRule": "FREQ=WEEKLY;BYDAY=MO",
+                    "timezone": "UTC",
+                    "startsOn": "2026-09-28",
+                    "assignmentStrategy": "FIXED",
+                    "fixedAssigneeUserId": "%s"
+                  }
+                }
+                """.formatted(categoryId, owner.userId());
+        MvcResult created = mockMvc.perform(post(base + "/chores")
+                .cookie(owner.cookie())
+                .header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content(request))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.title").value("Sweep kitchen"))
+                .andExpect(jsonPath("$.categoryId").value(categoryId.toString()))
+                .andExpect(jsonPath("$.schedule.assignmentStrategy").value("FIXED"))
+                .andReturn();
+        UUID choreId = UUID.fromString(objectMapper.readTree(created.getResponse().getContentAsString())
+                .get("id").asText());
+
+        mockMvc.perform(get(base + "/chores").cookie(owner.cookie()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(choreId.toString()));
+        mockMvc.perform(get(base + "/chores/" + choreId).cookie(owner.cookie()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Sweep kitchen"));
+        mockMvc.perform(put(base + "/chores/" + choreId)
+                .cookie(owner.cookie())
+                .header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content("""
+                        {
+                          "title": "Mop kitchen",
+                          "categoryId": "%s",
+                          "defaultPriority": "URGENT",
+                          "difficulty": 4,
+                          "estimatedMinutes": 20
+                        }
+                        """.formatted(categoryId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Mop kitchen"))
+                .andExpect(jsonPath("$.defaultPriority").value("URGENT"))
+                .andExpect(jsonPath("$.categoryId").value(categoryId.toString()));
+
+        mockMvc.perform(post(base + "/chores/" + choreId + "/pause")
+                .cookie(owner.cookie()).header(owner.csrfHeader(), owner.csrfToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.active").value(false))
+                .andExpect(jsonPath("$.schedule.active").value(false));
+        mockMvc.perform(post(base + "/chores/" + choreId + "/activate")
+                .cookie(owner.cookie()).header(owner.csrfHeader(), owner.csrfToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.active").value(true))
+                .andExpect(jsonPath("$.schedule.active").value(true));
+        mockMvc.perform(post(base + "/chores/" + choreId + "/archive")
+                .cookie(owner.cookie()).header(owner.csrfHeader(), owner.csrfToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.active").value(false))
+                .andExpect(jsonPath("$.archivedAt").isString());
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM chores WHERE id = ? AND household_id = ? AND archived_at IS NOT NULL",
+                Integer.class, choreId, householdId)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM chore_schedules WHERE chore_id = ? AND is_active = FALSE",
+                Integer.class, choreId)).isEqualTo(1);
+        mockMvc.perform(get(base + "/chores").cookie(owner.cookie()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isEmpty());
+    }
+
+    @Test
+    void choreManagementRejectsCrossHouseholdCategoriesAndParticipantsAndNonAdmins() throws Exception {
+        WebSession owner = login("choreguard");
+        WebSession otherOwner = login("otherchore");
+        UUID householdId = createHousehold(owner, "Managed Home", "UTC");
+        UUID otherHouseholdId = createHousehold(otherOwner, "Other Home", "UTC");
+        jdbcTemplate.update(
+                "INSERT INTO chore_categories (household_id, name) VALUES (?, ?)",
+                otherHouseholdId, "Private category");
+        UUID otherCategoryId = jdbcTemplate.queryForObject(
+                "SELECT id FROM chore_categories WHERE household_id = ? AND name = ?",
+                UUID.class, otherHouseholdId, "Private category");
+        String path = "/api/households/" + householdId + "/chores";
+
+        mockMvc.perform(post(path)
+                .cookie(owner.cookie()).header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content("""
+                        {"title":"Wrong category","categoryId":"%s"}
+                        """.formatted(otherCategoryId)))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post(path)
+                .cookie(owner.cookie()).header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content("""
+                        {
+                          "title":"Wrong participant",
+                          "schedule":{
+                            "recurrenceRule":"FREQ=DAILY",
+                            "timezone":"UTC",
+                            "startsOn":"2026-09-28",
+                            "assignmentStrategy":"RANDOM",
+                            "participantUserIds":["%s"]
+                          }
+                        }
+                        """.formatted(otherOwner.userId())))
+                .andExpect(status().isBadRequest());
+
+        String invitation = createInvitation(owner, householdId);
+        WebSession member = login("choremember");
+        join(member, invitation).andExpect(status().isOk());
+        mockMvc.perform(get(path).cookie(member.cookie()))
+                .andExpect(status().isForbidden());
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM chores WHERE household_id = ?",
+                Integer.class, householdId)).isZero();
+    }
+
+    @Test
+    void choreManagementAllowsAdminsAndPersistsRotateAndRandomParticipants() throws Exception {
+        WebSession owner = login("strategyowner");
+        UUID householdId = createHousehold(owner, "Strategy Home", "UTC");
+        WebSession admin = login("strategyadmin");
+        join(admin, createInvitation(owner, householdId)).andExpect(status().isOk());
+        jdbcTemplate.update(
+                "UPDATE household_memberships SET role = 'ADMIN' WHERE household_id = ? AND user_id = ?",
+                householdId, UUID.fromString(admin.userId()));
+        WebSession member = login("strategymember");
+        join(member, createInvitation(owner, householdId)).andExpect(status().isOk());
+        String path = "/api/households/" + householdId + "/chores";
+
+        mockMvc.perform(get(path))
+                .andExpect(status().isUnauthorized());
+
+        String rotateRequest = """
+                {
+                  "title":"Rotate dishes",
+                  "schedule":{
+                    "recurrenceRule":"FREQ=WEEKLY;BYDAY=MO,FR",
+                    "timezone":"Pacific/Kiritimati",
+                    "startsOn":"2026-09-28",
+                    "assignmentStrategy":"ROUND_ROBIN",
+                    "participantUserIds":["%s","%s"]
+                  }
+                }
+                """.formatted(owner.userId(), admin.userId());
+        MvcResult rotateCreated = mockMvc.perform(post(path)
+                .cookie(admin.cookie()).header(admin.csrfHeader(), admin.csrfToken())
+                .contentType(APPLICATION_JSON).content(rotateRequest))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.schedule.assignmentStrategy").value("ROUND_ROBIN"))
+                .andExpect(jsonPath("$.schedule.timezone").value("UTC"))
+                .andExpect(jsonPath("$.schedule.participantUserIds.length()").value(2))
+                .andReturn();
+        UUID rotateId = UUID.fromString(objectMapper.readTree(rotateCreated.getResponse().getContentAsString())
+                .get("id").asText());
+
+        mockMvc.perform(put(path + "/" + rotateId)
+                .cookie(member.cookie()).header(member.csrfHeader(), member.csrfToken())
+                .contentType(APPLICATION_JSON).content("{\"title\":\"Member mutation\"}"))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post(path)
+                .cookie(admin.cookie()).header(admin.csrfHeader(), admin.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content("""
+                        {
+                          "title":"Random towels",
+                          "schedule":{
+                            "recurrenceRule":"FREQ=DAILY",
+                            "timezone":"UTC",
+                            "startsOn":"2026-09-28",
+                            "assignmentStrategy":"RANDOM",
+                            "participantUserIds":["%s"]
+                          }
+                        }
+                        """.formatted(admin.userId())))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.schedule.assignmentStrategy").value("RANDOM"))
+                .andExpect(jsonPath("$.schedule.participantUserIds[0]").value(admin.userId()));
+
+        mockMvc.perform(post(path)
+                .cookie(admin.cookie()).header(admin.csrfHeader(), admin.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content("""
+                        {"title":"Invalid effort","difficulty":6}
+                        """))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post(path)
+                .cookie(admin.cookie()).header(admin.csrfHeader(), admin.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content("""
+                        {"title":"Invalid duration","estimatedMinutes":1441}
+                        """))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post(path)
+                .cookie(admin.cookie()).header(admin.csrfHeader(), admin.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content("""
+                        {
+                          "title":"Invalid weekday",
+                          "schedule":{
+                            "recurrenceRule":"FREQ=WEEKLY;BYDAY=XX",
+                            "startsOn":"2026-09-28",
+                            "assignmentStrategy":"FIXED",
+                            "fixedAssigneeUserId":"%s"
+                          }
+                        }
+                        """.formatted(admin.userId())))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void multiPersonOccurrencesAreGeneratedSharedAndCompletableOnlyByAssignees() throws Exception {
+        WebSession owner = login("multichoreowner");
+        WebSession member = login("multichoremember");
+        WebSession nonAssignee = login("multichoreother");
+        UUID householdId = createHousehold(owner, "Shared Chore Home", "UTC");
+        join(member, createInvitation(owner, householdId)).andExpect(status().isOk());
+        join(nonAssignee, createInvitation(owner, householdId)).andExpect(status().isOk());
+        LocalDate today = LocalDate.now(ZoneOffset.UTC);
+        String base = "/api/households/" + householdId;
+        String request = """
+                {
+                  "title":"Clean together",
+                  "defaultPriority":"HIGH",
+                  "difficulty":3,
+                  "schedule":{
+                    "recurrenceRule":"FREQ=DAILY",
+                    "timezone":"UTC",
+                    "startsOn":"%s",
+                    "endsOn":"%s",
+                    "dueTime":"20:00",
+                    "assignmentStrategy":"FIXED",
+                    "participantUserIds":["%s","%s"],
+                    "peopleNeeded":2
+                  }
+                }
+                """.formatted(today, today.plusDays(1), owner.userId(), member.userId());
+        MvcResult created = mockMvc.perform(post(base + "/chores")
+                .cookie(owner.cookie()).header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON).content(request))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.schedule.peopleNeeded").value(2))
+                .andExpect(jsonPath("$.schedule.participantUserIds.length()").value(2))
+                .andReturn();
+        UUID choreId = UUID.fromString(objectMapper.readTree(created.getResponse().getContentAsString())
+                .get("id").asText());
+        List<UUID> assignmentIds = jdbcTemplate.query(
+                "SELECT id FROM chore_assignments WHERE chore_id=? ORDER BY scheduled_for",
+                (rs, row) -> rs.getObject("id", UUID.class), choreId);
+        assertThat(assignmentIds).hasSize(2);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM chore_assignment_assignees WHERE assignment_id=?",
+                Integer.class, assignmentIds.getFirst())).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(DISTINCT user_id) FROM chore_assignment_assignees WHERE assignment_id=?",
+                Integer.class, assignmentIds.getFirst())).isEqualTo(2);
+
+        mockMvc.perform(get(base + "/my-chores").param("status", "UPCOMING").cookie(member.cookie()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].assignees.length()").value(2))
+                .andExpect(jsonPath("$[0].canComplete").value(true))
+                .andExpect(jsonPath("$[0].overdue").value(false));
+
+        mockMvc.perform(post(base + "/assignments/" + assignmentIds.getFirst() + "/complete")
+                .cookie(nonAssignee.cookie()).header(nonAssignee.csrfHeader(), nonAssignee.csrfToken()))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post(base + "/assignments/" + assignmentIds.getFirst() + "/complete")
+                .cookie(member.cookie()).header(member.csrfHeader(), member.csrfToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.assignees.length()").value(2));
+        mockMvc.perform(get(base + "/my-chores").param("status", "COMPLETED").cookie(owner.cookie()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].completedByDisplayName").value("Test User"));
+        mockMvc.perform(post(base + "/assignments/" + assignmentIds.getFirst() + "/complete")
+                .cookie(owner.cookie()).header(owner.csrfHeader(), owner.csrfToken()))
+                .andExpect(status().isOk());
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM chore_completions WHERE assignment_id=?",
+                Integer.class, assignmentIds.getFirst())).isEqualTo(1);
+        LocalDate priorWeekDate = today.with(java.time.DayOfWeek.MONDAY).minusWeeks(1);
+        UUID priorWeekAssignmentId = UUID.randomUUID();
+        jdbcTemplate.update("""
+                INSERT INTO chore_assignments
+                    (id, household_id, chore_id, scheduled_for, status, title_snapshot,
+                     priority_snapshot, difficulty_snapshot)
+                VALUES (?, ?, ?, ?, 'COMPLETED', 'Prior week chore', 'NORMAL', 1)
+                """, priorWeekAssignmentId, householdId, choreId, priorWeekDate);
+        jdbcTemplate.update("""
+                INSERT INTO chore_assignment_assignees (household_id, assignment_id, user_id)
+                VALUES (?, ?, ?)
+                """, householdId, priorWeekAssignmentId, UUID.fromString(owner.userId()));
+        jdbcTemplate.update("""
+                INSERT INTO chore_completions (household_id, assignment_id, completed_by_user_id, completed_at)
+                VALUES (?, ?, ?, NOW())
+                """, householdId, priorWeekAssignmentId, UUID.fromString(owner.userId()));
+        mockMvc.perform(put(base + "/chores/" + choreId)
+                .cookie(owner.cookie()).header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content("""
+                        {
+                          "title":"Clean together",
+                          "schedule":{
+                            "recurrenceRule":"FREQ=DAILY",
+                            "startsOn":"%s",
+                            "endsOn":"%s",
+                            "assignmentStrategy":"FIXED",
+                            "participantUserIds":["%s","%s"],
+                            "peopleNeeded":2
+                          }
+                        }
+                        """.formatted(today, today.plusDays(1), owner.userId(), nonAssignee.userId())))
+                .andExpect(status().isOk());
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM chore_assignments WHERE id=?",
+                String.class, assignmentIds.getFirst())).isEqualTo("COMPLETED");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM chore_assignments WHERE id=?",
+                String.class, assignmentIds.getLast())).isEqualTo("PENDING");
+        assertThat(jdbcTemplate.query(
+                "SELECT user_id FROM chore_assignment_assignees WHERE assignment_id=? ORDER BY user_id",
+                (rs, row) -> rs.getObject("user_id", UUID.class), assignmentIds.getFirst()))
+                .containsExactlyInAnyOrder(UUID.fromString(owner.userId()), UUID.fromString(member.userId()));
+        assertThat(jdbcTemplate.query(
+                "SELECT user_id FROM chore_assignment_assignees WHERE assignment_id=? ORDER BY user_id",
+                (rs, row) -> rs.getObject("user_id", UUID.class), assignmentIds.getLast()))
+                .containsExactlyInAnyOrder(UUID.fromString(owner.userId()), UUID.fromString(nonAssignee.userId()));
+        mockMvc.perform(put(base + "/chores/" + choreId)
+                .cookie(owner.cookie()).header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content("""
+                        {
+                          "title":"Clean together",
+                          "schedule":{
+                            "recurrenceRule":"FREQ=ONCE",
+                            "startsOn":"%s",
+                            "assignmentStrategy":"FIXED",
+                            "participantUserIds":["%s","%s"],
+                            "peopleNeeded":2
+                          }
+                        }
+                        """.formatted(today, owner.userId(), nonAssignee.userId())))
+                .andExpect(status().isOk());
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM chore_assignments WHERE id=?",
+                String.class, assignmentIds.getLast())).isEqualTo("CANCELLED");
+        mockMvc.perform(get(base + "/my-chores").param("status", "UPCOMING").cookie(member.cookie()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+        MvcResult randomCreated = mockMvc.perform(post(base + "/chores")
+                .cookie(owner.cookie()).header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content("""
+                        {
+                          "title":"Random team task",
+                          "schedule":{
+                            "recurrenceRule":"FREQ=ONCE",
+                            "startsOn":"%s",
+                            "assignmentStrategy":"RANDOM",
+                            "participantUserIds":["%s","%s","%s"],
+                            "peopleNeeded":2
+                          }
+                        }
+                        """.formatted(today, owner.userId(), member.userId(), nonAssignee.userId())))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.schedule.peopleNeeded").value(2))
+                .andReturn();
+        UUID randomChoreId = UUID.fromString(objectMapper.readTree(randomCreated.getResponse().getContentAsString())
+                .get("id").asText());
+        UUID randomAssignmentId = jdbcTemplate.queryForObject(
+                "SELECT id FROM chore_assignments WHERE chore_id=?", UUID.class, randomChoreId);
+        List<UUID> randomAssignees = jdbcTemplate.query(
+                "SELECT user_id FROM chore_assignment_assignees WHERE assignment_id=? ORDER BY user_id",
+                (rs, row) -> rs.getObject("user_id", UUID.class), randomAssignmentId);
+        assertThat(randomAssignees).hasSize(2);
+        mockMvc.perform(get(base + "/dashboard").cookie(owner.cookie())).andExpect(status().isOk());
+        mockMvc.perform(get(base + "/dashboard").cookie(owner.cookie())).andExpect(status().isOk());
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM chore_assignments WHERE chore_id=?",
+                Integer.class, randomChoreId)).isEqualTo(1);
+        assertThat(jdbcTemplate.query(
+                "SELECT user_id FROM chore_assignment_assignees WHERE assignment_id=? ORDER BY user_id",
+                (rs, row) -> rs.getObject("user_id", UUID.class), randomAssignmentId))
+                .containsExactlyElementsOf(randomAssignees);
+        mockMvc.perform(get(base + "/dashboard").cookie(owner.cookie()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.weekSummary.completedCount").isNumber())
+                .andExpect(jsonPath("$.thisWeek").isArray())
+                .andExpect(jsonPath("$.today").isArray());
+        MvcResult memberStats = mockMvc.perform(get(base + "/members").cookie(owner.cookie()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(3))
+                .andExpect(jsonPath("$[0].assignedThisWeek").isNumber())
+                .andExpect(jsonPath("$[0].completedThisWeek").isNumber())
+                .andReturn();
+        var stats = objectMapper.readTree(memberStats.getResponse().getContentAsString());
+        var ownerStats = java.util.stream.StreamSupport.stream(stats.spliterator(), false)
+                .filter(item -> item.get("userId").asText().equals(owner.userId()))
+                .findFirst().orElseThrow();
+        assertThat(ownerStats.get("completedThisWeek").asLong()).isEqualTo(1);
+    }
+
+    @Test
+    void concurrentDashboardGenerationCreatesOneOccurrenceWithOnePersistedRandomTeam() throws Exception {
+        WebSession owner = login("concurrentgeneration");
+        WebSession member = login("concurrentmember");
+        UUID householdId = createHousehold(owner, "Concurrent Home", "UTC");
+        join(member, createInvitation(owner, householdId)).andExpect(status().isOk());
+        LocalDate scheduledFor = LocalDate.now(ZoneOffset.UTC).plusDays(1);
+        String base = "/api/households/" + householdId;
+        MvcResult created = mockMvc.perform(post(base + "/chores")
+                .cookie(owner.cookie()).header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content("""
+                        {
+                          "title":"Concurrent task",
+                          "schedule":{
+                            "recurrenceRule":"FREQ=ONCE",
+                            "startsOn":"%s",
+                            "assignmentStrategy":"RANDOM",
+                            "participantUserIds":["%s","%s"],
+                            "peopleNeeded":2
+                          }
+                        }
+                        """.formatted(scheduledFor, owner.userId(), member.userId())))
+                .andExpect(status().isCreated())
+                .andReturn();
+        UUID choreId = UUID.fromString(objectMapper.readTree(created.getResponse().getContentAsString())
+                .get("id").asText());
+        UUID oldAssignment = jdbcTemplate.queryForObject(
+                "SELECT id FROM chore_assignments WHERE chore_id=?", UUID.class, choreId);
+        jdbcTemplate.update("DELETE FROM chore_assignment_assignees WHERE assignment_id=?", oldAssignment);
+        jdbcTemplate.update("DELETE FROM chore_assignments WHERE id=?", oldAssignment);
+
+        CompletableFuture<MvcResult> first = CompletableFuture.supplyAsync(() -> performDashboard(base, owner));
+        CompletableFuture<MvcResult> second = CompletableFuture.supplyAsync(() -> performDashboard(base, owner));
+        CompletableFuture.allOf(first, second).join();
+        assertThat(first.join().getResponse().getStatus()).isEqualTo(200);
+        assertThat(second.join().getResponse().getStatus()).isEqualTo(200);
+        UUID assignmentId = jdbcTemplate.queryForObject(
+                "SELECT id FROM chore_assignments WHERE chore_id=?", UUID.class, choreId);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM chore_assignments WHERE chore_id=?", Integer.class, choreId)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM chore_assignment_assignees WHERE assignment_id=?",
+                Integer.class, assignmentId)).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(DISTINCT user_id) FROM chore_assignment_assignees WHERE assignment_id=?",
+                Integer.class, assignmentId)).isEqualTo(2);
     }
 
     @Test
@@ -173,7 +680,10 @@ class HouseholdControllerIntegrationTest {
                         """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("A valid IANA timezone is required."));
-        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM households", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM households WHERE created_by_user_id = ?",
+                Integer.class,
+                UUID.fromString(owner.userId()))).isZero();
     }
 
     @Test
@@ -456,6 +966,14 @@ class HouseholdControllerIntegrationTest {
         return objectMapper.readTree(result.getResponse().getContentAsString()).get("inviteCode").asText();
     }
 
+    private MvcResult performDashboard(String base, WebSession session) {
+        try {
+            return mockMvc.perform(get(base + "/dashboard").cookie(session.cookie())).andReturn();
+        } catch (Exception exception) {
+            throw new IllegalStateException(exception);
+        }
+    }
+
     private org.springframework.test.web.servlet.ResultActions join(WebSession session, String code) throws Exception {
         return join(session, code, "{\"inviteCode\":\"" + code + "\"}");
     }
@@ -538,6 +1056,13 @@ class HouseholdControllerIntegrationTest {
         jdbcTemplate.update(
                 "DELETE FROM household_invitations WHERE household_id IN (" + testHouseholds
                         + ") OR created_by_user_id IN (" + testUsers + ")");
+        jdbcTemplate.update("DELETE FROM activity_events WHERE household_id IN (" + testHouseholds + ")");
+        jdbcTemplate.update("DELETE FROM chore_completions WHERE household_id IN (" + testHouseholds + ")");
+        jdbcTemplate.update("DELETE FROM chore_assignment_assignees WHERE household_id IN (" + testHouseholds + ")");
+        jdbcTemplate.update("DELETE FROM chore_assignments WHERE household_id IN (" + testHouseholds + ")");
+        jdbcTemplate.update("DELETE FROM chore_schedules WHERE household_id IN (" + testHouseholds + ")");
+        jdbcTemplate.update("DELETE FROM chores WHERE household_id IN (" + testHouseholds + ")");
+        jdbcTemplate.update("DELETE FROM chore_categories WHERE household_id IN (" + testHouseholds + ")");
         jdbcTemplate.update(
                 "DELETE FROM household_memberships WHERE household_id IN (" + testHouseholds
                         + ") OR user_id IN (" + testUsers + ")");

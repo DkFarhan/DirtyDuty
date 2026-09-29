@@ -17,8 +17,10 @@ import com.dirtyduty.app.repository.UserRepository;
 import com.dirtyduty.app.service.AuthService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.Cookie;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
-import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -32,6 +34,8 @@ import org.springframework.test.web.servlet.MvcResult;
 @SpringBootTest
 @AutoConfigureMockMvc
 class AuthSessionIntegrationTest {
+
+    private final List<String> testEmails = new ArrayList<>();
 
     @Autowired
     private MockMvc mockMvc;
@@ -50,9 +54,19 @@ class AuthSessionIntegrationTest {
     @Autowired
     private SessionAuthenticationStrategy sessionAuthenticationStrategy;
 
-    @BeforeEach
-    void setUp() {
-        userRepository.deleteAll();
+    @AfterEach
+    void cleanUpTestOwnedSessionsAndUsers() {
+        for (String email : testEmails) {
+            jdbcTemplate.update("""
+                    DELETE FROM spring_session_attributes
+                    WHERE session_primary_id IN (
+                        SELECT primary_id FROM spring_session WHERE principal_name = ?
+                    )
+                    """, email);
+            jdbcTemplate.update("DELETE FROM spring_session WHERE principal_name = ?", email);
+            userRepository.findByEmailIgnoreCase(email).ifPresent(userRepository::delete);
+        }
+        testEmails.clear();
     }
 
     @Test
@@ -262,6 +276,8 @@ class AuthSessionIntegrationTest {
     }
 
     private String uniqueEmail(String prefix) {
-        return prefix + "-" + UUID.randomUUID() + "@example.com";
+        String email = prefix + "-" + UUID.randomUUID() + "@example.com";
+        testEmails.add(email);
+        return email;
     }
 }

@@ -2,40 +2,50 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { useChoreSync } from "@/lib/chore-sync/store"
-import { householdStats, todayChores, upcomingWeekChores } from "@/lib/chore-sync/selectors"
+import { ApiError } from "@/lib/auth/api"
+import { choreApi, type HouseholdDashboard } from "@/lib/household/chores"
 import { useHouseholds } from "@/lib/household/household-context"
 import type { Household } from "@/lib/household/api"
-import { Button } from "@/components/ui/button"
 import { BottomNav } from "../bottom-nav"
-import { TodayChoreCard, WeekChoreCard } from "../chore-card"
-import { BellIcon, HouseGlyphIcon } from "../icons"
+import { ServerAssignmentCard, ServerWeekAssignmentCard } from "../chore-card"
+import { HouseGlyphIcon } from "../icons"
 import { InviteHousemateDialog } from "../invite-housemate-dialog"
 import { Avatar, ProgressBar, SectionHeader } from "../primitives"
-import { UserPlus } from "lucide-react"
 
 function greetingForNow() {
   const hour = new Date().getHours()
   return hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening"
 }
 
-const notifications = [
-  { icon: "📋", text: "You have been assigned Bathroom Cleaning.", time: "2h ago" },
-  { icon: "⏰", text: "Kitchen cleaning is due today at 6 PM.", time: "4h ago" },
-  { icon: "✅", text: "Ahmed completed Garbage Duty.", time: "1d ago" },
-]
-
 export function DashboardScreen() {
-  const { state, navigate, markComplete } = useChoreSync()
+  const { state, navigate } = useChoreSync()
   const { households, createdHouseholdInvite, queueCreatedHouseholdInvite } = useHouseholds()
-  const [showNotif, setShowNotif] = useState(false)
+  const [dashboard, setDashboard] = useState<HouseholdDashboard | null>(null)
+  const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading")
+  const [error, setError] = useState<string | null>(null)
+  const [completingId, setCompletingId] = useState<string | null>(null)
   const [inviteHousehold, setInviteHousehold] = useState<Household | null>(null)
-
-  const today = todayChores(state)
-  const week = upcomingWeekChores(state)
-  const stats = householdStats(state)
-  const greeting = greetingForNow()
   const household = households[0]
   const canInvite = household?.currentUserRole === "OWNER" || household?.currentUserRole === "ADMIN"
+
+  const loadDashboard = useCallback(async () => {
+    if (!household) {
+      setError("Your household could not be found.")
+      setStatus("error")
+      return
+    }
+    setStatus("loading")
+    setError(null)
+    try {
+      setDashboard(await choreApi.dashboard(household.id))
+      setStatus("loaded")
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : "Unable to load your dashboard. Please try again.")
+      setStatus("error")
+    }
+  }, [household])
+
+  useEffect(() => { void loadDashboard() }, [loadDashboard])
 
   useEffect(() => {
     if (!createdHouseholdInvite) return
@@ -43,52 +53,40 @@ export function DashboardScreen() {
     queueCreatedHouseholdInvite(null)
   }, [createdHouseholdInvite, queueCreatedHouseholdInvite])
 
-  const openInvite = useCallback(() => {
-    if (household && canInvite) setInviteHousehold(household)
-  }, [canInvite, household])
+  const completeAssignment = async (assignmentId: string) => {
+    if (!household || completingId) return
+    setCompletingId(assignmentId)
+    setError(null)
+    try {
+      await choreApi.complete(household.id, assignmentId)
+      await loadDashboard()
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : "Unable to complete this chore. Please try again.")
+    } finally {
+      setCompletingId(null)
+    }
+  }
 
   const setInviteOpen = useCallback((open: boolean) => {
     if (!open) setInviteHousehold(null)
   }, [])
+  const summary = dashboard?.weekSummary
+  const today = dashboard?.today ?? []
+  const week = dashboard?.thisWeek ?? []
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 pb-20">
       <header className="bg-white px-5 pt-12 pb-5">
         <div className="flex items-center justify-between mb-1">
           <div>
-            <p className="text-slate-500 text-sm font-medium">{greeting},</p>
+            <p className="text-slate-500 text-sm font-medium">{greetingForNow()},</p>
             <h1 className="text-2xl font-black text-slate-900 font-display">{state.currentUser.name} 👋</h1>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowNotif((v) => !v)}
-              aria-label="Notifications"
-              className="relative w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center"
-            >
-              <BellIcon className="w-5 h-5 text-slate-600" />
-              <span className="absolute top-2 right-2 w-2 h-2 bg-rose-500 rounded-full" />
-            </button>
-            <Avatar initial={state.currentUser.avatar} className="w-10 h-10 text-sm" />
-          </div>
+          <Avatar initial={state.currentUser.avatar} className="w-10 h-10 text-sm" />
         </div>
-        <div className="mt-2 flex min-w-0 items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <HouseGlyphIcon className="h-3.5 w-3.5 shrink-0 text-teal-600" />
-            <span className="truncate text-xs font-semibold text-teal-600">
-              {household?.name ?? state.household.name}
-            </span>
-          </div>
-          {household && canInvite && (
-            <Button
-              className="h-8 shrink-0 gap-1.5 rounded-lg border-teal-100 bg-teal-50 px-2.5 text-xs font-semibold text-teal-700 hover:bg-teal-100"
-              onClick={openInvite}
-              type="button"
-              variant="outline"
-            >
-              <UserPlus aria-hidden="true" />
-              Invite housemate
-            </Button>
-          )}
+        <div className="mt-2 flex min-w-0 items-center gap-1.5">
+          <HouseGlyphIcon className="h-3.5 w-3.5 shrink-0 text-teal-600" />
+          <span className="truncate text-xs font-semibold text-teal-600">{household?.name ?? "Your household"}</span>
         </div>
       </header>
 
@@ -100,79 +98,81 @@ export function DashboardScreen() {
         />
       )}
 
-      {showNotif && (
-        <div className="mx-4 mt-2 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden z-10 relative">
-          <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-            <span className="font-bold text-slate-900 text-sm">Notifications</span>
-            <button onClick={() => setShowNotif(false)} className="text-slate-400 text-xs">
-              Dismiss all
-            </button>
-          </div>
-          {notifications.map((n, i) => (
-            <div key={i} className="px-4 py-3 flex items-start gap-3 border-b border-slate-50 last:border-0">
-              <span className="text-xl">{n.icon}</span>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-slate-700 leading-snug">{n.text}</p>
-                <p className="text-xs text-slate-400 mt-0.5">{n.time}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
       <div className="px-4 pt-4 flex flex-col gap-4">
-        <section className="bg-gradient-to-br from-teal-600 to-teal-500 rounded-2xl p-5 text-white">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <p className="text-teal-100 text-xs font-medium uppercase tracking-wider">This Week</p>
-              <p className="text-2xl font-black mt-0.5 font-display">{stats.completionRate}% done</p>
-            </div>
-            <div className="text-right">
-              <p className="text-teal-100 text-xs">Completed</p>
-              <p className="text-xl font-black font-display">
-                {stats.completedChores}/{stats.totalChores}
-              </p>
-            </div>
+        {status === "loading" && (
+          <div aria-label="Loading dashboard" className="space-y-4">
+            {[0, 1, 2].map((item) => <div className="h-28 animate-pulse rounded-2xl bg-white shadow-sm" key={item} />)}
           </div>
-          <ProgressBar value={stats.completionRate} trackClass="bg-teal-700/50" barClass="bg-white" className="h-2" />
-          <p className="text-teal-100 text-xs mt-2">Household completion rate</p>
-        </section>
-
-        <section>
-          <SectionHeader
-            title="Today"
-            action={
-              today.length > 0 ? (
-                <span className="text-xs bg-rose-100 text-rose-600 font-semibold px-2 py-0.5 rounded-full">
-                  {today.length} pending
-                </span>
-              ) : null
-            }
-          />
-
-          {today.length === 0 ? (
-            <div className="bg-white rounded-2xl p-6 text-center border border-slate-100">
-              <div className="text-4xl mb-2">🎉</div>
-              <p className="font-bold text-slate-900">No chores due today!</p>
-              <p className="text-slate-400 text-sm mt-1">Enjoy your free time</p>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {today.map((chore) => (
-                <TodayChoreCard key={chore.id} chore={chore} onComplete={markComplete} />
-              ))}
-            </div>
-          )}
-        </section>
-
-        <section>
-          <SectionHeader title="This Week" />
-          <div className="flex gap-3 overflow-x-auto pb-1">
-            {week.slice(0, 5).map((chore) => (
-              <WeekChoreCard key={chore.id} chore={chore} />
-            ))}
+        )}
+        {status === "error" && (
+          <div className="rounded-2xl border border-slate-100 bg-white p-5 text-center">
+            <p role="alert" className="text-sm text-slate-600">{error}</p>
+            <button className="mt-3 rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700" onClick={() => void loadDashboard()} type="button">Try again</button>
           </div>
-        </section>
+        )}
+        {status === "loaded" && error && <p role="alert" className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
+        {status === "loaded" && dashboard && (
+          <>
+            <section className="bg-gradient-to-br from-teal-600 to-teal-500 rounded-2xl p-5 text-white">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <p className="text-teal-100 text-xs font-medium uppercase tracking-wider">This Week</p>
+                  <p className="text-2xl font-black mt-0.5 font-display">{summary?.completionPercentage ?? 0}% done</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-teal-100 text-xs">Completed</p>
+                  <p className="text-xl font-black font-display">{summary?.completedCount ?? 0}/{summary?.totalCount ?? 0}</p>
+                </div>
+              </div>
+              <ProgressBar value={summary?.completionPercentage ?? 0} trackClass="bg-teal-700/50" barClass="bg-white" className="h-2" />
+              <p className="text-teal-100 text-xs mt-2">Household completion rate</p>
+            </section>
+
+            <section>
+              <SectionHeader
+                title="Today"
+                action={today.length > 0 ? (
+                  <span className="text-xs bg-rose-100 text-rose-600 font-semibold px-2 py-0.5 rounded-full">
+                    {today.filter((item) => item.status === "PENDING").length} pending
+                  </span>
+                ) : null}
+              />
+              {today.length === 0 ? (
+                <div className="bg-white rounded-2xl p-6 text-center border border-slate-100">
+                  <div className="text-4xl mb-2">🎉</div>
+                  <p className="font-bold text-slate-900">No chores due today!</p>
+                  <p className="text-slate-400 text-sm mt-1">Enjoy your free time</p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {today.map((assignment) => (
+                    <ServerAssignmentCard
+                      assignment={assignment}
+                      completing={completingId === assignment.id}
+                      currentUserId={state.currentUser.id}
+                      householdTimezone={household?.timezone ?? "UTC"}
+                      key={assignment.id}
+                      onComplete={(id) => void completeAssignment(id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section>
+              <SectionHeader title="This Week" />
+              {week.length === 0 ? (
+                <div className="rounded-2xl border border-slate-100 bg-white p-5 text-center text-sm text-slate-400">No chores scheduled this week.</div>
+              ) : (
+                <div className="flex gap-3 overflow-x-auto pb-1">
+                  {week.slice(0, 10).map((assignment) => (
+                    <ServerWeekAssignmentCard assignment={assignment} currentUserId={state.currentUser.id} householdTimezone={household?.timezone ?? "UTC"} key={assignment.id} />
+                  ))}
+                </div>
+              )}
+            </section>
+          </>
+        )}
       </div>
 
       <BottomNav active="dashboard" navigate={navigate} />
