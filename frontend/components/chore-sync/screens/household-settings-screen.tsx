@@ -5,7 +5,20 @@ import { ApiError } from "@/lib/auth/api"
 import { useChoreSync } from "@/lib/chore-sync/store"
 import { householdApi, type HouseholdSettings } from "@/lib/household/api"
 import { useHouseholds } from "@/lib/household/household-context"
+import { notificationApi, type NotificationStyle } from "@/lib/notifications/api"
 import { SubpageHeader } from "./subpage-header"
+
+const notificationStyles: Array<[NotificationStyle, string]> = [
+  ["NORMAL", "Normal"],
+  ["FUNNY", "Funny"],
+  ["MOTIVATIONAL", "Motivational"],
+  ["COMPETITIVE", "Competitive"],
+  ["MINIMAL", "Minimal"],
+]
+
+function isNotificationStyle(value: string): value is NotificationStyle {
+  return notificationStyles.some(([style]) => style === value)
+}
 
 function dateLabel(value: string) {
   const date = new Date(value)
@@ -24,6 +37,9 @@ export function HouseholdSettingsScreen() {
   const [saved, setSaved] = useState(false)
   const [busy, setBusy] = useState(false)
   const [confirmLeave, setConfirmLeave] = useState(false)
+  const [notificationStyle, setNotificationStyle] = useState<NotificationStyle>("NORMAL")
+  const [styleSaved, setStyleSaved] = useState(false)
+  const [styleError, setStyleError] = useState("")
 
   const loadSettings = useCallback(async () => {
     if (!household) {
@@ -38,6 +54,7 @@ export function HouseholdSettingsScreen() {
       setSettings(result)
       setName(result.name)
       setDescription(result.description ?? "")
+      setNotificationStyle(result.notificationStyle ?? "NORMAL")
       setStatus("loaded")
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : "Unable to load household settings. Please try again.")
@@ -47,6 +64,7 @@ export function HouseholdSettingsScreen() {
 
   useEffect(() => { void loadSettings() }, [loadSettings])
   const canEdit = settings?.currentUserRole === "OWNER"
+  const canEditNotificationStyle = settings?.currentUserRole === "OWNER" || settings?.currentUserRole === "ADMIN"
   const canLeave = settings?.currentUserRole !== "OWNER"
 
   const save = async () => {
@@ -72,6 +90,21 @@ export function HouseholdSettingsScreen() {
       setBusy(false)
     }
     if (didSave) await refresh().catch(() => undefined)
+  }
+
+  const saveNotificationStyle = async () => {
+    if (!household || busy) return
+    setBusy(true)
+    setStyleError("")
+    setStyleSaved(false)
+    try {
+      await notificationApi.setHouseholdStyle(household.id, notificationStyle)
+      setStyleSaved(true)
+    } catch (cause) {
+      setStyleError(cause instanceof ApiError ? cause.message : "Unable to save the household notification style.")
+    } finally {
+      setBusy(false)
+    }
   }
 
   const leave = async () => {
@@ -104,6 +137,33 @@ export function HouseholdSettingsScreen() {
         {status === "loaded" && settings && (
           <>
             <section className="flex flex-col gap-4 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+              <div className="flex flex-col gap-3 border-b border-slate-100 pb-4">
+                <label className="flex flex-col gap-1.5 text-xs font-bold text-slate-500">
+                  Default notification style
+                  <select
+                    aria-label="Default notification style"
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-900 disabled:bg-slate-50"
+                    disabled={!canEditNotificationStyle || busy}
+                    onChange={(event) => {
+                      if (isNotificationStyle(event.target.value)) {
+                        setNotificationStyle(event.target.value)
+                        setStyleSaved(false)
+                      }
+                    }}
+                    value={notificationStyle}
+                  >
+                    {notificationStyles.map(([style, label]) => <option key={style} value={style}>{label}</option>)}
+                  </select>
+                </label>
+                <p className="text-xs text-slate-400">Members can choose their own style in notification settings.</p>
+                {canEditNotificationStyle && (
+                  <button className="w-full rounded-xl border border-slate-200 py-3 text-sm font-bold text-slate-700 disabled:opacity-50" disabled={busy} onClick={() => void saveNotificationStyle()} type="button">
+                    Save default style
+                  </button>
+                )}
+                {styleSaved && <p role="status" className="text-center text-xs font-medium text-teal-700">Default style saved.</p>}
+                {styleError && <p role="alert" className="text-xs text-rose-600">{styleError}</p>}
+              </div>
               <label className="flex flex-col gap-1.5 text-xs font-bold text-slate-500">
                 Household name
                 <input aria-label="Household name" className="rounded-xl border border-slate-200 px-3 py-3 text-sm font-medium text-slate-900 outline-none focus:border-teal-500 disabled:bg-slate-50 disabled:text-slate-500" disabled={!canEdit} maxLength={120} onChange={(event) => { setName(event.target.value); setSaved(false) }} value={name} />
@@ -128,8 +188,11 @@ export function HouseholdSettingsScreen() {
                 <button className="w-full rounded-xl bg-teal-600 py-3.5 text-sm font-bold text-white hover:bg-teal-700 disabled:opacity-50" disabled={busy || name.trim().length < 2} onClick={() => void save()} type="button">
                   {busy ? "Saving…" : "Save changes"}
                 </button>
-              ) : <p className="rounded-xl bg-slate-50 p-3 text-xs text-slate-500">Only the household owner can edit these details.</p>}
-              {saved && <p className="text-center text-sm font-medium text-teal-700" role="status">Household settings saved.</p>}
+              ) : (
+                <p className="rounded-xl bg-slate-50 px-3 py-3 text-center text-xs text-slate-500">Only the household owner can edit these details.</p>
+              )}
+              {saved && <p role="status" className="text-center text-xs font-medium text-teal-700">Household settings saved.</p>}
+              {error && <p role="alert" className="text-xs text-rose-600">{error}</p>}
             </section>
 
             <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">

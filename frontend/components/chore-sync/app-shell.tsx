@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
+import type { Screen } from "@/lib/chore-sync/types"
 import { AuthProvider, useAuth } from "@/lib/auth/auth-context"
 import { getAuthRedirect } from "@/lib/auth/routing"
 import { ChoreSyncProvider, useChoreSync } from "@/lib/chore-sync/store"
@@ -27,6 +28,23 @@ function ScreenRouter() {
   const { screen, adminTab, navigate, setCurrentUser } = useChoreSync()
   const { user, isAuthenticated, isLoading, authError, refreshUser } = useAuth()
   const { households, status: householdStatus, error: householdError, refresh: refreshHouseholds } = useHouseholds()
+
+  useEffect(() => {
+    const target = new URLSearchParams(window.location.search).get("screen")
+    const screenTargets = new Map<string, Screen>([
+      ["dashboard", "dashboard"],
+      ["my-chores", "my-chores"],
+      ["household", "household"],
+      ["notifications", "notifications"],
+      ["profile", "profile"],
+      ["household-settings", "household-settings"],
+      ["admin", "admin"],
+    ])
+    const screenTarget = target ? screenTargets.get(target) : undefined
+    if (screenTarget) {
+      navigate(screenTarget)
+    }
+  }, [navigate])
 
   useEffect(() => {
     if (user) {

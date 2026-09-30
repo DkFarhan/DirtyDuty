@@ -1,6 +1,8 @@
 "use client"
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react"
+import { notificationApi } from "@/lib/notifications/api"
+import { removeBrowserPushSubscription } from "@/lib/notifications/push"
 import { ApiError, api, clearCsrfToken, getCsrfToken } from "./api"
 
 export type AuthUser = {
@@ -71,6 +73,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const logout = async () => {
+        try {
+            if (typeof window !== "undefined") {
+                const endpoint = await removeBrowserPushSubscription()
+                if (endpoint) {
+                    try {
+                        await notificationApi.unsubscribePush(endpoint)
+                    } catch (error) {
+                        console.warn("Ignoring browser push cleanup failure during logout.", error)
+                    }
+                }
+            }
+        } catch (error) {
+            console.warn("Ignoring browser push cleanup failure during logout.", error)
+        }
+
         await api.post<void>("/api/auth/logout")
         setUser(null)
         clearCsrfToken()

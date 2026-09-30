@@ -21,6 +21,7 @@ export function MyChoresScreen() {
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [completingId, setCompletingId] = useState<string | null>(null)
+  const [targetAssignmentId, setTargetAssignmentId] = useState<string | null>(null)
   const household = households[0]
 
   const loadChores = useCallback(async () => {
@@ -47,6 +48,19 @@ export function MyChoresScreen() {
 
   useEffect(() => { void loadChores() }, [loadChores])
 
+  useEffect(() => {
+    setTargetAssignmentId(new URLSearchParams(window.location.search).get("assignmentId"))
+  }, [])
+
+  useEffect(() => {
+    if (status !== "loaded" || !targetAssignmentId) return
+    if (upcoming.some((assignment) => assignment.id === targetAssignmentId)) {
+      setTab("upcoming")
+    } else if (completed.some((assignment) => assignment.id === targetAssignmentId)) {
+      setTab("completed")
+    }
+  }, [completed, status, targetAssignmentId, upcoming])
+
   const completeAssignment = async (assignmentId: string) => {
     if (!household || completingId) return
     setCompletingId(assignmentId)
@@ -62,6 +76,14 @@ export function MyChoresScreen() {
   }
 
   const displayed = tab === "upcoming" ? upcoming : completed
+
+  useEffect(() => {
+    if (status !== "loaded" || !targetAssignmentId) return
+    document.getElementById(`assignment-${targetAssignmentId}`)?.scrollIntoView?.({
+      behavior: "smooth",
+      block: "center",
+    })
+  }, [displayed, status, targetAssignmentId])
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 pb-20">
@@ -113,14 +135,15 @@ export function MyChoresScreen() {
           </div>
         )}
         {status === "loaded" && displayed.map((assignment) => (
-          <ServerAssignmentCard
-            assignment={assignment}
-            completing={completingId === assignment.id}
-            currentUserId={state.currentUser.id}
-            householdTimezone={household?.timezone ?? "UTC"}
-            key={assignment.id}
-            onComplete={(id) => void completeAssignment(id)}
-          />
+          <div id={`assignment-${assignment.id}`} key={assignment.id}>
+            <ServerAssignmentCard
+              assignment={assignment}
+              completing={completingId === assignment.id}
+              currentUserId={state.currentUser.id}
+              householdTimezone={household?.timezone ?? "UTC"}
+              onComplete={(id) => void completeAssignment(id)}
+            />
+          </div>
         ))}
       </div>
 

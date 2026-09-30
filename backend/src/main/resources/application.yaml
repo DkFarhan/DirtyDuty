@@ -28,6 +28,12 @@ app:
     invitation-expiration: ${HOUSEHOLD_INVITATION_EXPIRATION:7d}
   security:
     session-cookie-secure: ${SESSION_COOKIE_SECURE:true}
+  notifications:
+    scheduler-delay: ${NOTIFICATION_SCHEDULER_DELAY:60000}
+    web-push:
+      public-key: ${WEB_PUSH_PUBLIC_KEY:}
+      private-key: ${WEB_PUSH_PRIVATE_KEY:}
+      subject: ${WEB_PUSH_SUBJECT:mailto:support@dirtyduty.app}
 
 server:
   port: 8080

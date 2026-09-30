@@ -193,8 +193,7 @@ public class HouseholdService {
                 "HOUSEHOLD",
                 householdId,
                 "HOUSEHOLD_UPDATE",
-                "New household member",
-                user.getDisplayName() + " joined your household.",
+                java.util.Map.of(),
                 otherMembers));
         notificationEventService.publish(new NotificationEvent(
                 "INVITE_ACCEPTED",
@@ -203,8 +202,7 @@ public class HouseholdService {
                 "INVITATION",
                 invitation.getId(),
                 "HOUSEHOLD_UPDATE",
-                "Invitation accepted",
-                user.getDisplayName() + " accepted your household invitation.",
+                java.util.Map.of(),
                 List.of(invitation.getCreatedByUser().getId())));
 
         return HouseholdMapper.toResponse(invitation.getHousehold(), membership.getRole());

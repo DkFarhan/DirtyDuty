@@ -18,7 +18,7 @@ const accountItems = [
 ]
 
 export function ProfileScreen() {
-  const { state, navigate } = useChoreSync()
+  const { state, navigate, openNotifications } = useChoreSync()
   const { logout } = useAuth()
   const [profile, setProfile] = useState<Profile | null>(null)
   const [unreadCount, setUnreadCount] = useState(0)
@@ -78,7 +78,7 @@ export function ProfileScreen() {
               </div>
             </div>
           </div>
-          <button aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"} className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-50 text-slate-600 hover:bg-teal-50 hover:text-teal-700" onClick={() => navigate("notifications")} type="button">
+          <button aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"} className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-50 text-slate-600 hover:bg-teal-50 hover:text-teal-700" onClick={() => openNotifications("profile")} type="button">
             <BellIcon className="h-5 w-5" />
             {unreadCount > 0 && <span aria-label={`${unreadCount} unread`} className="absolute -right-1 -top-1 flex min-h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">{unreadCount > 99 ? "99+" : unreadCount}</span>}
           </button>
@@ -110,7 +110,13 @@ export function ProfileScreen() {
         <section className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
           <p className="px-4 pb-2 pt-4 font-display text-xs font-black uppercase tracking-wider text-slate-500">Account</p>
           {accountItems.map((item) => (
-            <button key={item.label} className="flex w-full items-center gap-4 border-t border-slate-50 px-4 py-3.5 transition-colors hover:bg-slate-50" onClick={() => navigate(item.screen)} type="button">
+            <button key={item.label} className="flex w-full items-center gap-4 border-t border-slate-50 px-4 py-3.5 transition-colors hover:bg-slate-50" onClick={() => {
+              if (item.screen === "notifications") {
+                openNotifications("profile")
+                return
+              }
+              navigate(item.screen)
+            }} type="button">
               <span aria-hidden="true" className="w-7 text-center text-lg">{item.icon}</span>
               <span className="flex-1 text-left text-sm font-medium text-slate-800">{item.label}</span>
               {item.screen === "notifications" && unreadCount > 0 && <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700">{unreadCount}</span>}

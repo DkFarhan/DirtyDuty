@@ -20,7 +20,7 @@ function greetingForNow() {
 }
 
 export function DashboardScreen() {
-  const { state, navigate } = useChoreSync()
+  const { state, navigate, openNotifications } = useChoreSync()
   const { households, createdHouseholdInvite, queueCreatedHouseholdInvite } = useHouseholds()
   const [dashboard, setDashboard] = useState<HouseholdDashboard | null>(null)
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading")
@@ -89,7 +89,7 @@ export function DashboardScreen() {
             <h1 className="truncate text-2xl font-black text-slate-900 font-display">{state.currentUser.name} 👋</h1>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <button aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"} className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 text-slate-600 hover:bg-teal-50 hover:text-teal-700" onClick={() => navigate("notifications")} type="button">
+            <button aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"} className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 text-slate-600 hover:bg-teal-50 hover:text-teal-700" onClick={() => openNotifications("dashboard")} type="button">
               <BellIcon className="h-5 w-5" />
               {unreadCount > 0 && <span aria-label={`${unreadCount} unread`} className="absolute -right-1 -top-1 flex min-h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">{unreadCount > 99 ? "99+" : unreadCount}</span>}
             </button>

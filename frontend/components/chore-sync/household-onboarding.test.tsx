@@ -297,4 +297,91 @@ describe("household onboarding", () => {
     expect(await screen.findByRole("button", { name: "Sign In" })).toBeTruthy()
     expect(fetchMock.mock.calls.some(([url]) => url === "http://localhost:8080/api/auth/logout")).toBe(true)
   })
+
+  it("returns notifications to Home or Profile based on the in-app origin", async () => {
+    fetchMock.mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.endsWith("/api/auth/me")) return jsonResponse(user)
+      if (url.endsWith("/api/households")) return jsonResponse([household])
+      if (url.endsWith("/api/households/home-1/dashboard")) return jsonResponse(dashboard)
+      if (url.endsWith("/api/notifications/unread-count")) return jsonResponse({ count: 0 })
+      if (url.endsWith("/api/notifications")) return jsonResponse([])
+      if (url.endsWith("/api/notifications/preferences")) {
+        return jsonResponse({
+          choreAssignedEnabled: true,
+          choreRemindersEnabled: true,
+          overdueEnabled: true,
+          choreCompletionEnabled: true,
+          householdUpdatesEnabled: true,
+          quietHoursStart: null,
+          quietHoursEnd: null,
+          notificationStyleOverride: null,
+          householdNotificationStyle: "NORMAL",
+          funnyNotificationsEnabled: false,
+          competitiveNotificationsEnabled: true,
+          pushEnabled: false,
+        })
+      }
+      if (url.endsWith("/api/profile")) {
+        return jsonResponse({
+          id: user.userId,
+          displayName: user.displayName,
+          email: user.email,
+          avatarUrl: null,
+          householdName: household.name,
+          assigned: 0,
+          completed: 0,
+          completionRate: 0,
+        })
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    render(<AppShell />)
+    expect(await screen.findByText("Today")).toBeTruthy()
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Notifications" })[0])
+    expect(await screen.findByRole("heading", { name: "Notifications" })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Back" }))
+    expect(await screen.findByText("Today")).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("button", { name: "Profile" }))
+    expect(await screen.findByText(user.displayName)).toBeTruthy()
+    fireEvent.click(screen.getAllByRole("button", { name: "Notifications" })[0])
+    expect(await screen.findByRole("heading", { name: "Notifications" })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Back" }))
+    expect(await screen.findByText(user.displayName)).toBeTruthy()
+  })
+
+  it("uses Home as a safe fallback for direct notification URLs with external return targets", async () => {
+    window.history.replaceState({}, "", "/?screen=notifications&returnTo=https%3A%2F%2Fevil.example")
+    fetchMock.mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.endsWith("/api/auth/me")) return jsonResponse(user)
+      if (url.endsWith("/api/households")) return jsonResponse([household])
+      if (url.endsWith("/api/notifications/unread-count")) return jsonResponse({ count: 0 })
+      if (url.endsWith("/api/notifications")) return jsonResponse([])
+      if (url.endsWith("/api/notifications/preferences")) return jsonResponse({
+        choreAssignedEnabled: true,
+        choreRemindersEnabled: true,
+        overdueEnabled: true,
+        choreCompletionEnabled: true,
+        householdUpdatesEnabled: true,
+        quietHoursStart: null,
+        quietHoursEnd: null,
+        notificationStyleOverride: null,
+        householdNotificationStyle: "NORMAL",
+        funnyNotificationsEnabled: false,
+        competitiveNotificationsEnabled: true,
+        pushEnabled: false,
+      })
+      if (url.endsWith("/api/households/home-1/dashboard")) return jsonResponse(dashboard)
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    render(<AppShell />)
+
+    expect(await screen.findByRole("heading", { name: "Notifications" })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Back" }))
+    expect(await screen.findByText("Today")).toBeTruthy()
+    expect(window.location.href).not.toContain("evil.example")
+  })
 })

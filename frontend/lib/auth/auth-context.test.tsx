@@ -5,6 +5,8 @@ import { useState } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { AuthProvider, useAuth } from "./auth-context"
 import { ApiError, api, clearCsrfToken, getCsrfToken } from "./api"
+import { notificationApi } from "@/lib/notifications/api"
+import { removeBrowserPushSubscription } from "@/lib/notifications/push"
 
 vi.mock("./api", () => {
     class MockApiError extends Error {
@@ -25,6 +27,14 @@ vi.mock("./api", () => {
         getCsrfToken: vi.fn(),
     }
 })
+
+vi.mock("@/lib/notifications/api", () => ({
+    notificationApi: { unsubscribePush: vi.fn() },
+}))
+
+vi.mock("@/lib/notifications/push", () => ({
+    removeBrowserPushSubscription: vi.fn(),
+}))
 
 const user = {
     userId: "user-1",
@@ -61,6 +71,8 @@ function renderAuth() {
 describe("AuthProvider", () => {
     beforeEach(() => {
         vi.resetAllMocks()
+        vi.mocked(removeBrowserPushSubscription).mockReset()
+        vi.mocked(notificationApi.unsubscribePush).mockReset()
         clearCsrfToken()
     })
 
@@ -172,6 +184,24 @@ describe("AuthProvider", () => {
         await waitFor(() => expect(screen.getByTestId("authenticated").textContent).toBe("false"))
         expect(api.post).toHaveBeenCalledWith("/api/auth/logout")
         expect(clearCsrfToken).toHaveBeenCalledOnce()
+    })
+
+    it("cleans up the current browser subscription before logout and ignores cleanup failures", async () => {
+        vi.mocked(api.get).mockResolvedValueOnce(user)
+        vi.mocked(removeBrowserPushSubscription).mockResolvedValueOnce("https://push.example.test/current-subscription")
+        vi.mocked(notificationApi.unsubscribePush).mockResolvedValueOnce(undefined)
+        vi.mocked(api.post).mockResolvedValueOnce(undefined)
+
+        renderAuth()
+        await waitFor(() => expect(screen.getByTestId("authenticated").textContent).toBe("true"))
+        fireEvent.click(screen.getByRole("button", { name: "Logout" }))
+
+        await waitFor(() => expect(screen.getByTestId("authenticated").textContent).toBe("false"))
+        expect(removeBrowserPushSubscription).toHaveBeenCalledOnce()
+        expect(notificationApi.unsubscribePush).toHaveBeenCalledWith("https://push.example.test/current-subscription")
+        expect(vi.mocked(notificationApi.unsubscribePush).mock.invocationCallOrder[0]).toBeLessThan(
+            vi.mocked(api.post).mock.invocationCallOrder[0],
+        )
     })
 
     it("retains authenticated state when backend logout fails", async () => {

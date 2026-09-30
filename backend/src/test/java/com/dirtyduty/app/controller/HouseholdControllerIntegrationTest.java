@@ -10,6 +10,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.dirtyduty.app.dto.auth.CsrfResponse;
 import com.dirtyduty.app.dto.auth.RegisterRequest;
@@ -19,15 +25,25 @@ import com.dirtyduty.app.entity.enums.HouseholdRole;
 import com.dirtyduty.app.repository.HouseholdMembershipRepository;
 import com.dirtyduty.app.repository.UserRepository;
 import com.dirtyduty.app.service.AuthService;
+import com.dirtyduty.app.notification.NotificationCooldownService;
+import com.dirtyduty.app.notification.NotificationMessage;
+import com.dirtyduty.app.notification.NotificationScheduler;
+import com.dirtyduty.app.notification.NotificationEvent;
+import com.dirtyduty.app.notification.NotificationEventService;
+import com.dirtyduty.app.notification.NotificationTemplateResolver;
+import com.dirtyduty.app.notification.WebPushClient;
+import com.dirtyduty.app.notification.WebPushNotificationProvider;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.Cookie;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.time.OffsetDateTime;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -41,6 +57,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -64,10 +81,28 @@ class HouseholdControllerIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private NotificationCooldownService notificationCooldownService;
+
+    @Autowired
+    private NotificationScheduler notificationScheduler;
+
+    @Autowired
+    private NotificationEventService notificationEventService;
+
+    @Autowired
+    private NotificationTemplateResolver notificationTemplateResolver;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @MockitoSpyBean
     private HouseholdMembershipRepository householdMembershipRepository;
+
+    @MockitoBean
+    private WebPushClient webPushClient;
+
+    @MockitoSpyBean
+    private WebPushNotificationProvider webPushProvider;
 
     private final AtomicBoolean failOwnerMembershipSave = new AtomicBoolean();
 
@@ -75,6 +110,54 @@ class HouseholdControllerIntegrationTest {
     void cleanBefore() {
         failOwnerMembershipSave.set(false);
         clearHouseholdData();
+    }
+
+    private void addPushSubscription(UUID userId, String endpoint) {
+        jdbcTemplate.update("""
+                INSERT INTO push_subscriptions (user_id, endpoint, public_key, auth_secret)
+                VALUES (?, ?, ?, ?)
+                """, userId, endpoint,
+                Base64.getUrlEncoder().withoutPadding().encodeToString(new byte[65]),
+                Base64.getUrlEncoder().withoutPadding().encodeToString(new byte[16]));
+    }
+
+    private NotificationMessage insertPushNotification(UUID userId, String type) {
+        UUID notificationId = UUID.randomUUID();
+        String key = "push-test-" + UUID.randomUUID();
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        jdbcTemplate.update("""
+                INSERT INTO notifications
+                    (id, recipient_user_id, type, category, title, message, status,
+                     scheduled_at, sent_at, expires_at, deduplication_key)
+                VALUES (?, ?, ?, 'GENERAL', 'Title', 'Body', 'SENT', ?, ?, ?, ?)
+                """, notificationId, userId, type, now.minusMinutes(1), now, now.plusHours(1), key);
+        jdbcTemplate.update("""
+                INSERT INTO notification_deliveries (notification_id, channel, status, sent_at)
+                VALUES (?, 'IN_APP', 'SENT', ?), (?, 'WEB_PUSH', 'PENDING', NULL)
+                """, notificationId, now, notificationId);
+        return new NotificationMessage(userId, type, "GENERAL", "NORMAL", "Title", "Body",
+                null, null, now.minusMinutes(1), now.plusHours(1), key);
+    }
+
+    private String deliveryStatus(String deduplicationKey, String channel) {
+        return jdbcTemplate.queryForObject("""
+                SELECT d.status FROM notification_deliveries d
+                JOIN notifications n ON n.id=d.notification_id
+                WHERE n.deduplication_key=? AND d.channel=?
+                """, String.class, deduplicationKey, channel);
+    }
+
+    private int deliveryAttempts(String deduplicationKey, String channel) {
+        return jdbcTemplate.queryForObject("""
+                SELECT d.attempts FROM notification_deliveries d
+                JOIN notifications n ON n.id=d.notification_id
+                WHERE n.deduplication_key=? AND d.channel=?
+                """, Integer.class, deduplicationKey, channel);
+    }
+
+    private boolean subscriptionActive(String endpoint) {
+        return jdbcTemplate.queryForObject(
+                "SELECT active FROM push_subscriptions WHERE endpoint=?", Boolean.class, endpoint);
     }
 
     @AfterEach
@@ -216,6 +299,399 @@ class HouseholdControllerIntegrationTest {
         mockMvc.perform(get("/api/notifications/unread-count").cookie(owner.cookie()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.count").value(0));
+    }
+
+    @Test
+    void pushSubscriptionsArePrivateToTheAuthenticatedUserAndSupportMultipleDevices() throws Exception {
+        WebSession owner = login("pushowner");
+        WebSession other = login("pushother");
+        String firstEndpoint = "https://8.8.8.8/device-one";
+        String secondEndpoint = "https://8.8.8.8/device-two";
+        String key = Base64.getUrlEncoder().withoutPadding().encodeToString(new byte[65]);
+        String auth = Base64.getUrlEncoder().withoutPadding().encodeToString(new byte[16]);
+
+        mockMvc.perform(put("/api/notifications/push-subscriptions")
+                .cookie(owner.cookie())
+                .contentType(APPLICATION_JSON)
+                .content(pushSubscriptionJson(firstEndpoint, key, auth)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(put("/api/notifications/push-subscriptions")
+                .cookie(owner.cookie())
+                .header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content(pushSubscriptionJson(firstEndpoint, key, auth)))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(put("/api/notifications/push-subscriptions")
+                .cookie(owner.cookie())
+                .header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content(pushSubscriptionJson(secondEndpoint, key, auth)))
+                .andExpect(status().isNoContent());
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM push_subscriptions WHERE user_id=? AND active=TRUE",
+                Integer.class, UUID.fromString(owner.userId()))).isEqualTo(2);
+
+        mockMvc.perform(put("/api/notifications/push-subscriptions")
+                .cookie(other.cookie())
+                .header(other.csrfHeader(), other.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content(pushSubscriptionJson(firstEndpoint, key, auth)))
+                .andExpect(status().isConflict());
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM push_subscriptions WHERE user_id=?",
+                Integer.class, UUID.fromString(other.userId()))).isZero();
+
+        mockMvc.perform(post("/api/notifications/push-subscriptions/unsubscribe")
+                .cookie(other.cookie())
+                .header(other.csrfHeader(), other.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content("{\"endpoint\":\"" + firstEndpoint + "\"}"))
+                .andExpect(status().isNoContent());
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT active FROM push_subscriptions WHERE endpoint=?",
+                Boolean.class, firstEndpoint)).isTrue();
+
+        mockMvc.perform(post("/api/notifications/push-subscriptions/unsubscribe")
+                .cookie(owner.cookie())
+                .header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content("{\"endpoint\":\"" + firstEndpoint + "\"}"))
+                .andExpect(status().isNoContent());
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT active FROM push_subscriptions WHERE endpoint=?",
+                Boolean.class, firstEndpoint)).isFalse();
+
+        mockMvc.perform(put("/api/notifications/push-subscriptions")
+                .cookie(owner.cookie())
+                .header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content(pushSubscriptionJson("http://localhost/private", key, auth)))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(put("/api/notifications/push-subscriptions")
+                .cookie(owner.cookie())
+                .header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content(pushSubscriptionJson("https://8.8.8.8/invalid-key", "short", auth)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void notificationPreferencesPreserveOverridesAndHouseholdDefaults() throws Exception {
+        WebSession owner = login("preferenceowner");
+        UUID householdId = createHousehold(owner, "Preference Home", "UTC");
+        UUID userId = UUID.fromString(owner.userId());
+
+        mockMvc.perform(get("/api/notifications/preferences").cookie(owner.cookie()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.notificationStyleOverride").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.householdNotificationStyle").value("NORMAL"));
+
+        mockMvc.perform(put("/api/notifications/households/" + householdId + "/style")
+                .cookie(owner.cookie())
+                .header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content("{\"style\":\"MOTIVATIONAL\"}"))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(put("/api/notifications/preferences")
+                .cookie(owner.cookie())
+                .header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content("""
+                        {
+                          "choreAssignedEnabled": true,
+                          "choreRemindersEnabled": false,
+                          "overdueEnabled": false,
+                          "choreCompletionEnabled": true,
+                          "householdUpdatesEnabled": false,
+                          "quietHoursStart": null,
+                          "quietHoursEnd": null,
+                          "notificationStyleOverride": "FUNNY",
+                          "funnyNotificationsEnabled": false,
+                          "competitiveNotificationsEnabled": false,
+                          "pushEnabled": false
+                        }
+                        """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.choreRemindersEnabled").value(false))
+                .andExpect(jsonPath("$.overdueEnabled").value(false))
+                .andExpect(jsonPath("$.householdUpdatesEnabled").value(false))
+                .andExpect(jsonPath("$.competitiveNotificationsEnabled").value(false))
+                .andExpect(jsonPath("$.pushEnabled").value(false))
+                .andExpect(jsonPath("$.notificationStyleOverride").value("FUNNY"))
+                .andExpect(jsonPath("$.householdNotificationStyle").value("MOTIVATIONAL"));
+
+        String styleEventType = "STYLE_TEST_" + UUID.randomUUID().toString().replace("-", "");
+        jdbcTemplate.update("""
+                INSERT INTO notification_templates (event_type, style, title_template, message_template)
+                VALUES (?, 'FUNNY', 'funny-style', '{chore_name}'),
+                       (?, 'MOTIVATIONAL', 'motivational-style', '{chore_name}')
+                """, styleEventType, styleEventType);
+        NotificationEvent styleEvent = new NotificationEvent(
+                styleEventType, null, householdId, "CHORE_ASSIGNMENT", UUID.randomUUID(),
+                "CHORE_REMINDER", Map.of("chore_name", "Test chore"), List.of(userId));
+        try {
+            assertThat(notificationTemplateResolver.resolve(styleEvent, userId).title()).isEqualTo("funny-style");
+            mockMvc.perform(put("/api/notifications/preferences")
+                    .cookie(owner.cookie())
+                    .header(owner.csrfHeader(), owner.csrfToken())
+                    .contentType(APPLICATION_JSON)
+                    .content("""
+                            {
+                              "choreAssignedEnabled": true,
+                              "choreRemindersEnabled": true,
+                              "overdueEnabled": true,
+                              "choreCompletionEnabled": true,
+                              "householdUpdatesEnabled": true,
+                              "quietHoursStart": null,
+                              "quietHoursEnd": null,
+                              "notificationStyleOverride": null,
+                              "funnyNotificationsEnabled": false,
+                              "competitiveNotificationsEnabled": true,
+                              "pushEnabled": false
+                            }
+                            """))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.notificationStyleOverride").value(org.hamcrest.Matchers.nullValue()))
+                    .andExpect(jsonPath("$.householdNotificationStyle").value("MOTIVATIONAL"));
+            assertThat(notificationTemplateResolver.resolve(styleEvent, userId).title())
+                    .isEqualTo("motivational-style");
+        } finally {
+            jdbcTemplate.update("DELETE FROM notification_templates WHERE event_type=?", styleEventType);
+        }
+    }
+
+    @Test
+    void notificationPreferencesSuppressTheirEventsWithoutCouplingPushAndInApp() throws Exception {
+        WebSession owner = login("preferencefilter");
+        UUID householdId = createHousehold(owner, "Preference Filter Home", "UTC");
+        UUID userId = UUID.fromString(owner.userId());
+
+        setNotificationPreferences(userId, false, true, true, false, false);
+        UUID dueSoonId = UUID.randomUUID();
+        notificationEventService.publish(new NotificationEvent(
+                "CHORE_DUE_SOON", null, householdId, "CHORE_ASSIGNMENT", dueSoonId,
+                "CHORE_REMINDER", Map.of("chore_name", "Kitchen", "due_time", "18:00"), List.of(userId)));
+        assertThat(notificationCountByReference(dueSoonId)).isZero();
+
+        setNotificationPreferences(userId, true, false, true, false, false);
+        UUID overdueId = UUID.randomUUID();
+        notificationEventService.publish(new NotificationEvent(
+                "CHORE_OVERDUE", null, householdId, "CHORE_ASSIGNMENT", overdueId,
+                "CHORE_REMINDER", Map.of("chore_name", "Kitchen", "hours_late", "1"), List.of(userId)));
+        assertThat(notificationCountByReference(overdueId)).isZero();
+
+        setNotificationPreferences(userId, true, true, true, false, false);
+        UUID householdUpdateId = UUID.randomUUID();
+        notificationEventService.publish(new NotificationEvent(
+                "HOUSEHOLD_JOINED", null, householdId, "HOUSEHOLD", householdUpdateId,
+                "HOUSEHOLD_UPDATE", Map.of(), List.of(userId)));
+        assertThat(notificationCountByReference(householdUpdateId)).isZero();
+
+        setNotificationPreferences(userId, true, true, false, true, false);
+        UUID competitiveId = UUID.randomUUID();
+        notificationEventService.publish(new NotificationEvent(
+                "CHORE_OVERDUE", null, householdId, "CHORE_ASSIGNMENT", competitiveId,
+                "COMPETITIVE", Map.of("chore_name", "Kitchen", "hours_late", "1"), List.of(userId)));
+        assertThat(notificationCountByReference(competitiveId)).isZero();
+
+        setNotificationPreferences(userId, true, true, true, true, false);
+        doReturn(true).when(webPushProvider).isConfigured();
+        UUID completionId = UUID.randomUUID();
+        NotificationEvent completionEvent = new NotificationEvent(
+                "CHORE_COMPLETED", null, householdId, "CHORE_ASSIGNMENT", completionId,
+                "CHORE_COMPLETION", Map.of("chore_name", "Kitchen"), List.of(userId));
+        notificationEventService.publish(completionEvent);
+        notificationEventService.publish(completionEvent);
+        assertThat(notificationCountByReference(completionId)).isEqualTo(1);
+        assertThat(notificationStatus(completionId)).isEqualTo("SENT");
+        assertThat(notificationDeliveryStatus(completionId, "IN_APP")).isEqualTo("SENT");
+        assertThat(notificationDeliveryStatus(completionId, "WEB_PUSH")).isEqualTo("CANCELLED");
+    }
+
+    @Test
+    void webPushFailureAndSuccessRemainIndependentFromInAppAndDoNotDuplicateDevices() throws Exception {
+        WebSession owner = login("channelowner");
+        UUID userId = UUID.fromString(owner.userId());
+        doReturn(true).when(webPushProvider).isConfigured();
+        jdbcTemplate.update("""
+                INSERT INTO notification_preferences (user_id, push_enabled)
+                VALUES (?, TRUE) ON CONFLICT (user_id) DO UPDATE SET push_enabled=TRUE
+                """, userId);
+        String staleEndpoint = "https://8.8.8.8/stale-" + UUID.randomUUID();
+        String liveEndpoint = "https://8.8.8.8/live-" + UUID.randomUUID();
+        addPushSubscription(userId, staleEndpoint);
+        addPushSubscription(userId, liveEndpoint);
+        NotificationMessage successfulMessage = insertPushNotification(userId, "CHORE_OVERDUE");
+        when(webPushClient.send(anyString(), anyString(), anyString(), eq(staleEndpoint),
+                anyString(), anyString(), any(byte[].class))).thenReturn(410);
+        when(webPushClient.send(anyString(), anyString(), anyString(), eq(liveEndpoint),
+                anyString(), anyString(), any(byte[].class))).thenReturn(201);
+
+        webPushProvider.deliver(successfulMessage, null);
+
+        assertThat(deliveryStatus(successfulMessage.deduplicationKey(), "IN_APP")).isEqualTo("SENT");
+        assertThat(deliveryStatus(successfulMessage.deduplicationKey(), "WEB_PUSH")).isEqualTo("SENT");
+        assertThat(subscriptionActive(staleEndpoint)).isFalse();
+        assertThat(subscriptionActive(liveEndpoint)).isTrue();
+        webPushProvider.deliver(successfulMessage, null);
+        verify(webPushClient, times(1)).send(
+                anyString(), anyString(), anyString(), eq(staleEndpoint), anyString(), anyString(), any(byte[].class));
+        verify(webPushClient, times(1)).send(
+                anyString(), anyString(), anyString(), eq(liveEndpoint), anyString(), anyString(), any(byte[].class));
+
+        jdbcTemplate.update("UPDATE push_subscriptions SET active=FALSE WHERE user_id=?", userId);
+        String transientEndpoint = "https://8.8.8.8/transient-" + UUID.randomUUID();
+        addPushSubscription(userId, transientEndpoint);
+        NotificationMessage retryMessage = insertPushNotification(userId, "HOUSEHOLD_JOINED");
+        when(webPushClient.send(anyString(), anyString(), anyString(), eq(transientEndpoint),
+                anyString(), anyString(), any(byte[].class)))
+                .thenThrow(new java.io.IOException("temporary push outage"))
+                .thenReturn(201);
+
+        webPushProvider.deliver(retryMessage, null);
+        assertThat(deliveryStatus(retryMessage.deduplicationKey(), "IN_APP")).isEqualTo("SENT");
+        assertThat(deliveryStatus(retryMessage.deduplicationKey(), "WEB_PUSH")).isEqualTo("FAILED");
+        assertThat(deliveryAttempts(retryMessage.deduplicationKey(), "WEB_PUSH")).isEqualTo(1);
+        jdbcTemplate.update("""
+                UPDATE notification_deliveries SET next_attempt_at=NOW() - INTERVAL '1 second'
+                WHERE notification_id=(SELECT id FROM notifications WHERE deduplication_key=?)
+                  AND channel='WEB_PUSH'
+                """, retryMessage.deduplicationKey());
+
+        webPushProvider.deliver(retryMessage, null);
+
+        assertThat(deliveryStatus(retryMessage.deduplicationKey(), "IN_APP")).isEqualTo("SENT");
+        assertThat(deliveryStatus(retryMessage.deduplicationKey(), "WEB_PUSH")).isEqualTo("SENT");
+        assertThat(deliveryAttempts(retryMessage.deduplicationKey(), "WEB_PUSH")).isEqualTo(2);
+        jdbcTemplate.update("""
+                UPDATE notification_deliveries SET status='FAILED', attempts=3, next_attempt_at=NOW()
+                WHERE notification_id=(SELECT id FROM notifications WHERE deduplication_key=?)
+                  AND channel='WEB_PUSH'
+                """, retryMessage.deduplicationKey());
+        webPushProvider.deliver(retryMessage, null);
+        assertThat(deliveryStatus(retryMessage.deduplicationKey(), "WEB_PUSH")).isEqualTo("FAILED");
+        assertThat(deliveryAttempts(retryMessage.deduplicationKey(), "WEB_PUSH")).isEqualTo(3);
+        verify(webPushClient, times(2)).send(anyString(), anyString(), anyString(), eq(transientEndpoint),
+                anyString(), anyString(), any(byte[].class));
+    }
+
+    @Test
+    void cooldownLimitsFiveOverdueRemindersAndCancelsThoseWhoseWindowsExpire() throws Exception {
+        WebSession owner = login("cooldownowner");
+        UUID userId = UUID.fromString(owner.userId());
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        List<NotificationMessage> messages = new java.util.ArrayList<>();
+
+        for (int index = 0; index < 5; index++) {
+            String key = "cooldown-test-" + UUID.randomUUID();
+            UUID notificationId = UUID.randomUUID();
+            jdbcTemplate.update("""
+                    INSERT INTO notifications
+                        (id, recipient_user_id, type, category, title, message, status,
+                         scheduled_at, expires_at, deduplication_key)
+                    VALUES (?, ?, 'CHORE_OVERDUE', 'CHORE_REMINDER', 'Overdue', 'Reminder',
+                            'PENDING', ?, ?, ?)
+                    """, notificationId, userId, now, now.plusMinutes(30), key);
+            jdbcTemplate.update("""
+                    INSERT INTO notification_deliveries (notification_id, channel, status)
+                    VALUES (?, 'IN_APP', 'PENDING')
+                    """, notificationId);
+            messages.add(new NotificationMessage(userId, "CHORE_OVERDUE", "CHORE_REMINDER", "NORMAL",
+                    "Overdue", "Reminder", null, null, now, now.plusMinutes(30), key));
+        }
+
+        List<Boolean> eligibility = new java.util.ArrayList<>();
+        for (NotificationMessage message : messages) {
+            boolean available = notificationCooldownService.isAvailable(
+                    message, now, message.deduplicationKey());
+            eligibility.add(available);
+            if (available) {
+                jdbcTemplate.update("""
+                        UPDATE notifications SET status='SENT', sent_at=? WHERE deduplication_key=?
+                        """, now, message.deduplicationKey());
+                jdbcTemplate.update("""
+                        UPDATE notification_deliveries SET status='SENT', sent_at=?
+                        WHERE notification_id=(SELECT id FROM notifications WHERE deduplication_key=?)
+                          AND channel='IN_APP'
+                        """, now, message.deduplicationKey());
+            }
+        }
+        assertThat(eligibility).containsExactly(true, false, false, false, false);
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM notifications WHERE recipient_user_id=?
+                  AND deduplication_key LIKE 'cooldown-test-%' AND status='PENDING'
+                """, Integer.class, userId)).isEqualTo(4);
+
+        jdbcTemplate.update("""
+                UPDATE notifications SET expires_at=NOW() - INTERVAL '1 second'
+                WHERE recipient_user_id=? AND deduplication_key LIKE 'cooldown-test-%' AND status='PENDING'
+                """, userId);
+        notificationScheduler.run();
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM notifications WHERE recipient_user_id=?
+                  AND deduplication_key LIKE 'cooldown-test-%' AND status='CANCELLED'
+                """, Integer.class, userId)).isEqualTo(4);
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM notification_deliveries d
+                JOIN notifications n ON n.id=d.notification_id
+                WHERE n.recipient_user_id=? AND n.deduplication_key LIKE 'cooldown-test-%'
+                  AND d.status='CANCELLED'
+                """, Integer.class, userId)).isEqualTo(4);
+    }
+
+    @Test
+    void retentionDeletesOnlyReadNotificationsOlderThanNinetyDays() throws Exception {
+        WebSession owner = login("retentionowner");
+        UUID householdId = createHousehold(owner, "Retention Home", "UTC");
+        UUID userId = UUID.fromString(owner.userId());
+        int eventsBefore = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM notification_events WHERE household_id=?",
+                Integer.class, householdId);
+        UUID categoryId = jdbcTemplate.queryForObject(
+                "SELECT id FROM chore_categories WHERE household_id=? ORDER BY sort_order LIMIT 1",
+                UUID.class, householdId);
+        UUID choreId = UUID.randomUUID();
+        UUID assignmentId = UUID.randomUUID();
+        jdbcTemplate.update("""
+                INSERT INTO chores (id, household_id, category_id, title, created_by_user_id)
+                VALUES (?, ?, ?, 'Historical chore', ?)
+                """, choreId, householdId, categoryId, userId);
+        jdbcTemplate.update("""
+                INSERT INTO chore_assignments
+                    (id, household_id, chore_id, scheduled_for, status, title_snapshot,
+                     priority_snapshot, difficulty_snapshot)
+                VALUES (?, ?, ?, CURRENT_DATE, 'COMPLETED', 'Historical chore', 'NORMAL', 1)
+                """, assignmentId, householdId, choreId);
+        jdbcTemplate.update("""
+                INSERT INTO chore_completions (household_id, assignment_id, completed_by_user_id)
+                VALUES (?, ?, ?)
+                """, householdId, assignmentId, userId);
+        String oldReadKey = "retention-old-read-" + UUID.randomUUID();
+        String recentReadKey = "retention-recent-read-" + UUID.randomUUID();
+        String oldUnreadKey = "retention-old-unread-" + UUID.randomUUID();
+
+        insertRetentionNotification(userId, oldReadKey, "NOW() - INTERVAL '91 days'");
+        insertRetentionNotification(userId, recentReadKey, "NOW() - INTERVAL '89 days'");
+        insertRetentionNotification(userId, oldUnreadKey, null);
+
+        notificationScheduler.cleanupReadNotifications();
+
+        assertThat(notificationCount(oldReadKey)).isZero();
+        assertThat(notificationCount(recentReadKey)).isEqualTo(1);
+        assertThat(notificationCount(oldUnreadKey)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM households WHERE id=?", Integer.class, householdId)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM notification_events WHERE household_id=?",
+                Integer.class, householdId)).isEqualTo(eventsBefore);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM chores WHERE id=?", Integer.class, choreId)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM chore_assignments WHERE id=?", Integer.class, assignmentId)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM chore_completions WHERE assignment_id=?",
+                Integer.class, assignmentId)).isEqualTo(1);
     }
 
     @Test
@@ -505,6 +981,7 @@ class HouseholdControllerIntegrationTest {
         join(member, createInvitation(owner, householdId)).andExpect(status().isOk());
         join(nonAssignee, createInvitation(owner, householdId)).andExpect(status().isOk());
         LocalDate today = LocalDate.now(ZoneOffset.UTC);
+        LocalDate startsOn = today.plusDays(1);
         String base = "/api/households/" + householdId;
         String request = """
                 {
@@ -522,7 +999,7 @@ class HouseholdControllerIntegrationTest {
                     "peopleNeeded":2
                   }
                 }
-                """.formatted(today, today.plusDays(1), owner.userId(), member.userId());
+                """.formatted(startsOn, startsOn.plusDays(1), owner.userId(), member.userId());
         MvcResult created = mockMvc.perform(post(base + "/chores")
                 .cookie(owner.cookie()).header(owner.csrfHeader(), owner.csrfToken())
                 .contentType(APPLICATION_JSON).content(request))
@@ -542,6 +1019,25 @@ class HouseholdControllerIntegrationTest {
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(DISTINCT user_id) FROM chore_assignment_assignees WHERE assignment_id=?",
                 Integer.class, assignmentIds.getFirst())).isEqualTo(2);
+        List<UUID> sharedRecipients = jdbcTemplate.query(
+                "SELECT user_id FROM chore_assignment_assignees WHERE assignment_id=?",
+                (rs, row) -> rs.getObject("user_id", UUID.class), assignmentIds.getFirst());
+        for (UUID recipientId : sharedRecipients) {
+            String key = "shared-reminder-" + UUID.randomUUID();
+            UUID reminderId = UUID.randomUUID();
+            jdbcTemplate.update("""
+                    INSERT INTO notifications
+                        (id, recipient_user_id, type, category, title, message, reference_type,
+                         reference_id, status, scheduled_at, expires_at, deduplication_key)
+                    VALUES (?, ?, 'CHORE_OVERDUE', 'CHORE_REMINDER', 'Overdue', 'Reminder',
+                            'CHORE_ASSIGNMENT', ?, 'PENDING', NOW() + INTERVAL '2 hours',
+                            NOW() + INTERVAL '3 hours', ?)
+                    """, reminderId, recipientId, assignmentIds.getFirst(), key);
+            jdbcTemplate.update("""
+                    INSERT INTO notification_deliveries (notification_id, channel, status)
+                    VALUES (?, 'IN_APP', 'PENDING'), (?, 'WEB_PUSH', 'PENDING')
+                    """, reminderId, reminderId);
+        }
 
         mockMvc.perform(get(base + "/my-chores").param("status", "UPCOMING").cookie(member.cookie()))
                 .andExpect(status().isOk())
@@ -558,6 +1054,20 @@ class HouseholdControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("COMPLETED"))
                 .andExpect(jsonPath("$.assignees.length()").value(2));
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM notifications WHERE reference_id=? AND type='CHORE_OVERDUE'
+                  AND status='CANCELLED'
+                """, Integer.class, assignmentIds.getFirst())).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM notification_deliveries d
+                JOIN notifications n ON n.id=d.notification_id
+                WHERE n.reference_id=? AND n.type='CHORE_OVERDUE' AND d.status='CANCELLED'
+                """, Integer.class, assignmentIds.getFirst())).isEqualTo(4);
+        notificationScheduler.run();
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM notifications WHERE reference_id=? AND type='CHORE_OVERDUE'
+                  AND status='PENDING'
+                """, Integer.class, assignmentIds.getFirst())).isZero();
         mockMvc.perform(get(base + "/my-chores").param("status", "COMPLETED").cookie(owner.cookie()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
@@ -592,14 +1102,16 @@ class HouseholdControllerIntegrationTest {
                           "title":"Clean together",
                           "schedule":{
                             "recurrenceRule":"FREQ=DAILY",
+                            "timezone":"UTC",
                             "startsOn":"%s",
                             "endsOn":"%s",
+                            "dueTime":"20:00",
                             "assignmentStrategy":"FIXED",
                             "participantUserIds":["%s","%s"],
                             "peopleNeeded":2
                           }
                         }
-                        """.formatted(today, today.plusDays(1), owner.userId(), nonAssignee.userId())))
+                        """.formatted(startsOn, startsOn.plusDays(1), owner.userId(), nonAssignee.userId())))
                 .andExpect(status().isOk());
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT status FROM chore_assignments WHERE id=?",
@@ -634,6 +1146,47 @@ class HouseholdControllerIntegrationTest {
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT status FROM chore_assignments WHERE id=?",
                 String.class, assignmentIds.getLast())).isEqualTo("CANCELLED");
+        String cancelledReminderKey = "cancelled-reminder-" + UUID.randomUUID();
+        UUID cancelledReminderId = UUID.randomUUID();
+        jdbcTemplate.update("""
+                INSERT INTO notifications
+                    (id, recipient_user_id, type, category, title, message, reference_type,
+                     reference_id, status, scheduled_at, expires_at, deduplication_key)
+                VALUES (?, ?, 'CHORE_OVERDUE', 'CHORE_REMINDER', 'Overdue', 'Reminder',
+                        'CHORE_ASSIGNMENT', ?, 'PENDING', NOW(), NOW() + INTERVAL '1 hour', ?)
+                """, cancelledReminderId, UUID.fromString(owner.userId()),
+                assignmentIds.getLast(), cancelledReminderKey);
+        jdbcTemplate.update("""
+                INSERT INTO notification_deliveries (notification_id, channel, status)
+                VALUES (?, 'IN_APP', 'PENDING'), (?, 'WEB_PUSH', 'PENDING')
+                """, cancelledReminderId, cancelledReminderId);
+        notificationScheduler.run();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM notifications WHERE id=?", String.class, cancelledReminderId))
+                .isEqualTo("CANCELLED");
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM notification_deliveries
+                WHERE notification_id=? AND status='CANCELLED'
+                """, Integer.class, cancelledReminderId)).isEqualTo(2);
+        String skippedReminderKey = "skipped-reminder-" + UUID.randomUUID();
+        UUID skippedReminderId = UUID.randomUUID();
+        jdbcTemplate.update("""
+                INSERT INTO notifications
+                    (id, recipient_user_id, type, category, title, message, reference_type,
+                     reference_id, status, scheduled_at, expires_at, deduplication_key)
+                VALUES (?, ?, 'CHORE_OVERDUE', 'CHORE_REMINDER', 'Overdue', 'Reminder',
+                        'CHORE_ASSIGNMENT', ?, 'PENDING', NOW(), NOW() + INTERVAL '1 hour', ?)
+                """, skippedReminderId, UUID.fromString(owner.userId()),
+                assignmentIds.getLast(), skippedReminderKey);
+        jdbcTemplate.update("""
+                INSERT INTO notification_deliveries (notification_id, channel, status)
+                VALUES (?, 'IN_APP', 'PENDING'), (?, 'WEB_PUSH', 'PENDING')
+                """, skippedReminderId, skippedReminderId);
+        jdbcTemplate.update("UPDATE chore_assignments SET status='SKIPPED' WHERE id=?", assignmentIds.getLast());
+        notificationScheduler.run();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM notifications WHERE id=?", String.class, skippedReminderId))
+                .isEqualTo("CANCELLED");
         mockMvc.perform(get(base + "/my-chores").param("status", "UPCOMING").cookie(member.cookie()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(0));
@@ -1058,6 +1611,67 @@ class HouseholdControllerIntegrationTest {
                 .andExpect(status().isCreated())
                 .andReturn();
         return UUID.fromString(objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asText());
+    }
+
+    private String pushSubscriptionJson(String endpoint, String key, String auth) {
+        return "{\"endpoint\":\"" + endpoint + "\",\"publicKey\":\"" + key
+                + "\",\"authSecret\":\"" + auth + "\"}";
+    }
+
+    private void insertRetentionNotification(UUID userId, String key, String readAtExpression) {
+        jdbcTemplate.update("""
+                INSERT INTO notifications
+                    (recipient_user_id, type, category, title, message, status,
+                     scheduled_at, sent_at, read_at, deduplication_key)
+                VALUES (?, 'HOUSEHOLD_JOINED', 'HOUSEHOLD', 'Update', 'Body', 'SENT',
+                        NOW(), NOW(), %s, ?)
+                """.formatted(readAtExpression == null ? "NULL" : readAtExpression), userId, key);
+    }
+
+    private int notificationCount(String key) {
+        return jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM notifications WHERE deduplication_key=?",
+                Integer.class, key);
+    }
+
+    private void setNotificationPreferences(
+            UUID userId,
+            boolean remindersEnabled,
+            boolean overdueEnabled,
+            boolean competitiveEnabled,
+            boolean householdEnabled,
+            boolean pushEnabled) {
+        jdbcTemplate.update("""
+                INSERT INTO notification_preferences
+                    (user_id, chore_reminders_enabled, overdue_enabled,
+                     competitive_notifications_enabled, household_updates_enabled, push_enabled)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT (user_id) DO UPDATE SET
+                    chore_reminders_enabled=EXCLUDED.chore_reminders_enabled,
+                    overdue_enabled=EXCLUDED.overdue_enabled,
+                    competitive_notifications_enabled=EXCLUDED.competitive_notifications_enabled,
+                    household_updates_enabled=EXCLUDED.household_updates_enabled,
+                    push_enabled=EXCLUDED.push_enabled
+                """, userId, remindersEnabled, overdueEnabled,
+                competitiveEnabled, householdEnabled, pushEnabled);
+    }
+
+    private int notificationCountByReference(UUID referenceId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM notifications WHERE reference_id=?", Integer.class, referenceId);
+    }
+
+    private String notificationStatus(UUID referenceId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT status FROM notifications WHERE reference_id=?", String.class, referenceId);
+    }
+
+    private String notificationDeliveryStatus(UUID referenceId, String channel) {
+        return jdbcTemplate.queryForObject("""
+                SELECT d.status FROM notification_deliveries d
+                JOIN notifications n ON n.id=d.notification_id
+                WHERE n.reference_id=? AND d.channel=?
+                """, String.class, referenceId, channel);
     }
 
     private String createInvitation(WebSession session, UUID householdId) throws Exception {

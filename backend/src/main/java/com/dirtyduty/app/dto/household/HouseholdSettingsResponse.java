@@ -9,5 +9,6 @@ public record HouseholdSettingsResponse(
         String name,
         String description,
         String timezone,
+        String notificationStyle,
         HouseholdRole currentUserRole,
         OffsetDateTime createdAt) {}

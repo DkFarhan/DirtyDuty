@@ -25,7 +25,7 @@ public class NotificationEventService {
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 eventId, event.type(), event.actorUserId(), event.householdId(), event.referenceType(),
-                event.referenceId(), event.title(), event.message(), event.category());
+                event.referenceId(), event.type(), "", event.category());
         engine.process(event, eventId);
         jdbc.update("UPDATE notification_events SET processed_at=NOW() WHERE id=?", eventId);
     }

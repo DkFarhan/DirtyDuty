@@ -12,4 +12,6 @@ public record NotificationMessage(
         String message,
         String referenceType,
         UUID referenceId,
-        OffsetDateTime scheduledAt) {}
+        OffsetDateTime scheduledAt,
+        OffsetDateTime expiresAt,
+        String deduplicationKey) {}

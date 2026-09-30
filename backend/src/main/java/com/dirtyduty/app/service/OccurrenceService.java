@@ -156,8 +156,7 @@ public class OccurrenceService {
                         "CHORE_ASSIGNMENT",
                         occurrenceId,
                         "CHORE_REMINDER",
-                        chore.getTitle(),
-                        "This chore was assigned to you.",
+                        java.util.Map.of("chore_name", chore.getTitle()),
                         assignees));
             } else {
                 String occurrenceStatus = status(occurrenceId);
@@ -298,10 +297,10 @@ public class OccurrenceService {
             jdbc.update("UPDATE chore_assignments SET status='COMPLETED', updated_at=NOW() "
                     + "WHERE id=? AND household_id=? AND status IN ('PENDING','SUBMITTED')",
                     assignmentId, householdId);
+            cancelPendingNotifications(assignmentId);
             String title = jdbc.queryForObject(
                     "SELECT title_snapshot FROM chore_assignments WHERE id=? AND household_id=?",
                     String.class, assignmentId, householdId);
-            String actorName = actor.getUser().getDisplayName();
             List<UUID> recipients = jdbc.query("""
                     SELECT user_id FROM household_memberships
                     WHERE household_id=? AND status='ACTIVE' AND user_id<>?
@@ -314,8 +313,7 @@ public class OccurrenceService {
                     "CHORE_ASSIGNMENT",
                     assignmentId,
                     "CHORE_COMPLETION",
-                    "Chore completed",
-                    actorName + " completed " + title + ".",
+                    java.util.Map.of("chore_name", title),
                     recipients));
         }
         return assignmentResponse(assignmentId, actor.getUser().getId());
@@ -337,6 +335,19 @@ public class OccurrenceService {
                 ORDER BY a.scheduled_for, a.due_at NULLS LAST, a.id
                 """, (rs, row) -> rs.getObject("id", UUID.class), householdId, from, until);
         return ids.stream().map(id -> assignmentResponse(id, userId)).toList();
+    }
+
+    private void cancelPendingNotifications(UUID assignmentId) {
+        jdbc.update("""
+                UPDATE notifications SET status='CANCELLED'
+                WHERE reference_type='CHORE_ASSIGNMENT' AND reference_id=? AND status='PENDING'
+                """, assignmentId);
+        jdbc.update("""
+                UPDATE notification_deliveries d SET status='CANCELLED'
+                FROM notifications n
+                WHERE d.notification_id=n.id AND n.reference_type='CHORE_ASSIGNMENT'
+                  AND n.reference_id=? AND d.status='PENDING'
+                """, assignmentId);
     }
 
     private AssignmentResponse assignmentResponse(UUID id, UUID viewerId) {

@@ -1,8 +1,9 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { ApiError } from "@/lib/auth/api"
-import { notificationApi, type Notification, type NotificationPreferences } from "@/lib/notifications/api"
+import { notificationApi, type Notification, type NotificationPreferences, type NotificationStyle } from "@/lib/notifications/api"
+import { createBrowserPushSubscription, removeBrowserPushSubscription } from "@/lib/notifications/push"
 import { useChoreSync } from "@/lib/chore-sync/store"
 import { SubpageHeader } from "./subpage-header"
 
@@ -11,22 +12,32 @@ function dateLabel(value: string) {
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date)
 }
 
-const preferenceLabels: Array<[keyof Pick<NotificationPreferences, "choreRemindersEnabled" | "choreCompletionEnabled" | "householdUpdatesEnabled" | "funnyNotificationsEnabled" | "pushEnabled">, string, string]> = [
+const preferenceLabels: Array<[keyof Pick<NotificationPreferences, "choreAssignedEnabled" | "choreRemindersEnabled" | "overdueEnabled" | "choreCompletionEnabled" | "householdUpdatesEnabled" | "funnyNotificationsEnabled" | "competitiveNotificationsEnabled">, string, string]> = [
+  ["choreAssignedEnabled", "Chore assignments", "When a chore is assigned to you."],
   ["choreRemindersEnabled", "Chore reminders", "Get a reminder when chores are due."],
+  ["overdueEnabled", "Overdue reminders", "Reminders for chores past their due time."],
   ["choreCompletionEnabled", "Chore updates", "Updates when household chores are completed."],
   ["householdUpdatesEnabled", "Household updates", "Invitations and other household activity."],
   ["funnyNotificationsEnabled", "Funny messages", "Add a lighthearted tone to notifications."],
-  ["pushEnabled", "Push notifications", "Allow push notifications on this device."],
+  ["competitiveNotificationsEnabled", "Competitive notifications", "Allow notifications that compare household activity."],
+]
+const notificationStyles: Array<[NotificationStyle, string]> = [
+  ["NORMAL", "Normal"],
+  ["FUNNY", "Funny"],
+  ["MOTIVATIONAL", "Motivational"],
+  ["COMPETITIVE", "Competitive"],
+  ["MINIMAL", "Minimal"],
 ]
 
 export function NotificationsScreen() {
-  const { navigate } = useChoreSync()
+  const { returnFromNotifications } = useChoreSync()
   const [items, setItems] = useState<Notification[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading")
   const [error, setError] = useState("")
   const [busyId, setBusyId] = useState<string | null>(null)
   const [preferences, setPreferences] = useState<NotificationPreferences | null>(null)
+  const [savedPreferences, setSavedPreferences] = useState<NotificationPreferences | null>(null)
   const [preferencesError, setPreferencesError] = useState("")
   const [preferencesBusy, setPreferencesBusy] = useState(false)
   const [preferencesSaved, setPreferencesSaved] = useState(false)
@@ -48,7 +59,9 @@ export function NotificationsScreen() {
   const loadPreferences = useCallback(async () => {
     setPreferencesError("")
     try {
-      setPreferences(await notificationApi.preferences())
+      const nextPreferences = await notificationApi.preferences()
+      setPreferences(nextPreferences)
+      setSavedPreferences(nextPreferences)
     } catch (cause) {
       setPreferencesError(cause instanceof ApiError ? cause.message : "Unable to load notification preferences.")
     }
@@ -90,14 +103,48 @@ export function NotificationsScreen() {
 
   const savePreferences = async () => {
     if (!preferences || preferencesBusy) return
+    const previousPushState = savedPreferences?.pushEnabled ?? false
     setPreferencesBusy(true)
     setPreferencesError("")
     setPreferencesSaved(false)
     try {
-      setPreferences(await notificationApi.updatePreferences(preferences))
+      if (preferences.pushEnabled !== previousPushState) {
+        if (preferences.pushEnabled) {
+          const configuration = await notificationApi.pushPublicKey()
+          if (!configuration.available || !configuration.publicKey) {
+            throw new Error("Push notifications are currently unavailable.")
+          }
+          const subscription = await createBrowserPushSubscription(configuration.publicKey)
+          const keys = subscription.toJSON().keys
+          if (!keys?.p256dh || !keys.auth) {
+            throw new Error("Push notifications could not be enabled. Please try again.")
+          }
+          await notificationApi.subscribePush({
+            endpoint: subscription.endpoint,
+            publicKey: keys.p256dh,
+            authSecret: keys.auth,
+          })
+        } else {
+          const endpoint = await removeBrowserPushSubscription()
+          if (endpoint) {
+            try {
+              await notificationApi.unsubscribePush(endpoint)
+            } catch (cause) {
+              throw new Error(cause instanceof ApiError ? cause.message : "Push notifications could not be disabled. Please try again.")
+            }
+          }
+        }
+      }
+
+      const updated = await notificationApi.updatePreferences(preferences)
+      setPreferences(updated)
+      setSavedPreferences(updated)
       setPreferencesSaved(true)
     } catch (cause) {
-      setPreferencesError(cause instanceof ApiError ? cause.message : "Unable to save notification preferences.")
+      setPreferences((current) => current ? { ...current, pushEnabled: previousPushState } : current)
+      setPreferencesError(cause instanceof ApiError
+        ? cause.message
+        : cause instanceof Error ? cause.message : "Unable to save notification preferences.")
     } finally {
       setPreferencesBusy(false)
     }
@@ -108,12 +155,17 @@ export function NotificationsScreen() {
     setPreferencesSaved(false)
   }
 
+  const hasPreferencesChanges = useMemo(() => {
+    if (!preferences || !savedPreferences) return false
+    return JSON.stringify(preferences) !== JSON.stringify(savedPreferences)
+  }, [preferences, savedPreferences])
+
   return (
     <div className="min-h-screen bg-slate-50 pb-8">
       <SubpageHeader
         title="Notifications"
         subtitle={unreadCount ? `${unreadCount} unread` : "You're all caught up"}
-        back={() => navigate("profile")}
+        back={returnFromNotifications}
         action={unreadCount > 0 ? (
           <button className="text-xs font-bold text-teal-700 disabled:opacity-50" disabled={busyId !== null} onClick={() => void markAllRead()} type="button">Read all</button>
         ) : undefined}
@@ -178,6 +230,21 @@ export function NotificationsScreen() {
           )}
           {preferences && (
             <div className="mt-3 flex flex-col divide-y divide-slate-100">
+              <label className="flex flex-col gap-2 py-3 text-sm font-semibold text-slate-800">
+                Notification style
+                <select
+                  aria-label="Notification style"
+                  className="w-full rounded-lg border border-slate-200 bg-white p-2 text-sm"
+                  onChange={(event) => updatePreference(
+                    "notificationStyleOverride",
+                    notificationStyles.find(([style]) => style === event.target.value)?.[0] ?? null,
+                  )}
+                  value={preferences.notificationStyleOverride ?? ""}
+                >
+                  <option value="">Use household default ({preferences.householdNotificationStyle.toLowerCase()})</option>
+                  {notificationStyles.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
+              </label>
               {preferenceLabels.map(([key, label, detail]) => (
                 <label className="flex items-center justify-between gap-3 py-3" key={key}>
                   <span>
@@ -187,7 +254,14 @@ export function NotificationsScreen() {
                   <input aria-label={label} checked={preferences[key]} className="h-4 w-4 accent-teal-600" onChange={(event) => updatePreference(key, event.target.checked)} type="checkbox" />
                 </label>
               ))}
-              <div className="grid grid-cols-2 gap-3 py-3">
+              <label className="flex items-center justify-between gap-3 py-3">
+                <span>
+                  <span className="block text-sm font-semibold text-slate-800">Push notifications</span>
+                  <span className="block text-xs text-slate-400">Enable push notifications for this browser.</span>
+                </span>
+                <input aria-label="Push notifications" checked={preferences.pushEnabled} className="h-4 w-4 accent-teal-600" onChange={(event) => updatePreference("pushEnabled", event.target.checked)} type="checkbox" />
+              </label>
+              <div className="grid grid-cols-1 gap-3 py-3 min-[390px]:grid-cols-2">
                 <label className="text-xs font-semibold text-slate-500">Quiet hours start
                   <input aria-label="Quiet hours start" className="mt-1 w-full rounded-lg border border-slate-200 p-2 text-sm text-slate-800" onChange={(event) => updatePreference("quietHoursStart", event.target.value || null)} type="time" value={preferences.quietHoursStart ?? ""} />
                 </label>
@@ -195,7 +269,7 @@ export function NotificationsScreen() {
                   <input aria-label="Quiet hours end" className="mt-1 w-full rounded-lg border border-slate-200 p-2 text-sm text-slate-800" onChange={(event) => updatePreference("quietHoursEnd", event.target.value || null)} type="time" value={preferences.quietHoursEnd ?? ""} />
                 </label>
               </div>
-              <button className="mt-3 w-full rounded-xl bg-teal-600 py-3 text-sm font-bold text-white disabled:opacity-50" disabled={preferencesBusy} onClick={() => void savePreferences()} type="button">{preferencesBusy ? "Saving…" : "Save preferences"}</button>
+              <button className="mt-3 w-full rounded-xl bg-teal-600 py-3 text-sm font-bold text-white disabled:opacity-50" disabled={preferencesBusy || !hasPreferencesChanges} onClick={() => void savePreferences()} type="button">{preferencesBusy ? "Saving…" : "Save preferences"}</button>
               {preferencesSaved && <p role="status" className="mt-2 text-center text-xs font-medium text-teal-700">Preferences saved.</p>}
               {preferencesError && <p role="alert" className="mt-2 text-xs text-rose-600">{preferencesError}</p>}
             </div>

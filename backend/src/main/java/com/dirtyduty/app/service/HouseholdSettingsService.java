@@ -40,11 +40,11 @@ public class HouseholdSettingsService {
     public HouseholdSettingsResponse get(UUID householdId, Authentication authentication) {
         HouseholdMembership membership = activeMembership(householdId, authentication);
         return jdbc.queryForObject("""
-                SELECT id, name, description, timezone, created_at
+                SELECT id, name, description, timezone, notification_style, created_at
                 FROM households WHERE id=?
                 """, (rs, row) -> new HouseholdSettingsResponse(
                 rs.getObject("id", UUID.class), rs.getString("name"), rs.getString("description"),
-                rs.getString("timezone"), membership.getRole(),
+                rs.getString("timezone"), rs.getString("notification_style"), membership.getRole(),
                 rs.getObject("created_at", OffsetDateTime.class)), householdId);
     }
 

@@ -1,4 +1,5 @@
 import { api } from "@/lib/auth/api"
+import type { NotificationStyle } from "@/lib/notifications/api"
 
 export type Household = {
   id: string
@@ -10,6 +11,7 @@ export type Household = {
 
 export type HouseholdSettings = Household & {
   description: string | null
+  notificationStyle: NotificationStyle
 }
 
 export type CreateHouseholdInput = {
