@@ -70,6 +70,7 @@ describe("household onboarding", () => {
       "http://localhost:8080/api/auth/me",
       "http://localhost:8080/api/households",
       "http://localhost:8080/api/households/home-1/dashboard",
+      "http://localhost:8080/api/notifications/unread-count",
     ])
   })
 

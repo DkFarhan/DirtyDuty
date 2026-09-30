@@ -73,4 +73,40 @@ describe("household API", () => {
     expect(activeMember.message).toBe("You are already a member of this household.")
     expect(activeMember.message).not.toContain("internal")
   })
+
+  it("uses household settings and leave contracts without sending read-only fields", async () => {
+    const settings = {
+      id: "home/1",
+      name: "Home",
+      description: "Shared place",
+      timezone: "America/Sao_Paulo",
+      currentUserRole: "OWNER",
+      createdAt: "2026-09-25T12:00:00Z",
+    }
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify(settings), { status: 200, headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ token: "settings-csrf", headerName: "X-CSRF-TOKEN" }), { status: 200, headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...settings, name: "Updated Home" }), { status: 200, headers: { "content-type": "application/json" } }))
+
+    await expect(householdApi.settings("home/1")).resolves.toEqual(settings)
+    await expect(householdApi.updateSettings("home/1", {
+      name: "Updated Home",
+      description: null,
+      timezone: "America/Sao_Paulo",
+    })).resolves.toMatchObject({ name: "Updated Home" })
+    expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:8080/api/households/home%2F1/settings")
+    expect(fetchMock.mock.calls[2][0]).toBe("http://localhost:8080/api/households/home%2F1/settings")
+    expect(fetchMock.mock.calls[2][1]).toMatchObject({
+      method: "PUT",
+      body: JSON.stringify({ name: "Updated Home", description: null, timezone: "America/Sao_Paulo" }),
+    })
+
+    clearCsrfToken()
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({ token: "leave-csrf", headerName: "X-CSRF-TOKEN" }), { status: 200, headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    await expect(householdApi.leave("home/1")).resolves.toBeNull()
+    expect(fetchMock.mock.calls[4][0]).toBe("http://localhost:8080/api/households/home%2F1/leave")
+    expect(fetchMock.mock.calls[4][1]).toMatchObject({ method: "POST", body: undefined })
+  })
 })

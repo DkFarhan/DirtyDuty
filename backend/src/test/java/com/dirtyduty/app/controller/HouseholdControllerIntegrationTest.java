@@ -5,6 +5,7 @@ import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.mockito.ArgumentMatchers.any;
@@ -135,6 +136,109 @@ class HouseholdControllerIntegrationTest {
                 Integer.class,
                 householdId,
                 UUID.fromString(spoofedUser.userId()))).isZero();
+    }
+
+    @Test
+    void householdSettingsAreOwnerEditableAndMemberReadable() throws Exception {
+        WebSession owner = login("settingsowner");
+        WebSession member = login("settingsmember");
+        UUID householdId = createHousehold(owner, "Settings Home", "UTC");
+        join(member, createInvitation(owner, householdId)).andExpect(status().isOk());
+        String settingsPath = "/api/households/" + householdId + "/settings";
+
+        mockMvc.perform(put(settingsPath)
+                .cookie(owner.cookie())
+                .header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content("""
+                        {"name":"Updated Home","description":"A cozy place","timezone":"America/Halifax"}
+                        """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Updated Home"))
+                .andExpect(jsonPath("$.description").value("A cozy place"))
+                .andExpect(jsonPath("$.timezone").value("America/Halifax"))
+                .andExpect(jsonPath("$.currentUserRole").value("OWNER"))
+                .andExpect(jsonPath("$.createdAt").isString());
+
+        mockMvc.perform(get(settingsPath).cookie(member.cookie()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Updated Home"))
+                .andExpect(jsonPath("$.currentUserRole").value("MEMBER"));
+
+        mockMvc.perform(put(settingsPath)
+                .cookie(member.cookie())
+                .header(member.csrfHeader(), member.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content("""
+                        {"name":"Unauthorized Change","description":null,"timezone":"UTC"}
+                        """))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void notificationsAreIsolatedAndCanBeMarkedRead() throws Exception {
+        WebSession owner = login("notifyowner");
+        WebSession member = login("notifymember");
+        UUID householdId = createHousehold(owner, "Notification Home", "UTC");
+        join(member, createInvitation(owner, householdId)).andExpect(status().isOk());
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM notification_events WHERE household_id=?",
+                Integer.class, householdId)).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM notifications WHERE recipient_user_id=?",
+                Integer.class, UUID.fromString(owner.userId()))).isEqualTo(2);
+
+        MvcResult ownerNotifications = mockMvc.perform(get("/api/notifications").cookie(owner.cookie()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andReturn();
+        assertThat(mockMvc.perform(get("/api/notifications").cookie(member.cookie()))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString()).isEqualTo("[]");
+        mockMvc.perform(get("/api/notifications/unread-count").cookie(owner.cookie()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.count").value(2));
+
+        UUID notificationId = UUID.fromString(objectMapper.readTree(ownerNotifications.getResponse()
+                .getContentAsString()).get(0).get("id").asText());
+        mockMvc.perform(patch("/api/notifications/" + notificationId + "/read")
+                .cookie(member.cookie())
+                .header(member.csrfHeader(), member.csrfToken()))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(patch("/api/notifications/" + notificationId + "/read")
+                .cookie(owner.cookie())
+                .header(owner.csrfHeader(), owner.csrfToken()))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(patch("/api/notifications/read-all")
+                .cookie(owner.cookie())
+                .header(owner.csrfHeader(), owner.csrfToken()))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(get("/api/notifications/unread-count").cookie(owner.cookie()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.count").value(0));
+    }
+
+    @Test
+    void profileUpdatesOnlyAuthenticatedUsersDisplayName() throws Exception {
+        WebSession user = login("profileuser");
+        WebSession other = login("profileother");
+
+        mockMvc.perform(get("/api/profile").cookie(user.cookie()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.displayName").value("Test User"))
+                .andExpect(jsonPath("$.email").isString())
+                .andExpect(jsonPath("$.assigned").value(0))
+                .andExpect(jsonPath("$.completed").value(0));
+        mockMvc.perform(put("/api/profile")
+                .cookie(user.cookie())
+                .header(user.csrfHeader(), user.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content("{\"displayName\":\"Updated Name\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.displayName").value("Updated Name"));
+        mockMvc.perform(get("/api/profile").cookie(other.cookie()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.displayName").value("Test User"));
     }
 
     @Test
@@ -1056,6 +1160,14 @@ class HouseholdControllerIntegrationTest {
         jdbcTemplate.update(
                 "DELETE FROM household_invitations WHERE household_id IN (" + testHouseholds
                         + ") OR created_by_user_id IN (" + testUsers + ")");
+        jdbcTemplate.update(
+                "DELETE FROM notifications WHERE recipient_user_id IN (" + testUsers
+                        + ") OR event_id IN (SELECT id FROM notification_events WHERE household_id IN ("
+                        + testHouseholds + ") OR actor_user_id IN (" + testUsers + "))");
+        jdbcTemplate.update(
+                "DELETE FROM notification_events WHERE household_id IN (" + testHouseholds
+                        + ") OR actor_user_id IN (" + testUsers + ")");
+        jdbcTemplate.update("DELETE FROM notification_preferences WHERE user_id IN (" + testUsers + ")");
         jdbcTemplate.update("DELETE FROM activity_events WHERE household_id IN (" + testHouseholds + ")");
         jdbcTemplate.update("DELETE FROM chore_completions WHERE household_id IN (" + testHouseholds + ")");
         jdbcTemplate.update("DELETE FROM chore_assignment_assignees WHERE household_id IN (" + testHouseholds + ")");

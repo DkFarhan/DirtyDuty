@@ -8,6 +8,10 @@ export type Household = {
   createdAt: string
 }
 
+export type HouseholdSettings = Household & {
+  description: string | null
+}
+
 export type CreateHouseholdInput = {
   name: string
   timezone: string
@@ -35,4 +39,10 @@ export const householdApi = {
     api.post<HouseholdInvitation>(`/api/households/${encodeURIComponent(householdId)}/invitations`),
   members: (householdId: string) =>
     api.get<HouseholdMemberDTO[]>(`/api/households/${encodeURIComponent(householdId)}/members`),
+  settings: (householdId: string) =>
+    api.get<HouseholdSettings>(`/api/households/${encodeURIComponent(householdId)}/settings`),
+  updateSettings: (householdId: string, input: Pick<HouseholdSettings, "name" | "description" | "timezone">) =>
+    api.put<HouseholdSettings>(`/api/households/${encodeURIComponent(householdId)}/settings`, input),
+  leave: (householdId: string) =>
+    api.post<void>(`/api/households/${encodeURIComponent(householdId)}/leave`),
 }

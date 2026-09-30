@@ -11,6 +11,11 @@ export type Screen =
   | "create-chore"
   | "edit-chore"
   | "profile"
+  | "household-settings"
+  | "notifications"
+  | "edit-profile"
+  | "privacy-security"
+  | "help-support"
 
 export type ChoreStatus = "pending" | "completed"
 export type Priority = "low" | "medium" | "high"

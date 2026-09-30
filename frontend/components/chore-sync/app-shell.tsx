@@ -17,6 +17,11 @@ import { HouseholdScreen } from "./screens/household-screen"
 import { AdminScreen } from "./screens/admin-screen"
 import { ChoreFormScreen } from "./screens/chore-form-screen"
 import { ProfileScreen } from "./screens/profile-screen"
+import { HouseholdSettingsScreen } from "./screens/household-settings-screen"
+import { NotificationsScreen } from "./screens/notifications-screen"
+import { EditProfileScreen } from "./screens/edit-profile-screen"
+import { PrivacySecurityScreen } from "./screens/privacy-security-screen"
+import { HelpSupportScreen } from "./screens/help-support-screen"
 
 function ScreenRouter() {
   const { screen, adminTab, navigate, setCurrentUser } = useChoreSync()
@@ -102,6 +107,16 @@ function ScreenRouter() {
       return <ChoreFormScreen />
     case "profile":
       return <ProfileScreen />
+    case "household-settings":
+      return <HouseholdSettingsScreen />
+    case "notifications":
+      return <NotificationsScreen />
+    case "edit-profile":
+      return <EditProfileScreen />
+    case "privacy-security":
+      return <PrivacySecurityScreen />
+    case "help-support":
+      return <HelpSupportScreen />
     default:
       return <LoginScreen />
   }

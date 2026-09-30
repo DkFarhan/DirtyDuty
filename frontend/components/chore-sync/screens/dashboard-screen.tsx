@@ -7,10 +7,12 @@ import { choreApi, type HouseholdDashboard } from "@/lib/household/chores"
 import { useHouseholds } from "@/lib/household/household-context"
 import type { Household } from "@/lib/household/api"
 import { BottomNav } from "../bottom-nav"
+import { BellIcon } from "../icons"
 import { ServerAssignmentCard, ServerWeekAssignmentCard } from "../chore-card"
 import { HouseGlyphIcon } from "../icons"
 import { InviteHousemateDialog } from "../invite-housemate-dialog"
 import { Avatar, ProgressBar, SectionHeader } from "../primitives"
+import { notificationApi } from "@/lib/notifications/api"
 
 function greetingForNow() {
   const hour = new Date().getHours()
@@ -25,6 +27,7 @@ export function DashboardScreen() {
   const [error, setError] = useState<string | null>(null)
   const [completingId, setCompletingId] = useState<string | null>(null)
   const [inviteHousehold, setInviteHousehold] = useState<Household | null>(null)
+  const [unreadCount, setUnreadCount] = useState(0)
   const household = households[0]
   const canInvite = household?.currentUserRole === "OWNER" || household?.currentUserRole === "ADMIN"
 
@@ -46,6 +49,9 @@ export function DashboardScreen() {
   }, [household])
 
   useEffect(() => { void loadDashboard() }, [loadDashboard])
+  useEffect(() => {
+    notificationApi.unreadCount().then((result) => setUnreadCount(result.count)).catch(() => setUnreadCount(0))
+  }, [])
 
   useEffect(() => {
     if (!createdHouseholdInvite) return
@@ -77,12 +83,18 @@ export function DashboardScreen() {
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 pb-20">
       <header className="bg-white px-5 pt-12 pb-5">
-        <div className="flex items-center justify-between mb-1">
-          <div>
+        <div className="mb-1 flex items-start justify-between gap-3">
+          <div className="min-w-0">
             <p className="text-slate-500 text-sm font-medium">{greetingForNow()},</p>
-            <h1 className="text-2xl font-black text-slate-900 font-display">{state.currentUser.name} 👋</h1>
+            <h1 className="truncate text-2xl font-black text-slate-900 font-display">{state.currentUser.name} 👋</h1>
           </div>
-          <Avatar initial={state.currentUser.avatar} className="w-10 h-10 text-sm" />
+          <div className="flex shrink-0 items-center gap-2">
+            <button aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"} className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 text-slate-600 hover:bg-teal-50 hover:text-teal-700" onClick={() => navigate("notifications")} type="button">
+              <BellIcon className="h-5 w-5" />
+              {unreadCount > 0 && <span aria-label={`${unreadCount} unread`} className="absolute -right-1 -top-1 flex min-h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">{unreadCount > 99 ? "99+" : unreadCount}</span>}
+            </button>
+            <Avatar initial={state.currentUser.avatar} className="w-10 h-10 text-sm" />
+          </div>
         </div>
         <div className="mt-2 flex min-w-0 items-center gap-1.5">
           <HouseGlyphIcon className="h-3.5 w-3.5 shrink-0 text-teal-600" />

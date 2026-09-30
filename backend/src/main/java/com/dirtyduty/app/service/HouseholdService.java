@@ -15,6 +15,8 @@ import com.dirtyduty.app.exception.HouseholdAccessDeniedException;
 import com.dirtyduty.app.exception.InvalidHouseholdException;
 import com.dirtyduty.app.exception.InvalidInvitationException;
 import com.dirtyduty.app.mapper.HouseholdMapper;
+import com.dirtyduty.app.notification.NotificationEvent;
+import com.dirtyduty.app.notification.NotificationEventService;
 import com.dirtyduty.app.repository.HouseholdInvitationRepository;
 import com.dirtyduty.app.repository.HouseholdMembershipRepository;
 import com.dirtyduty.app.repository.HouseholdRepository;
@@ -49,6 +51,7 @@ public class HouseholdService {
     private final HouseholdInvitationRepository householdInvitationRepository;
     private final ChoreCategoryRepository choreCategoryRepository;
     private final UserRepository userRepository;
+    private final NotificationEventService notificationEventService;
     private final Duration invitationExpiration;
 
     public HouseholdService(
@@ -57,12 +60,14 @@ public class HouseholdService {
             HouseholdInvitationRepository householdInvitationRepository,
             ChoreCategoryRepository choreCategoryRepository,
             UserRepository userRepository,
+            NotificationEventService notificationEventService,
             @Value("${app.households.invitation-expiration:7d}") Duration invitationExpiration) {
         this.householdRepository = householdRepository;
         this.householdMembershipRepository = householdMembershipRepository;
         this.householdInvitationRepository = householdInvitationRepository;
         this.choreCategoryRepository = choreCategoryRepository;
         this.userRepository = userRepository;
+        this.notificationEventService = notificationEventService;
         if (invitationExpiration.isZero() || invitationExpiration.isNegative()) {
             throw new IllegalArgumentException("Household invitation expiration must be positive.");
         }
@@ -173,6 +178,34 @@ public class HouseholdService {
 
         invitation.setUsedAt(now);
         householdInvitationRepository.save(invitation);
+
+        UUID householdId = invitation.getHousehold().getId();
+        List<UUID> otherMembers = householdMembershipRepository
+                .findByHousehold_IdAndStatus(householdId, MembershipStatus.ACTIVE).stream()
+                .map(HouseholdMembership::getUser)
+                .map(User::getId)
+                .filter(memberId -> !memberId.equals(user.getId()))
+                .toList();
+        notificationEventService.publish(new NotificationEvent(
+                "HOUSEHOLD_JOINED",
+                user.getId(),
+                householdId,
+                "HOUSEHOLD",
+                householdId,
+                "HOUSEHOLD_UPDATE",
+                "New household member",
+                user.getDisplayName() + " joined your household.",
+                otherMembers));
+        notificationEventService.publish(new NotificationEvent(
+                "INVITE_ACCEPTED",
+                user.getId(),
+                householdId,
+                "INVITATION",
+                invitation.getId(),
+                "HOUSEHOLD_UPDATE",
+                "Invitation accepted",
+                user.getDisplayName() + " accepted your household invitation.",
+                List.of(invitation.getCreatedByUser().getId())));
 
         return HouseholdMapper.toResponse(invitation.getHousehold(), membership.getRole());
     }

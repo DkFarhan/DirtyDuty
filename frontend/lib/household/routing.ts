@@ -12,6 +12,11 @@ const authenticatedScreens = new Set<Screen>([
   "admin",
   "create-chore",
   "profile",
+  "household-settings",
+  "notifications",
+  "edit-profile",
+  "privacy-security",
+  "help-support",
 ])
 
 export function getHouseholdRedirect(

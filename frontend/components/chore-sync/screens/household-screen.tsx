@@ -14,6 +14,7 @@ import { InviteHousemateDialog } from "../invite-housemate-dialog"
 const adminActions = [
   { icon: "➕", label: "Invite Member", sub: "Share an invite code", action: "invite" },
   { icon: "📋", label: "Manage Chores", sub: "Create, edit, assign chores", action: "chores" },
+  { icon: "⚙️", label: "Household Settings", sub: "Edit household details", action: "settings" },
 ]
 
 export function HouseholdScreen() {
@@ -94,6 +95,7 @@ export function HouseholdScreen() {
                   onClick={() => {
                     if (item.action === "invite") setInviteOpen(true)
                     if (item.action === "chores") navigate("admin", "chores")
+                    if (item.action === "settings") navigate("household-settings")
                   }}
                   type="button"
                   className="w-full flex items-center gap-4 px-4 py-3.5 transition-colors border-b border-slate-50 last:border-0 hover:bg-slate-50"

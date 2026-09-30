@@ -20,6 +20,8 @@ import com.dirtyduty.app.exception.ResourceNotFoundException;
 import com.dirtyduty.app.repository.ChoreScheduleRepository;
 import com.dirtyduty.app.repository.HouseholdMembershipRepository;
 import com.dirtyduty.app.repository.UserRepository;
+import com.dirtyduty.app.notification.NotificationEvent;
+import com.dirtyduty.app.notification.NotificationEventService;
 import java.security.SecureRandom;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -50,6 +52,7 @@ public class OccurrenceService {
     private final ChoreScheduleRepository scheduleRepository;
     private final HouseholdMembershipRepository membershipRepository;
     private final UserRepository userRepository;
+    private final NotificationEventService notificationEventService;
     private final int horizonDays;
 
     public OccurrenceService(
@@ -57,6 +60,7 @@ public class OccurrenceService {
             ChoreScheduleRepository scheduleRepository,
             HouseholdMembershipRepository membershipRepository,
             UserRepository userRepository,
+            NotificationEventService notificationEventService,
             @Value("${app.chores.occurrence-horizon-days:30}") int horizonDays) {
         if (horizonDays < 1 || horizonDays > 90) {
             throw new IllegalArgumentException("Occurrence horizon must be between 1 and 90 days.");
@@ -65,6 +69,7 @@ public class OccurrenceService {
         this.scheduleRepository = scheduleRepository;
         this.membershipRepository = membershipRepository;
         this.userRepository = userRepository;
+        this.notificationEventService = notificationEventService;
         this.horizonDays = horizonDays;
     }
 
@@ -144,6 +149,16 @@ public class OccurrenceService {
                             VALUES (?, ?, ?) ON CONFLICT (assignment_id, user_id) DO NOTHING
                             """, household.getId(), occurrenceId, userId);
                 }
+                notificationEventService.publish(new NotificationEvent(
+                        "CHORE_ASSIGNED",
+                        null,
+                        household.getId(),
+                        "CHORE_ASSIGNMENT",
+                        occurrenceId,
+                        "CHORE_REMINDER",
+                        chore.getTitle(),
+                        "This chore was assigned to you.",
+                        assignees));
             } else {
                 String occurrenceStatus = status(occurrenceId);
                 if (!"PENDING".equals(occurrenceStatus) && !"SUBMITTED".equals(occurrenceStatus)
@@ -283,6 +298,25 @@ public class OccurrenceService {
             jdbc.update("UPDATE chore_assignments SET status='COMPLETED', updated_at=NOW() "
                     + "WHERE id=? AND household_id=? AND status IN ('PENDING','SUBMITTED')",
                     assignmentId, householdId);
+            String title = jdbc.queryForObject(
+                    "SELECT title_snapshot FROM chore_assignments WHERE id=? AND household_id=?",
+                    String.class, assignmentId, householdId);
+            String actorName = actor.getUser().getDisplayName();
+            List<UUID> recipients = jdbc.query("""
+                    SELECT user_id FROM household_memberships
+                    WHERE household_id=? AND status='ACTIVE' AND user_id<>?
+                    """, (rs, row) -> rs.getObject("user_id", UUID.class),
+                    householdId, actor.getUser().getId());
+            notificationEventService.publish(new NotificationEvent(
+                    "CHORE_COMPLETED",
+                    actor.getUser().getId(),
+                    householdId,
+                    "CHORE_ASSIGNMENT",
+                    assignmentId,
+                    "CHORE_COMPLETION",
+                    "Chore completed",
+                    actorName + " completed " + title + ".",
+                    recipients));
         }
         return assignmentResponse(assignmentId, actor.getUser().getId());
     }
