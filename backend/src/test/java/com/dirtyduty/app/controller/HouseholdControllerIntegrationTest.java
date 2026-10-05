@@ -1495,17 +1495,24 @@ class HouseholdControllerIntegrationTest {
         WebSession member = login("reactivate-member");
         WebSession invitedUser = login("reactivate-invited");
         UUID householdId = createHousehold(owner, "Reactivate Home", "UTC");
+        join(member, createInvitation(owner, householdId)).andExpect(status().isOk());
         String activeConflictInvite = createInvitation(owner, householdId);
-        join(owner, activeConflictInvite).andExpect(status().isConflict())
+        join(member, activeConflictInvite).andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value("You are already a member of this household."));
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT used_at FROM household_invitations WHERE invite_code = ?",
                 java.sql.Timestamp.class,
                 hash(activeConflictInvite))).isNull();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM household_memberships WHERE household_id = ? AND user_id = ?",
+                Integer.class,
+                householdId,
+                UUID.fromString(member.userId()))).isEqualTo(1);
 
         jdbcTemplate.update("""
-                INSERT INTO household_memberships (household_id, user_id, role, status, joined_at, left_at)
-                VALUES (?, ?, 'ADMIN', 'LEFT', NOW() - INTERVAL '1 day', NOW())
+                UPDATE household_memberships
+                SET role = 'ADMIN', status = 'LEFT', joined_at = NOW() - INTERVAL '1 day', left_at = NOW()
+                WHERE household_id = ? AND user_id = ?
                 """, householdId, UUID.fromString(member.userId()));
         String leftInvite = createInvitation(owner, householdId);
         join(member, leftInvite).andExpect(status().isOk())
@@ -1533,22 +1540,154 @@ class HouseholdControllerIntegrationTest {
     }
 
     @Test
-    void removedMembershipCannotReactivateAndInvitationRemainsUnused() throws Exception {
+    void removedMembershipRejoinsOnlyWithNewValidInviteAndKeepsHistoryAndScheduleChanges() throws Exception {
         WebSession owner = login("removed-owner");
         WebSession removedUser = login("removed-user");
+        WebSession inviteConsumer = login("removed-invite-consumer");
         UUID householdId = createHousehold(owner, "Removed Home", "UTC");
-        jdbcTemplate.update("""
-                INSERT INTO household_memberships (household_id, user_id, role, status)
-                VALUES (?, ?, 'MEMBER', 'REMOVED')
-                """, householdId, UUID.fromString(removedUser.userId()));
-        String code = createInvitation(owner, householdId);
+        join(removedUser, createInvitation(owner, householdId)).andExpect(status().isOk());
+        jdbcTemplate.update(
+                "UPDATE household_memberships SET role = 'ADMIN' WHERE household_id = ? AND user_id = ?",
+                householdId, UUID.fromString(removedUser.userId()));
 
-        join(removedUser, code).andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.message").value("Unable to join this household."));
+        UUID choreId = UUID.randomUUID();
+        jdbcTemplate.update("""
+                INSERT INTO chores (id, household_id, title, default_priority, difficulty, created_by_user_id)
+                VALUES (?, ?, 'Rejoin schedule', 'NORMAL', 1, ?)
+                """, choreId, householdId, UUID.fromString(owner.userId()));
+        jdbcTemplate.update("""
+                INSERT INTO chore_schedules
+                    (household_id, chore_id, recurrence_rule, timezone, starts_on,
+                     assignment_strategy, strategy_config)
+                VALUES (?, ?, 'FREQ=DAILY', 'UTC', CURRENT_DATE, 'ROUND_ROBIN',
+                        jsonb_build_object('peopleNeeded', 1, 'participantUserIds',
+                            jsonb_build_array(?::text, ?::text)))
+                """, householdId, choreId, owner.userId(), removedUser.userId());
+
+        UUID historicalAssignmentId = UUID.randomUUID();
+        jdbcTemplate.update("""
+                INSERT INTO chore_assignments
+                    (id, household_id, chore_id, scheduled_for, status, assigned_to_user_id,
+                     title_snapshot, priority_snapshot, difficulty_snapshot)
+                VALUES (?, ?, ?, CURRENT_DATE - 1, 'COMPLETED', ?, 'Old chore title', 'NORMAL', 1)
+                """, historicalAssignmentId, householdId, choreId, UUID.fromString(removedUser.userId()));
+        jdbcTemplate.update("""
+                INSERT INTO chore_completions (household_id, assignment_id, completed_by_user_id)
+                VALUES (?, ?, ?)
+                """, householdId, historicalAssignmentId, UUID.fromString(removedUser.userId()));
+        String futureNotificationKey = "removed-member-future-" + UUID.randomUUID();
+        jdbcTemplate.update("""
+                INSERT INTO notifications
+                    (recipient_user_id, type, category, title, message, status, scheduled_at, deduplication_key)
+                VALUES (?, 'CHORE_DUE_SOON', 'CHORE_REMINDER', 'Upcoming chore', 'Reminder',
+                        'PENDING', NOW() + INTERVAL '1 day', ?)
+                """, UUID.fromString(removedUser.userId()), futureNotificationKey);
+
+        mockMvc.perform(post("/api/households/" + householdId + "/members/" + removedUser.userId() + "/remove")
+                .cookie(owner.cookie())
+                .header(owner.csrfHeader(), owner.csrfToken()))
+                .andExpect(status().isOk());
+        assertMembership(removedUser, householdId, "MEMBER", "REMOVED");
+        mockMvc.perform(get("/api/households").cookie(removedUser.cookie()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM notifications WHERE deduplication_key = ?",
+                String.class, futureNotificationKey)).isEqualTo("CANCELLED");
+        java.sql.Timestamp removedAt = jdbcTemplate.queryForObject(
+                "SELECT left_at FROM household_memberships WHERE household_id = ? AND user_id = ?",
+                java.sql.Timestamp.class, householdId, UUID.fromString(removedUser.userId()));
+        assertThat(removedAt).isNotNull();
+        String participantIdsAfterRemoval = jdbcTemplate.queryForObject(
+                "SELECT strategy_config -> 'participantUserIds' ->> 0 FROM chore_schedules WHERE chore_id = ?",
+                String.class, choreId);
+        assertThat(participantIdsAfterRemoval).isEqualTo(owner.userId());
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM chore_completions WHERE assignment_id = ?",
+                Integer.class, historicalAssignmentId)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM chore_assignments WHERE id = ?",
+                String.class, historicalAssignmentId)).isEqualTo("COMPLETED");
+
+        // Exercise legacy rows that still retain an elevated role after removal.
+        jdbcTemplate.update(
+                "UPDATE household_memberships SET role = 'ADMIN' WHERE household_id = ? AND user_id = ?",
+                householdId, UUID.fromString(removedUser.userId()));
+
+        String expiredCode = createInvitation(owner, householdId);
+        String revokedCode = createInvitation(owner, householdId);
+        String consumedCode = createInvitation(owner, householdId);
+        jdbcTemplate.update("UPDATE household_invitations SET expires_at = NOW() - INTERVAL '1 second' WHERE invite_code = ?",
+                hash(expiredCode));
+        jdbcTemplate.update("UPDATE household_invitations SET revoked_at = NOW() WHERE invite_code = ?",
+                hash(revokedCode));
+        join(inviteConsumer, consumedCode).andExpect(status().isOk());
+
+        for (String invalidCode : new String[] { expiredCode, revokedCode, consumedCode }) {
+            join(removedUser, invalidCode).andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value(INVALID_INVITE_MESSAGE));
+            assertMembership(removedUser, householdId, "ADMIN", "REMOVED");
+        }
+
+        String newCode = createInvitation(owner, householdId);
+        jdbcTemplate.update("UPDATE household_invitations SET role_to_assign = 'ADMIN' WHERE invite_code = ?",
+                hash(newCode));
+        join(removedUser, newCode).andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentUserRole").value("MEMBER"));
+        assertMembership(removedUser, householdId, "MEMBER", "ACTIVE");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM household_memberships WHERE household_id = ? AND user_id = ?",
+                Integer.class, householdId, UUID.fromString(removedUser.userId()))).isEqualTo(1);
+        java.sql.Timestamp joinedAt = jdbcTemplate.queryForObject(
+                "SELECT joined_at FROM household_memberships WHERE household_id = ? AND user_id = ?",
+                java.sql.Timestamp.class, householdId, UUID.fromString(removedUser.userId()));
+        assertThat(joinedAt.toInstant()).isAfter(removedAt.toInstant());
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT left_at FROM household_memberships WHERE household_id = ? AND user_id = ?",
+                java.sql.Timestamp.class, householdId, UUID.fromString(removedUser.userId()))).isNull();
+        assertThat(jdbcTemplate.queryForObject(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM chore_schedules schedule,
+                         jsonb_array_elements_text(schedule.strategy_config -> 'participantUserIds') participant_id
+                    WHERE schedule.chore_id = ? AND participant_id = ?
+                )
+                """,
+                Boolean.class, choreId, removedUser.userId())).isFalse();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM chore_completions WHERE assignment_id = ?",
+                Integer.class, historicalAssignmentId)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM activity_events WHERE household_id = ? AND event_type = 'MEMBER_REJOINED' AND entity_id = ?",
+                Integer.class, householdId, UUID.fromString(removedUser.userId()))).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT used_at FROM household_invitations WHERE invite_code = ?",
-                java.sql.Timestamp.class,
-                hash(code))).isNull();
+                java.sql.Timestamp.class, hash(newCode))).isNotNull();
+    }
+
+    @Test
+    void inviteForAnotherHouseholdDoesNotReactivateOldMembership() throws Exception {
+        WebSession ownerA = login("cross-household-owner-a");
+        WebSession ownerB = login("cross-household-owner-b");
+        WebSession formerMember = login("cross-household-former-member");
+        UUID householdA = createHousehold(ownerA, "Old Household", "UTC");
+        UUID householdB = createHousehold(ownerB, "Invited Household", "UTC");
+        jdbcTemplate.update("""
+                INSERT INTO household_memberships (household_id, user_id, role, status, left_at)
+                VALUES (?, ?, 'OWNER', 'REMOVED', NOW())
+                """, householdA, UUID.fromString(formerMember.userId()));
+
+        join(formerMember, createInvitation(ownerB, householdB)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Invited Household"))
+                .andExpect(jsonPath("$.currentUserRole").value("MEMBER"));
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM household_memberships WHERE household_id = ? AND user_id = ?",
+                String.class, householdA, UUID.fromString(formerMember.userId()))).isEqualTo("REMOVED");
+        assertMembership(formerMember, householdB, "MEMBER", "ACTIVE");
+        join(formerMember, createInvitation(ownerA, householdA)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentUserRole").value("MEMBER"));
+        assertMembership(formerMember, householdA, "MEMBER", "ACTIVE");
     }
 
     @Test
@@ -1577,6 +1716,35 @@ class HouseholdControllerIntegrationTest {
                 "SELECT COUNT(*) FROM household_invitations WHERE household_id = ? AND used_at IS NOT NULL",
                 Integer.class,
                 householdId)).isEqualTo(1);
+    }
+
+    @Test
+    void simultaneousRedemptionReactivatesOneExistingMembershipOnce() throws Exception {
+        WebSession owner = login("race-rejoin-owner");
+        WebSession member = login("race-rejoin-member");
+        UUID householdId = createHousehold(owner, "Race Rejoin Home", "UTC");
+        jdbcTemplate.update("""
+                INSERT INTO household_memberships (household_id, user_id, role, status, left_at)
+                VALUES (?, ?, 'ADMIN', 'REMOVED', NOW() - INTERVAL '1 day')
+                """, householdId, UUID.fromString(member.userId()));
+        String code = createInvitation(owner, householdId);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+
+        CompletableFuture<Integer> resultA = redeemConcurrently(member, code, ready, start);
+        CompletableFuture<Integer> resultB = redeemConcurrently(member, code, ready, start);
+        assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+        start.countDown();
+
+        assertThat(java.util.List.of(resultA.get(30, TimeUnit.SECONDS), resultB.get(30, TimeUnit.SECONDS)))
+                .containsExactlyInAnyOrder(200, 400);
+        assertMembership(member, householdId, "MEMBER", "ACTIVE");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM household_memberships WHERE household_id = ? AND user_id = ?",
+                Integer.class, householdId, UUID.fromString(member.userId()))).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM household_invitations WHERE invite_code = ? AND used_at IS NOT NULL",
+                Integer.class, hash(code))).isEqualTo(1);
     }
 
     private CompletableFuture<Integer> redeemConcurrently(

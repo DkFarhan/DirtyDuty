@@ -5,20 +5,15 @@ import { MoreHorizontal } from "lucide-react"
 import { useChoreSync } from "@/lib/chore-sync/store"
 import { ApiError } from "@/lib/auth/api"
 import { categoryIcon, choreApi, type Chore, type ChoreManagementOptions } from "@/lib/household/chores"
-import { householdApi, type HouseholdMemberDTO } from "@/lib/household/api"
 import { useHouseholds } from "@/lib/household/household-context"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { BottomNav } from "../bottom-nav"
 import { ChevronLeftIcon } from "../icons"
-import { MemberCard, memberColor } from "../member-card"
 
-type Tab = "members" | "chores"
-
-export function AdminScreen({ initialTab = "members" }: { initialTab?: Tab }) {
-  const { state, navigate, editChore } = useChoreSync()
+export function AdminScreen({ initialTab = "chores" }: { initialTab?: "members" | "chores" }) {
+  const { navigate, editChore } = useChoreSync()
   const { households } = useHouseholds()
-  const [tab, setTab] = useState<Tab>(initialTab)
   const [chores, setChores] = useState<Chore[]>([])
   const [choreState, setChoreState] = useState<"loading" | "loaded" | "error">("loading")
   const [choreError, setChoreError] = useState<string | null>(null)
@@ -26,27 +21,7 @@ export function AdminScreen({ initialTab = "members" }: { initialTab?: Tab }) {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [archiveChore, setArchiveChore] = useState<Chore | null>(null)
   const [managementOptions, setManagementOptions] = useState<ChoreManagementOptions | null>(null)
-  const [members, setMembers] = useState<HouseholdMemberDTO[]>([])
-  const [memberState, setMemberState] = useState<"loading" | "loaded" | "error">("loading")
-  const [memberError, setMemberError] = useState<string | null>(null)
   const household = households[0]
-
-  const loadMembers = useCallback(async () => {
-    if (!household) {
-      setMemberError("Your household could not be found.")
-      setMemberState("error")
-      return
-    }
-    setMemberState("loading")
-    setMemberError(null)
-    try {
-      setMembers(await householdApi.members(household.id))
-      setMemberState("loaded")
-    } catch (cause) {
-      setMemberError(cause instanceof ApiError ? cause.message : "Unable to load household members. Please try again.")
-      setMemberState("error")
-    }
-  }, [household])
 
   const loadChores = useCallback(async () => {
     if (!household) return
@@ -67,12 +42,8 @@ export function AdminScreen({ initialTab = "members" }: { initialTab?: Tab }) {
   }, [household])
 
   useEffect(() => {
-    if (tab === "chores") void loadChores()
-  }, [loadChores, tab])
-
-  useEffect(() => {
-    if (tab === "members") void loadMembers()
-  }, [loadMembers, tab])
+    void loadChores()
+  }, [loadChores])
 
   const runLifecycleAction = async (chore: Chore, action: "pause" | "activate" | "archive") => {
     if (!household) return
@@ -130,45 +101,14 @@ export function AdminScreen({ initialTab = "members" }: { initialTab?: Tab }) {
         </div>
 
         <div className="flex gap-2 mt-4 bg-slate-100 p-1 rounded-xl">
-          {(["members", "chores"] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={cn(
-                "flex-1 py-2 rounded-lg text-sm font-bold capitalize transition-all",
-                tab === t ? "bg-white text-teal-600 shadow-sm" : "text-slate-500",
-              )}
-            >
-              {t === "members" ? "👥 Members" : "📋 Chores"}
-            </button>
-          ))}
+          <div className="flex-1 rounded-lg bg-white py-2 text-center text-sm font-bold text-teal-600 shadow-sm">
+            📋 Chores
+          </div>
         </div>
       </header>
 
       <div className="px-4 pt-4">
-        {tab === "members" && (
-          <div className="flex flex-col gap-3">
-            {memberState === "loading" && <div aria-label="Loading household members" className="space-y-3">{[0, 1].map((item) => <div className="h-28 animate-pulse rounded-2xl bg-white" key={item} />)}</div>}
-            {memberState === "error" && (
-              <div className="rounded-2xl border border-slate-100 bg-white p-5 text-center shadow-sm">
-                <p role="alert" className="text-sm text-slate-600">{memberError}</p>
-                <Button className="mt-3 rounded-xl" onClick={() => void loadMembers()} type="button" variant="outline">Try again</Button>
-              </div>
-            )}
-            {memberState === "loaded" && members.length === 0 && <div className="rounded-2xl bg-white p-6 text-center text-sm text-slate-400">No household members found.</div>}
-            {memberState === "loaded" && members.map((member, index) => (
-              <MemberCard
-                key={member.userId}
-                colorClass={memberColor(index)}
-                isCurrentUser={member.userId === state.currentUser.id}
-                member={member}
-              />
-            ))}
-          </div>
-        )}
-
-        {tab === "chores" && (
-          <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3">
           <Button
             aria-label="Create a chore"
             onClick={() => navigate("create-chore")}
@@ -248,7 +188,6 @@ export function AdminScreen({ initialTab = "members" }: { initialTab?: Tab }) {
             )
           })}
         </div>
-        )}
       </div>
 
       <BottomNav active="household" navigate={navigate} />

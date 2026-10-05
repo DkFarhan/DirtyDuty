@@ -3,10 +3,12 @@ package com.dirtyduty.app.repository;
 import com.dirtyduty.app.entity.HouseholdMembership;
 import com.dirtyduty.app.dto.household.HouseholdResponse;
 import com.dirtyduty.app.entity.enums.MembershipStatus;
+import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -17,6 +19,12 @@ public interface HouseholdMembershipRepository extends JpaRepository<HouseholdMe
     List<HouseholdMembership> findByUser_IdAndStatus(UUID userId, MembershipStatus status);
 
     List<HouseholdMembership> findByHousehold_IdAndStatus(UUID householdId, MembershipStatus status);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select membership from HouseholdMembership membership where membership.household.id = :householdId and membership.status = :status")
+    List<HouseholdMembership> findByHousehold_IdAndStatusForUpdate(
+            @Param("householdId") UUID householdId,
+            @Param("status") MembershipStatus status);
 
     boolean existsByHousehold_IdAndUser_IdAndStatus(UUID householdId, UUID userId, MembershipStatus status);
 

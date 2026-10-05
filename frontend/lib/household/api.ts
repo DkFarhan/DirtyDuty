@@ -33,6 +33,11 @@ export type HouseholdMemberDTO = {
   completedThisWeek: number
 }
 
+export type HouseholdMemberRemovalResponse = {
+  message: string
+  pausedScheduleCount: number
+}
+
 export const householdApi = {
   list: () => api.get<Household[]>("/api/households"),
   create: (input: CreateHouseholdInput) => api.post<Household>("/api/households", input),
@@ -41,6 +46,12 @@ export const householdApi = {
     api.post<HouseholdInvitation>(`/api/households/${encodeURIComponent(householdId)}/invitations`),
   members: (householdId: string) =>
     api.get<HouseholdMemberDTO[]>(`/api/households/${encodeURIComponent(householdId)}/members`),
+  updateMemberRole: (householdId: string, userId: string, role: "OWNER" | "ADMIN" | "MEMBER") =>
+    api.put<void>(`/api/households/${encodeURIComponent(householdId)}/members/${encodeURIComponent(userId)}/role`, { role }),
+  removeMember: (householdId: string, userId: string) =>
+    api.delete<HouseholdMemberRemovalResponse>(`/api/households/${encodeURIComponent(householdId)}/members/${encodeURIComponent(userId)}`),
+  transferOwnership: (householdId: string, userId: string) =>
+    api.post<void>(`/api/households/${encodeURIComponent(householdId)}/members/${encodeURIComponent(userId)}/transfer-ownership`),
   settings: (householdId: string) =>
     api.get<HouseholdSettings>(`/api/households/${encodeURIComponent(householdId)}/settings`),
   updateSettings: (householdId: string, input: Pick<HouseholdSettings, "name" | "description" | "timezone">) =>

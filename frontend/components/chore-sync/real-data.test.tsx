@@ -146,12 +146,7 @@ describe("server-backed chore data", () => {
     fireEvent.click(screen.getByRole("button", { name: /Manage Chores/ }))
     expect(await screen.findByRole("heading", { name: "Household Management" })).toBeTruthy()
     expect(await screen.findByText("No chores yet")).toBeTruthy()
-    fetchMock.mockResolvedValueOnce(jsonResponse(members))
-    fireEvent.click(screen.getByRole("button", { name: /Members/ }))
-    expect(await screen.findByText("3/4 chores done this week")).toBeTruthy()
-    expect(screen.queryByRole("button", { name: "Make Admin" })).toBeNull()
-    expect(screen.queryByRole("button", { name: "Remove" })).toBeNull()
-    expect(screen.queryByText("Member since Sept 2026")).toBeNull()
+    expect(screen.queryByRole("button", { name: /Members/ })).toBeNull()
   })
 
   it("keeps API failures distinct from empty dashboard and chore states", async () => {

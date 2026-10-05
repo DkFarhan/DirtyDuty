@@ -39,7 +39,7 @@ const ChoreSyncContext = createContext<ChoreSyncContextValue | null>(null)
 export function ChoreSyncProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AppState>(initialState)
   const [screen, setScreen] = useState<Screen>("login")
-  const [adminTab, setAdminTab] = useState<"members" | "chores">("members")
+  const [adminTab, setAdminTab] = useState<"members" | "chores">("chores")
   const [editingChoreId, setEditingChoreId] = useState<string | null>(null)
   const [notificationReturnScreen, setNotificationReturnScreen] = useState<Screen | null>(null)
 

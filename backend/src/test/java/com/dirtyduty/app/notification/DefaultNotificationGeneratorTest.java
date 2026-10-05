@@ -9,18 +9,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 class DefaultNotificationGeneratorTest {
     @Test
     void rerunningReminderPlanningProducesTheSameDeduplicationKeyAndExpiry() {
         NotificationTemplateResolver resolver = mock(NotificationTemplateResolver.class);
-        DefaultNotificationGenerator generator = new DefaultNotificationGenerator(resolver);
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        DefaultNotificationGenerator generator = new DefaultNotificationGenerator(resolver, jdbc);
         UUID userId = UUID.randomUUID();
         UUID assignmentId = UUID.randomUUID();
         OffsetDateTime scheduledAt = OffsetDateTime.parse("2026-10-01T12:00:00Z");
         OffsetDateTime expiresAt = scheduledAt.plusHours(5);
         NotificationEvent event = new NotificationEvent(
-                "CHORE_DUE_SOON", null, UUID.randomUUID(), "CHORE_ASSIGNMENT", assignmentId,
+                "CHORE_DUE_SOON", null, null, "CHORE_ASSIGNMENT", assignmentId,
                 "CHORE_REMINDER", Map.of(
                         "scheduled_at", scheduledAt.toString(),
                         "expires_at", expiresAt.toString()),

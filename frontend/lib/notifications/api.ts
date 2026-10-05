@@ -12,6 +12,7 @@ export type Notification = {
   status: string
   scheduledAt: string | null
   sentAt: string | null
+  deliveredAt: string | null
   readAt: string | null
   createdAt: string
 }

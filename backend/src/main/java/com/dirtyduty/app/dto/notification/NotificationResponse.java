@@ -15,5 +15,6 @@ public record NotificationResponse(
         String status,
         OffsetDateTime scheduledAt,
         OffsetDateTime sentAt,
+        OffsetDateTime deliveredAt,
         OffsetDateTime readAt,
         OffsetDateTime createdAt) {}

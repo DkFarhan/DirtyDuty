@@ -30,18 +30,26 @@ public class NotificationService {
     public List<NotificationResponse> list(Authentication authentication) {
         UUID userId = currentUserId(authentication);
         return jdbc.query("""
-                SELECT id, type, category, priority, title, message, reference_type, reference_id,
-                       status, scheduled_at, sent_at, read_at, created_at
-                FROM notifications
-                WHERE recipient_user_id=? AND status='SENT'
-                ORDER BY created_at DESC, id DESC
-                """, (rs, row) -> new NotificationResponse(
-                rs.getObject("id", UUID.class), rs.getString("type"), rs.getString("category"),
-                rs.getString("priority"), rs.getString("title"), rs.getString("message"),
-                rs.getString("reference_type"), rs.getObject("reference_id", UUID.class),
-                rs.getString("status"), rs.getObject("scheduled_at", OffsetDateTime.class),
-                rs.getObject("sent_at", OffsetDateTime.class), rs.getObject("read_at", OffsetDateTime.class),
-                rs.getObject("created_at", OffsetDateTime.class)), userId);
+                SELECT n.id, n.type, n.category, n.priority, n.title, n.message, n.reference_type, n.reference_id,
+                       n.status, n.scheduled_at,
+                       COALESCE(d.sent_at, n.sent_at, n.created_at) AS delivered_at,
+                       n.sent_at, n.read_at, n.created_at
+                FROM notifications n
+                LEFT JOIN notification_deliveries d
+                    ON d.notification_id = n.id AND d.channel = 'IN_APP'
+                WHERE n.recipient_user_id=? AND n.status='SENT'
+                ORDER BY COALESCE(d.sent_at, n.sent_at, n.created_at) DESC, n.id DESC
+                """, (rs, row) -> {
+                    OffsetDateTime deliveredAt = rs.getObject("delivered_at", OffsetDateTime.class);
+                    return new NotificationResponse(
+                            rs.getObject("id", UUID.class), rs.getString("type"), rs.getString("category"),
+                            rs.getString("priority"), rs.getString("title"), rs.getString("message"),
+                            rs.getString("reference_type"), rs.getObject("reference_id", UUID.class),
+                            rs.getString("status"), rs.getObject("scheduled_at", OffsetDateTime.class),
+                            deliveredAt, deliveredAt,
+                            rs.getObject("read_at", OffsetDateTime.class),
+                            rs.getObject("created_at", OffsetDateTime.class));
+                }, userId);
     }
 
     @Transactional(readOnly = true)

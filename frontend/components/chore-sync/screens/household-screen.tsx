@@ -6,7 +6,7 @@ import { ApiError } from "@/lib/auth/api"
 import { householdApi, type HouseholdMemberDTO } from "@/lib/household/api"
 import { useHouseholds } from "@/lib/household/household-context"
 import { BottomNav } from "../bottom-nav"
-import { MemberCard, memberColor } from "../member-card"
+import { MemberActionDialog, MemberCard, memberColor, type MemberAction } from "../member-card"
 import { ChevronRightIcon } from "../icons"
 import { SectionHeader } from "../primitives"
 import { InviteHousemateDialog } from "../invite-housemate-dialog"
@@ -25,6 +25,10 @@ export function HouseholdScreen() {
   const [members, setMembers] = useState<HouseholdMemberDTO[]>([])
   const [memberStatus, setMemberStatus] = useState<"loading" | "loaded" | "error">("loading")
   const [memberError, setMemberError] = useState<string | null>(null)
+  const [pendingMemberAction, setPendingMemberAction] = useState<{ action: MemberAction; member: HouseholdMemberDTO } | null>(null)
+  const [confirmText, setConfirmText] = useState("")
+  const [memberActionError, setMemberActionError] = useState<string | null>(null)
+  const [busyMemberId, setBusyMemberId] = useState<string | null>(null)
   const canManage = household?.currentUserRole === "OWNER" || household?.currentUserRole === "ADMIN"
 
   const setInviteDialogOpen = useCallback((open: boolean) => setInviteOpen(open), [])
@@ -45,6 +49,46 @@ export function HouseholdScreen() {
       setMemberStatus("error")
     }
   }, [household])
+
+  const handleMemberAction = useCallback((action: MemberAction, member: HouseholdMemberDTO) => {
+    if (!household) return
+    setMemberActionError(null)
+    setPendingMemberAction({ action, member })
+    if (action !== "transfer") return
+    setConfirmText("")
+  }, [household])
+
+  const commitMemberAction = useCallback(async () => {
+    if (!household || !pendingMemberAction) return
+    const { action, member } = pendingMemberAction
+    setBusyMemberId(member.userId)
+    setMemberActionError(null)
+
+    try {
+      if (action === "promote") {
+        await householdApi.updateMemberRole(household.id, member.userId, "ADMIN")
+      } else if (action === "demote") {
+        await householdApi.updateMemberRole(household.id, member.userId, "MEMBER")
+      } else if (action === "remove") {
+        await householdApi.removeMember(household.id, member.userId)
+      } else if (action === "transfer") {
+        const expected = household.name.trim() === confirmText.trim() || member.displayName.trim() === confirmText.trim()
+        if (!expected) {
+          setMemberActionError("Type the household name or the member name to confirm transfer.")
+          setBusyMemberId(null)
+          return
+        }
+        await householdApi.transferOwnership(household.id, member.userId)
+      }
+      setPendingMemberAction(null)
+      setConfirmText("")
+      await loadMembers()
+    } catch (cause) {
+      setMemberActionError(cause instanceof ApiError ? cause.message : "Unable to update this household member. Please try again.")
+    } finally {
+      setBusyMemberId(null)
+    }
+  }, [confirmText, household, loadMembers, pendingMemberAction])
 
   useEffect(() => { void loadMembers() }, [loadMembers])
 
@@ -80,7 +124,16 @@ export function HouseholdScreen() {
           {memberStatus === "loaded" && members.length === 0 && <div className="rounded-2xl bg-white p-6 text-center text-sm text-slate-400">No household members found.</div>}
           {memberStatus === "loaded" && (
             <div className="flex flex-col gap-3">
-              {members.map((member, i) => <MemberCard key={member.userId} member={member} colorClass={memberColor(i)} isCurrentUser={member.userId === state.currentUser.id} />)}
+              {members.map((member, i) => (
+                <MemberCard
+                  key={member.userId}
+                  member={member}
+                  colorClass={memberColor(i)}
+                  isCurrentUser={member.userId === state.currentUser.id}
+                  currentUserRole={(household?.currentUserRole ?? "MEMBER") as "OWNER" | "ADMIN" | "MEMBER"}
+                  onAction={handleMemberAction}
+                />
+              ))}
             </div>
           )}
         </section>
@@ -120,6 +173,17 @@ export function HouseholdScreen() {
           open={inviteOpen}
         />
       )}
+
+      <MemberActionDialog
+        busyMemberId={busyMemberId}
+        confirmText={confirmText}
+        householdName={household?.name ?? "Household"}
+        memberActionError={memberActionError}
+        onCancel={() => { setPendingMemberAction(null); setConfirmText(""); setMemberActionError(null) }}
+        onChangeConfirmText={setConfirmText}
+        onConfirm={() => void commitMemberAction()}
+        pendingMemberAction={pendingMemberAction}
+      />
 
       <BottomNav active="household" navigate={navigate} />
     </div>

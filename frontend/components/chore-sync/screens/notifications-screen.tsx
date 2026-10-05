@@ -200,7 +200,7 @@ export function NotificationsScreen() {
                         {!read && <span className="rounded-full bg-teal-100 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-teal-700">Unread</span>}
                       </div>
                       <p className="mt-1 text-sm leading-relaxed text-slate-600">{item.message}</p>
-                      <p className="mt-2 text-[10px] text-slate-400">{dateLabel(item.createdAt)} · {item.category.toLowerCase()}</p>
+                      <p className="mt-2 text-[10px] text-slate-400">{dateLabel(item.deliveredAt ?? item.sentAt ?? item.createdAt)} · {item.category.toLowerCase()}</p>
                       {!read && (
                         <button className="mt-2 text-xs font-bold text-teal-700 underline-offset-2 hover:underline disabled:opacity-50" disabled={busyId !== null} onClick={() => void markRead(item)} type="button">
                           {busyId === item.id ? "Marking read…" : "Mark as read"}
