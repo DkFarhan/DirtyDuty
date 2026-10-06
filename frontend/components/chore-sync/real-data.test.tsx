@@ -300,7 +300,7 @@ describe("server-backed chore data", () => {
       .mockResolvedValueOnce(jsonResponse([]))
     fireEvent.click(screen.getByRole("button", { name: "Transfer and leave" }))
 
-    await screen.findByText("Welcome to ChoreSync!")
+    await screen.findByText("Welcome!")
     const leaveRequest = fetchMock.mock.calls.find(
       ([url, request]) =>
         url === "http://localhost:8080/api/households/home-1/leave" && request?.method === "POST",
@@ -402,7 +402,7 @@ describe("server-backed chore data", () => {
         .mockResolvedValueOnce(jsonResponse([]))
       fireEvent.click(screen.getByRole("button", { name: "Confirm" }))
 
-      await screen.findByText("Welcome to ChoreSync!")
+      await screen.findByText("Welcome!")
       const leaveRequest = fetchMock.mock.calls.find(
         ([url, request]) =>
           url === "http://localhost:8080/api/households/home-1/leave" && request?.method === "POST",

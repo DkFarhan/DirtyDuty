@@ -23,6 +23,7 @@ function jsonResponse(payload: unknown, status = 200) {
 async function openLogin() {
   render(<AppShell />)
   await screen.findByRole("button", { name: "Sign In" })
+  expect(screen.getByRole("img", { name: "DirtyDuty" })).toBeTruthy()
 }
 
 async function fillAndSubmitRegistration() {
@@ -65,7 +66,8 @@ describe("authentication screens", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
 
     resolveMe(jsonResponse(user))
-    expect(await screen.findByText("Welcome to ChoreSync!")).toBeTruthy()
+    expect(await screen.findByText("Welcome!")).toBeTruthy()
+    expect(screen.getByRole("img", { name: "DirtyDuty" })).toBeTruthy()
     expect(fetchMock).toHaveBeenCalledWith(
       "http://localhost:8080/api/auth/me",
       expect.objectContaining({
@@ -146,7 +148,7 @@ describe("authentication screens", () => {
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "StrongPassword123!" } })
     fireEvent.click(screen.getByRole("button", { name: "Sign In" }))
 
-    expect(await screen.findByText("Welcome to ChoreSync!")).toBeTruthy()
+    expect(await screen.findByText("Welcome!")).toBeTruthy()
     expect(fetchMock.mock.calls[2][0]).toBe("http://localhost:8080/api/auth/login")
     expect(fetchMock.mock.calls[2][1]).toMatchObject({
       method: "POST",

@@ -4,6 +4,7 @@ import { useState } from "react"
 import { ApiError } from "@/lib/auth/api"
 import { useAuth } from "@/lib/auth/auth-context"
 import { useChoreSync } from "@/lib/chore-sync/store"
+import { ProductLogo } from "@/components/brand/product-logo"
 import { ChevronLeftIcon } from "../icons"
 
 const inputClass =
@@ -54,8 +55,9 @@ export function RegisterScreen() {
         <span className="text-sm font-medium">Back</span>
       </button>
 
+      <ProductLogo className="mb-6 h-auto w-44 max-w-full" />
       <h1 className="text-3xl font-black text-slate-900 mb-1 font-display">Create account</h1>
-      <p className="text-slate-500 text-sm mb-8">Join ChoreSync and sync your home life</p>
+      <p className="text-slate-500 text-sm mb-8">Set up your account to get started</p>
 
       <div className="flex flex-col gap-4 mb-6">
         {fields.map(({ key, label, placeholder, type }) => (

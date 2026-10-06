@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { useChoreSync } from "@/lib/chore-sync/store"
 import { useHouseholds } from "@/lib/household/household-context"
+import { ProductLogo } from "@/components/brand/product-logo"
 import { ChevronLeftIcon } from "../icons"
 
 const inputClass =
@@ -46,7 +47,7 @@ export function CreateHouseholdScreen() {
       </button>
 
       <div className="mb-8">
-        <div className="text-4xl mb-4">🏡</div>
+        <ProductLogo className="mb-4 h-8 w-auto" variant="mark" />
         <h1 className="text-3xl font-black text-slate-900 mb-1 font-display">Create Household</h1>
         <p className="text-slate-500 text-sm">Give your home a name and invite your housemates</p>
       </div>

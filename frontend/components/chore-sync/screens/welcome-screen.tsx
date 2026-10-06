@@ -2,6 +2,7 @@
 
 import { useChoreSync } from "@/lib/chore-sync/store"
 import { useAuth } from "@/lib/auth/auth-context"
+import { ProductLogo } from "@/components/brand/product-logo"
 import { useState } from "react"
 
 export function WelcomeScreen() {
@@ -37,12 +38,8 @@ export function WelcomeScreen() {
         </p>
       )}
       <div className="flex flex-col items-center text-center mb-12">
-        <div className="w-20 h-20 bg-teal-50 rounded-3xl flex items-center justify-center mb-6">
-          <span className="text-5xl">🎉</span>
-        </div>
-        <h1 className="text-3xl font-black text-slate-900 mb-3 font-display">
-          Welcome to ChoreSync!
-        </h1>
+        <ProductLogo className="mb-5 h-auto w-48 max-w-full" />
+        <h1 className="text-3xl font-black text-slate-900 mb-3 font-display">Welcome!</h1>
         <p className="text-slate-500 text-[15px] leading-relaxed max-w-xs">
           {
             "Let's set up your household. You can create a new one or join an existing one with an invite code."
