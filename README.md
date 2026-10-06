@@ -20,6 +20,17 @@ The repository intentionally does not include the deployment pipeline yet. This 
 
 Before pushing to `main`, run the following locally:
 
+### Frontend environment
+
+For local development, create or update `frontend/.env.local` and set your support contact:
+
+```bash
+NEXT_PUBLIC_SUPPORT_EMAIL=your-public-support-email@example.com
+```
+
+`frontend/.env.local` is ignored by Git. The committed `frontend/.env.local.example` leaves this
+value blank; without it, support messages can still be copied but email links are unavailable.
+
 ### Frontend
 
 ```bash
