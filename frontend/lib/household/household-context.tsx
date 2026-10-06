@@ -9,10 +9,12 @@ export type HouseholdStatus = "loading" | "empty" | "has-households" | "error"
 
 type HouseholdContextValue = {
   households: Household[]
+  activeHousehold: Household | null
   status: HouseholdStatus
   error: string | null
   createdHouseholdInvite: Household | null
   refresh: () => Promise<Household[]>
+  selectHousehold: (householdId: string) => void
   create: (input: CreateHouseholdInput) => Promise<Household>
   join: (inviteCode: string) => Promise<void>
   queueCreatedHouseholdInvite: (household: Household | null) => void
@@ -29,6 +31,7 @@ function messageFor(error: unknown) {
 export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading: isAuthLoading } = useAuth()
   const [households, setHouseholds] = useState<Household[]>([])
+  const [selectedHouseholdId, setSelectedHouseholdId] = useState<string | null>(null)
   const [status, setStatus] = useState<HouseholdStatus>("loading")
   const [error, setError] = useState<string | null>(null)
   const [hasLoaded, setHasLoaded] = useState(false)
@@ -40,6 +43,9 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     try {
       const result = await householdApi.list()
       setHouseholds(result)
+      setSelectedHouseholdId((selectedId) => result.some((household) => household.id === selectedId)
+        ? selectedId
+        : result[0]?.id ?? null)
       setStatus(result.length === 0 ? "empty" : "has-households")
       setHasLoaded(true)
       return result
@@ -55,6 +61,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     if (isAuthLoading) return
     if (!isAuthenticated) {
       setHouseholds([])
+      setSelectedHouseholdId(null)
       setError(null)
       setStatus("empty")
       setHasLoaded(false)
@@ -78,19 +85,31 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     setCreatedHouseholdInvite(household)
   }, [])
 
+  const selectHousehold = useCallback((householdId: string) => {
+    if (households.some((household) => household.id === householdId)) {
+      setSelectedHouseholdId(householdId)
+    }
+  }, [households])
+
+  const activeHousehold = households.find((household) => household.id === selectedHouseholdId)
+    ?? households[0]
+    ?? null
+
   const visibleStatus = isAuthenticated && !hasLoaded ? "loading" : status
   const value = useMemo(
     () => ({
       households,
+      activeHousehold,
       status: visibleStatus,
       error,
       createdHouseholdInvite,
       refresh,
+      selectHousehold,
       create,
       join,
       queueCreatedHouseholdInvite,
     }),
-    [households, visibleStatus, error, createdHouseholdInvite, refresh, create, join, queueCreatedHouseholdInvite],
+    [households, activeHousehold, visibleStatus, error, createdHouseholdInvite, refresh, selectHousehold, create, join, queueCreatedHouseholdInvite],
   )
 
   return <HouseholdContext.Provider value={value}>{children}</HouseholdContext.Provider>

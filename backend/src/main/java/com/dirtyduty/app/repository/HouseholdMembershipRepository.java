@@ -18,6 +18,12 @@ public interface HouseholdMembershipRepository extends JpaRepository<HouseholdMe
 
     List<HouseholdMembership> findByUser_IdAndStatus(UUID userId, MembershipStatus status);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select membership from HouseholdMembership membership where membership.user.id = :userId and membership.status = :status")
+    List<HouseholdMembership> findByUser_IdAndStatusForUpdate(
+            @Param("userId") UUID userId,
+            @Param("status") MembershipStatus status);
+
     List<HouseholdMembership> findByHousehold_IdAndStatus(UUID householdId, MembershipStatus status);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

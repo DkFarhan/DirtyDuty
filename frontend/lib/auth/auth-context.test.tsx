@@ -52,10 +52,13 @@ function Probe() {
             <span data-testid="authenticated">{String(auth.isAuthenticated)}</span>
             <span data-testid="user">{auth.user?.email ?? "none"}</span>
             <span data-testid="error">{auth.authError ?? "none"}</span>
+            <span data-testid="notice">{auth.authNotice ?? "none"}</span>
             <span data-testid="operation">{operation}</span>
             <button onClick={() => void auth.login("user@example.com", "password").then(() => setOperation("success"), () => setOperation("error"))}>Login</button>
             <button onClick={() => void auth.register({ displayName: "Browser User", email: "user@example.com", password: "password" }).then(() => setOperation("success"), () => setOperation("error"))}>Register</button>
             <button onClick={() => void auth.logout().then(() => setOperation("success"), () => setOperation("error"))}>Logout</button>
+            <button onClick={() => void auth.changePassword("old-password", "new-password").then(() => setOperation("success"), () => setOperation("error"))}>Change password</button>
+            <button onClick={() => void auth.deleteAccount("password", "user@example.com").then(() => setOperation("success"), () => setOperation("error"))}>Delete account</button>
         </div>
     )
 }
@@ -216,5 +219,41 @@ describe("AuthProvider", () => {
         await waitFor(() => expect(screen.getByTestId("operation").textContent).toBe("error"))
         expect(screen.getByTestId("authenticated").textContent).toBe("true")
         expect(clearCsrfToken).not.toHaveBeenCalled()
+    })
+
+    it("clears auth state after password change and preserves the forced-sign-in notice", async () => {
+        vi.mocked(api.get).mockResolvedValueOnce(user)
+        vi.mocked(api.post).mockResolvedValueOnce(undefined)
+
+        renderAuth()
+        await waitFor(() => expect(screen.getByTestId("authenticated").textContent).toBe("true"))
+        vi.mocked(clearCsrfToken).mockClear()
+        fireEvent.click(screen.getByRole("button", { name: "Change password" }))
+
+        await waitFor(() => expect(screen.getByTestId("authenticated").textContent).toBe("false"))
+        expect(api.post).toHaveBeenCalledWith("/api/auth/change-password", {
+            currentPassword: "old-password",
+            newPassword: "new-password",
+        })
+        expect(screen.getByTestId("notice").textContent).toBe("Password changed successfully. Please sign in again.")
+        expect(clearCsrfToken).toHaveBeenCalledOnce()
+    })
+
+    it("clears auth state after account deletion using the typed email", async () => {
+        vi.mocked(api.get).mockResolvedValueOnce(user)
+        vi.mocked(api.post).mockResolvedValueOnce(undefined)
+
+        renderAuth()
+        await waitFor(() => expect(screen.getByTestId("authenticated").textContent).toBe("true"))
+        vi.mocked(clearCsrfToken).mockClear()
+        fireEvent.click(screen.getByRole("button", { name: "Delete account" }))
+
+        await waitFor(() => expect(screen.getByTestId("authenticated").textContent).toBe("false"))
+        expect(api.post).toHaveBeenCalledWith("/api/auth/delete-account", {
+            password: "password",
+            email: "user@example.com",
+        })
+        expect(screen.getByTestId("notice").textContent).toBe("Your account has been permanently deleted.")
+        expect(clearCsrfToken).toHaveBeenCalledOnce()
     })
 })

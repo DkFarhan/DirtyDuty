@@ -13,12 +13,14 @@ export type ApiErrorKind = "validation" | "unauthenticated" | "forbidden" | "con
 export class ApiError extends Error {
     readonly status: number | null
     readonly kind: ApiErrorKind
+    readonly details: unknown
 
-    constructor(message: string, status: number | null, kind: ApiErrorKind) {
+    constructor(message: string, status: number | null, kind: ApiErrorKind, details: unknown = null) {
         super(message)
         this.name = "ApiError"
         this.status = status
         this.kind = kind
+        this.details = details
     }
 }
 
@@ -42,6 +44,12 @@ function messageFor(status: number, path: string): string {
     if (status === 401 && path === "/api/auth/logout") {
         return "Unable to confirm sign out. Your session may still be active."
     }
+    if (status === 400 && path === "/api/auth/change-password") {
+        return "Your current password is incorrect or the new password is not valid."
+    }
+    if (status === 400 && path === "/api/auth/delete-account") {
+        return "We couldn't delete this account. Check your password and email confirmation."
+    }
     if (status === 401) return "Your session could not be verified. Please sign in again."
     if (status === 400 && path === "/api/households/join") {
         return "Invite code is invalid or no longer available."
@@ -51,6 +59,7 @@ function messageFor(status: number, path: string): string {
     }
     if (status === 403) return "Your security token expired. Please try again."
     if (status === 409 && path === "/api/auth/register") return "An account with this email already exists."
+    if (status === 409 && path === "/api/auth/delete-account") return "You still own households."
     if (status === 409 && path === "/api/households/join") return "You are already a member of this household."
     if (status === 409) return "This request conflicts with the current state."
     if (status >= 400 && status < 500) return "Please check your information and try again."
@@ -92,7 +101,8 @@ async function request<T>(path: string, options: ApiRequestOptions = {}): Promis
 
     if (!response.ok) {
         if (response.status === 403) csrfState = null
-        throw new ApiError(messageFor(response.status, path), response.status, errorKind(response.status))
+        const payload = await readPayload(response)
+        throw new ApiError(messageFor(response.status, path), response.status, errorKind(response.status), payload)
     }
 
     const payload = await readPayload(response)
@@ -130,5 +140,5 @@ export const api = {
     post: <T>(path: string, body?: unknown) => request<T>(path, { method: "POST", body }),
     put: <T>(path: string, body?: unknown) => request<T>(path, { method: "PUT", body }),
     patch: <T>(path: string, body?: unknown) => request<T>(path, { method: "PATCH", body }),
-    delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+    delete: <T>(path: string, body?: unknown) => request<T>(path, { method: "DELETE", body }),
 }

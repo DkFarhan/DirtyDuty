@@ -1,6 +1,7 @@
 package com.dirtyduty.app.exception;
 
 import com.dirtyduty.app.dto.ApiErrorResponse;
+import com.dirtyduty.app.dto.auth.AccountDeletionConflictResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import java.time.OffsetDateTime;
@@ -20,6 +21,19 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    @ExceptionHandler(AccountDeletionConflictException.class)
+    public ResponseEntity<AccountDeletionConflictResponse> handleAccountDeletionConflict(
+            AccountDeletionConflictException ex,
+            HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new AccountDeletionConflictResponse(
+                HttpStatus.CONFLICT.value(),
+                "Conflict",
+                ex.getMessage(),
+                request.getRequestURI(),
+                OffsetDateTime.now(),
+                ex.getOwnedHouseholds()));
+    }
 
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ApiErrorResponse> handleResourceNotFound(
@@ -67,6 +81,13 @@ public class GlobalExceptionHandler {
                 "Conflict",
                 "The request conflicts with existing data.",
                 request.getRequestURI());
+    }
+
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidCredentials(
+            InvalidCredentialsException ex,
+            HttpServletRequest request) {
+        return buildResponse(HttpStatus.BAD_REQUEST, "Bad Request", ex.getMessage(), request.getRequestURI());
     }
 
     @ExceptionHandler(AuthenticationException.class)

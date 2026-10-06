@@ -58,6 +58,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/auth/logout").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/change-password").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/delete-account").authenticated()
                         .anyRequest().authenticated())
                 .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint(authenticationEntryPoint))
                 .formLogin(AbstractHttpConfigurer::disable)

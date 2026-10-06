@@ -2,6 +2,7 @@ package com.dirtyduty.app.controller;
 
 import com.dirtyduty.app.dto.household.HouseholdSettingsRequest;
 import com.dirtyduty.app.dto.household.HouseholdSettingsResponse;
+import com.dirtyduty.app.dto.household.LeaveHouseholdRequest;
 import com.dirtyduty.app.service.HouseholdSettingsService;
 import jakarta.validation.Valid;
 import java.util.UUID;
@@ -41,7 +42,10 @@ public class HouseholdSettingsController {
 
     @PostMapping("/leave")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void leave(@PathVariable UUID householdId, Authentication authentication) {
-        settingsService.leave(householdId, authentication);
+    public void leave(
+            @PathVariable UUID householdId,
+            @RequestBody(required = false) LeaveHouseholdRequest request,
+            Authentication authentication) {
+        settingsService.leave(householdId, request, authentication);
     }
 }

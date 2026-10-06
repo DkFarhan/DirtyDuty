@@ -10,7 +10,7 @@ const inputClass =
 
 export function LoginScreen() {
   const { navigate } = useChoreSync()
-  const { login } = useAuth()
+  const { login, authNotice, dismissAuthNotice } = useAuth()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
@@ -43,6 +43,14 @@ export function LoginScreen() {
       </div>
 
       <div className="flex flex-col gap-4 mb-6">
+        {authNotice && (
+          <div className="rounded-xl border border-teal-100 bg-teal-50 px-3 py-2 text-sm text-teal-800" role="status">
+            <div className="flex items-start justify-between gap-3">
+              <span>{authNotice}</span>
+              <button aria-label="Dismiss message" className="font-bold" onClick={dismissAuthNotice} type="button">×</button>
+            </div>
+          </div>
+        )}
         <div>
           <label htmlFor="login-email" className="block text-sm font-semibold text-slate-700 mb-1.5">
             Email

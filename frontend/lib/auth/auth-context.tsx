@@ -23,9 +23,13 @@ type AuthContextValue = {
     isAuthenticated: boolean
     isLoading: boolean
     authError: string | null
+    authNotice: string | null
+    dismissAuthNotice: () => void
     register: (input: RegisterInput) => Promise<void>
     login: (email: string, password: string) => Promise<AuthUser>
     logout: () => Promise<void>
+    changePassword: (currentPassword: string, newPassword: string) => Promise<void>
+    deleteAccount: (password: string, confirmation: string) => Promise<void>
     refreshUser: () => Promise<AuthUser | null>
 }
 
@@ -35,6 +39,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<AuthUser | null>(null)
     const [isLoading, setIsLoading] = useState(true)
     const [authError, setAuthError] = useState<string | null>(null)
+    const [authNotice, setAuthNotice] = useState<string | null>(null)
 
     const refreshUser = async () => {
         try {
@@ -69,6 +74,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await getCsrfToken()
         const authenticatedUser = await refreshUser()
         if (!authenticatedUser) throw new Error("Unable to verify your session. Please try again.")
+        setAuthNotice(null)
         return authenticatedUser
     }
 
@@ -93,18 +99,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         clearCsrfToken()
     }
 
+    const changePassword = async (currentPassword: string, newPassword: string) => {
+        await api.post<void>("/api/auth/change-password", { currentPassword, newPassword })
+        setUser(null)
+        clearCsrfToken()
+        setAuthNotice("Password changed successfully. Please sign in again.")
+    }
+
+    const deleteAccount = async (password: string, email: string) => {
+        await api.post<void>("/api/auth/delete-account", { password, email })
+        setUser(null)
+        clearCsrfToken()
+        setAuthNotice("Your account has been permanently deleted.")
+    }
+
+    const dismissAuthNotice = () => setAuthNotice(null)
+
     const value = useMemo(
         () => ({
             user,
             isAuthenticated: user !== null,
             isLoading,
             authError,
+            authNotice,
+            dismissAuthNotice,
             register,
             login,
             logout,
+            changePassword,
+            deleteAccount,
             refreshUser,
         }),
-        [authError, isLoading, user],
+        [authError, authNotice, isLoading, user],
     )
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -29,6 +29,7 @@ interface ChoreSyncContextValue {
   returnFromNotifications: () => void
   editChore: (choreId: string) => void
   setCurrentUser: (user: Member) => void
+  resetUserData: () => void
   markComplete: (choreId: string) => void
   addChore: (chore: Chore) => void
   removeChore: (choreId: string) => void
@@ -77,6 +78,11 @@ export function ChoreSyncProvider({ children }: { children: React.ReactNode }) {
     setState((s) => ({ ...s, currentUser: user }))
   }, [])
 
+  const resetUserData = useCallback(() => {
+    setState(initialState)
+    setEditingChoreId(null)
+  }, [])
+
   const markComplete = useCallback((choreId: string) => {
     setState((s) => ({
       ...s,
@@ -103,11 +109,12 @@ export function ChoreSyncProvider({ children }: { children: React.ReactNode }) {
       returnFromNotifications,
       editChore,
       setCurrentUser,
+      resetUserData,
       markComplete,
       addChore,
       removeChore,
     }),
-    [state, screen, adminTab, editingChoreId, navigate, openNotifications, returnFromNotifications, editChore, setCurrentUser, markComplete, addChore, removeChore],
+    [state, screen, adminTab, editingChoreId, navigate, openNotifications, returnFromNotifications, editChore, setCurrentUser, resetUserData, markComplete, addChore, removeChore],
   )
 
   return <ChoreSyncContext.Provider value={value}>{children}</ChoreSyncContext.Provider>

@@ -22,7 +22,13 @@ class AuthServiceTest {
         when(userRepository.saveAndFlush(any()))
                 .thenThrow(new DataIntegrityViolationException("unique email constraint"));
 
-        AuthService authService = new AuthService(userRepository, passwordEncoder);
+        org.springframework.jdbc.core.JdbcTemplate jdbcTemplate = org.mockito.Mockito.mock(org.springframework.jdbc.core.JdbcTemplate.class);
+        com.dirtyduty.app.repository.HouseholdMembershipRepository membershipRepository =
+                org.mockito.Mockito.mock(com.dirtyduty.app.repository.HouseholdMembershipRepository.class);
+        HouseholdSettingsService householdSettingsService = org.mockito.Mockito.mock(HouseholdSettingsService.class);
+
+        AuthService authService = new AuthService(
+                userRepository, passwordEncoder, jdbcTemplate, membershipRepository, householdSettingsService);
 
         assertThatThrownBy(() -> authService.register(
                 new RegisterRequest("Race User", "race@example.com", "StrongPassword123!")))

@@ -2,6 +2,8 @@ package com.dirtyduty.app.controller;
 
 import com.dirtyduty.app.dto.household.CreateHouseholdRequest;
 import com.dirtyduty.app.dto.household.CreateInvitationResponse;
+import com.dirtyduty.app.dto.household.DeleteHouseholdRequest;
+import com.dirtyduty.app.dto.household.HouseholdInvitationSummaryResponse;
 import com.dirtyduty.app.dto.household.HouseholdResponse;
 import com.dirtyduty.app.dto.household.JoinHouseholdRequest;
 import com.dirtyduty.app.dto.household.RemoveMemberResponse;
@@ -52,6 +54,31 @@ public class HouseholdController {
             Authentication authentication) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(householdService.createInvitation(householdId, authentication));
+    }
+
+    @GetMapping("/{householdId}/invitations")
+    public List<HouseholdInvitationSummaryResponse> listInvitations(
+            @PathVariable UUID householdId,
+            Authentication authentication) {
+        return householdService.listActiveInvitations(householdId, authentication);
+    }
+
+    @DeleteMapping("/{householdId}/invitations/{invitationId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void revokeInvitation(
+            @PathVariable UUID householdId,
+            @PathVariable UUID invitationId,
+            Authentication authentication) {
+        householdService.revokeInvitation(householdId, invitationId, authentication);
+    }
+
+    @DeleteMapping("/{householdId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteHousehold(
+            @PathVariable UUID householdId,
+            @Valid @RequestBody DeleteHouseholdRequest request,
+            Authentication authentication) {
+        householdService.deleteHousehold(householdId, request, authentication);
     }
 
     @PutMapping("/{householdId}/members/{userId}/role")

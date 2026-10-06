@@ -1,10 +1,12 @@
 package com.dirtyduty.app.controller;
 
-import com.dirtyduty.app.dto.auth.RegisterRequest;
-import com.dirtyduty.app.dto.auth.RegisterResponse;
+import com.dirtyduty.app.dto.auth.ChangePasswordRequest;
 import com.dirtyduty.app.dto.auth.CsrfResponse;
+import com.dirtyduty.app.dto.auth.DeleteAccountRequest;
 import com.dirtyduty.app.dto.auth.LoginRequest;
 import com.dirtyduty.app.dto.auth.LoginResponse;
+import com.dirtyduty.app.dto.auth.RegisterRequest;
+import com.dirtyduty.app.dto.auth.RegisterResponse;
 import com.dirtyduty.app.entity.User;
 import com.dirtyduty.app.repository.UserRepository;
 import com.dirtyduty.app.service.AuthService;
@@ -95,5 +97,26 @@ public class AuthController {
                 user.getDisplayName(),
                 user.getEmail(),
                 user.getEmailVerifiedAt() != null);
+    }
+
+    @PostMapping("/change-password")
+    public ResponseEntity<Void> changePassword(
+            @Valid @RequestBody ChangePasswordRequest request,
+            Authentication authentication) {
+        authService.changePassword(authentication.getName(), request.currentPassword(), request.newPassword());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/delete-account")
+    public ResponseEntity<Void> deleteAccount(
+            @Valid @RequestBody DeleteAccountRequest request,
+            Authentication authentication,
+            HttpServletRequest httpRequest) {
+        authService.deleteAccount(authentication.getName(), request.password(), request.email());
+        SecurityContextHolder.clearContext();
+        if (httpRequest.getSession(false) != null) {
+            httpRequest.getSession(false).invalidate();
+        }
+        return ResponseEntity.noContent().build();
     }
 }

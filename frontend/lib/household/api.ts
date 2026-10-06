@@ -24,6 +24,20 @@ export type HouseholdInvitation = {
   expiresAt: string
 }
 
+export type HouseholdInvitationSummary = {
+  id: string
+  createdAt: string
+  expiresAt: string | null
+  status: "ACTIVE" | "USED" | "REVOKED" | "EXPIRED"
+  createdByDisplayName: string | null
+  roleToAssign: "OWNER" | "ADMIN" | "MEMBER"
+}
+
+export type DeleteHouseholdRequest = {
+  householdName: string
+  password: string
+}
+
 export type HouseholdMemberDTO = {
   userId: string
   displayName: string
@@ -44,6 +58,12 @@ export const householdApi = {
   join: (inviteCode: string) => api.post<Household>("/api/households/join", { inviteCode }),
   createInvitation: (householdId: string) =>
     api.post<HouseholdInvitation>(`/api/households/${encodeURIComponent(householdId)}/invitations`),
+  listInvitations: (householdId: string) =>
+    api.get<HouseholdInvitationSummary[]>(`/api/households/${encodeURIComponent(householdId)}/invitations`),
+  revokeInvitation: (householdId: string, invitationId: string) =>
+    api.delete<void>(`/api/households/${encodeURIComponent(householdId)}/invitations/${encodeURIComponent(invitationId)}`),
+  deleteHousehold: (householdId: string, input: DeleteHouseholdRequest) =>
+    api.delete<void>(`/api/households/${encodeURIComponent(householdId)}`, input),
   members: (householdId: string) =>
     api.get<HouseholdMemberDTO[]>(`/api/households/${encodeURIComponent(householdId)}/members`),
   updateMemberRole: (householdId: string, userId: string, role: "OWNER" | "ADMIN" | "MEMBER") =>
@@ -56,6 +76,6 @@ export const householdApi = {
     api.get<HouseholdSettings>(`/api/households/${encodeURIComponent(householdId)}/settings`),
   updateSettings: (householdId: string, input: Pick<HouseholdSettings, "name" | "description" | "timezone">) =>
     api.put<HouseholdSettings>(`/api/households/${encodeURIComponent(householdId)}/settings`, input),
-  leave: (householdId: string) =>
-    api.post<void>(`/api/households/${encodeURIComponent(householdId)}/leave`),
+  leave: (householdId: string, newOwnerUserId?: string) =>
+    api.post<void>(`/api/households/${encodeURIComponent(householdId)}/leave`, newOwnerUserId ? { newOwnerUserId } : undefined),
 }

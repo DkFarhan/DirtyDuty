@@ -2,6 +2,8 @@ package com.dirtyduty.app.service;
 
 import com.dirtyduty.app.dto.household.CreateHouseholdRequest;
 import com.dirtyduty.app.dto.household.CreateInvitationResponse;
+import com.dirtyduty.app.dto.household.DeleteHouseholdRequest;
+import com.dirtyduty.app.dto.household.HouseholdInvitationSummaryResponse;
 import com.dirtyduty.app.dto.household.HouseholdResponse;
 import com.dirtyduty.app.dto.household.JoinHouseholdRequest;
 import com.dirtyduty.app.dto.household.RemoveMemberResponse;
@@ -43,6 +45,7 @@ import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -61,6 +64,7 @@ public class HouseholdService {
     private final UserRepository userRepository;
     private final NotificationEventService notificationEventService;
     private final JdbcTemplate jdbc;
+    private final PasswordEncoder passwordEncoder;
     private final Duration invitationExpiration;
 
     public HouseholdService(
@@ -72,6 +76,7 @@ public class HouseholdService {
             UserRepository userRepository,
             NotificationEventService notificationEventService,
             JdbcTemplate jdbc,
+            PasswordEncoder passwordEncoder,
             @Value("${app.households.invitation-expiration:7d}") Duration invitationExpiration) {
         this.householdRepository = householdRepository;
         this.householdMembershipRepository = householdMembershipRepository;
@@ -81,6 +86,7 @@ public class HouseholdService {
         this.userRepository = userRepository;
         this.notificationEventService = notificationEventService;
         this.jdbc = jdbc;
+        this.passwordEncoder = passwordEncoder;
         if (invitationExpiration.isZero() || invitationExpiration.isNegative()) {
             throw new IllegalArgumentException("Household invitation expiration must be positive.");
         }
@@ -151,6 +157,105 @@ public class HouseholdService {
         householdInvitationRepository.save(invitation);
 
         return new CreateInvitationResponse(inviteCode, expiresAt);
+    }
+
+    @Transactional(readOnly = true)
+    public List<HouseholdInvitationSummaryResponse> listActiveInvitations(UUID householdId, Authentication authentication) {
+        User user = resolveUser(authentication);
+        HouseholdMembership membership = householdMembershipRepository
+                .findByHousehold_IdAndUser_Id(householdId, user.getId())
+                .filter(existing -> existing.getStatus() == MembershipStatus.ACTIVE)
+                .orElseThrow(() -> new HouseholdAccessDeniedException("You are not authorized to manage household invitations."));
+
+        if (membership.getRole() != HouseholdRole.OWNER && membership.getRole() != HouseholdRole.ADMIN) {
+            throw new HouseholdAccessDeniedException("You are not authorized to manage household invitations.");
+        }
+
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        return householdInvitationRepository.findByHousehold_IdOrderByCreatedAtDesc(householdId).stream()
+                .map(invitation -> {
+                    String status = "ACTIVE";
+                    if (invitation.getRevokedAt() != null) {
+                        status = "REVOKED";
+                    } else if (invitation.getUsedAt() != null) {
+                        status = "USED";
+                    } else if (invitation.getExpiresAt() != null && !now.isBefore(invitation.getExpiresAt())) {
+                        status = "EXPIRED";
+                    }
+                    return new HouseholdInvitationSummaryResponse(
+                            invitation.getId(),
+                            invitation.getCreatedAt(),
+                            invitation.getExpiresAt(),
+                            status,
+                            invitation.getCreatedByUser() == null ? null : invitation.getCreatedByUser().getDisplayName(),
+                            invitation.getRoleToAssign());
+                })
+                .filter(invitation -> !"USED".equals(invitation.status()) && !"REVOKED".equals(invitation.status()) && !"EXPIRED".equals(invitation.status()))
+                .sorted((left, right) -> right.createdAt().compareTo(left.createdAt()))
+                .toList();
+    }
+
+    @Transactional
+    public void revokeInvitation(UUID householdId, UUID invitationId, Authentication authentication) {
+        User user = resolveUser(authentication);
+        HouseholdMembership membership = householdMembershipRepository
+                .findByHousehold_IdAndUser_Id(householdId, user.getId())
+                .filter(existing -> existing.getStatus() == MembershipStatus.ACTIVE)
+                .orElseThrow(() -> new HouseholdAccessDeniedException("You are not authorized to manage household invitations."));
+
+        if (membership.getRole() != HouseholdRole.OWNER && membership.getRole() != HouseholdRole.ADMIN) {
+            throw new HouseholdAccessDeniedException("You are not authorized to manage household invitations.");
+        }
+
+        HouseholdInvitation invitation = householdInvitationRepository.findById(invitationId)
+                .orElseThrow(() -> new ResourceNotFoundException("Invitation was not found."));
+        if (!invitation.getHousehold().getId().equals(householdId)) {
+            throw new ResourceNotFoundException("Invitation was not found in this household.");
+        }
+        if (invitation.getUsedAt() != null || invitation.getRevokedAt() != null) {
+            return;
+        }
+        invitation.setRevokedAt(OffsetDateTime.now(ZoneOffset.UTC));
+        householdInvitationRepository.save(invitation);
+    }
+
+    @Transactional
+    public void deleteHousehold(UUID householdId, DeleteHouseholdRequest request, Authentication authentication) {
+        if (request == null) {
+            throw new InvalidHouseholdException("Household name and password are required.");
+        }
+
+        User user = resolveUser(authentication);
+        HouseholdMembership membership = householdMembershipRepository
+                .findByHousehold_IdAndUser_Id(householdId, user.getId())
+                .filter(existing -> existing.getStatus() == MembershipStatus.ACTIVE)
+                .orElseThrow(() -> new HouseholdAccessDeniedException("You are not an active member of this household."));
+        if (membership.getRole() != HouseholdRole.OWNER) {
+            throw new HouseholdAccessDeniedException("Only the household owner can permanently delete it.");
+        }
+
+        Household household = householdRepository.findById(householdId)
+                .orElseThrow(() -> new ResourceNotFoundException("Household was not found."));
+        if (!Objects.equals(household.getName(), request.householdName())) {
+            throw new InvalidHouseholdException("Household name does not match.");
+        }
+        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+            throw new HouseholdAccessDeniedException("Current password is incorrect.");
+        }
+
+        jdbc.update("DELETE FROM notification_deliveries WHERE notification_id IN (SELECT id FROM notifications WHERE recipient_user_id IN (SELECT user_id FROM household_memberships WHERE household_id = ?))", householdId);
+        jdbc.update("DELETE FROM notifications WHERE recipient_user_id IN (SELECT user_id FROM household_memberships WHERE household_id = ?)", householdId);
+        jdbc.update("DELETE FROM notification_events WHERE household_id = ?", householdId);
+        jdbc.update("DELETE FROM activity_events WHERE household_id = ?", householdId);
+        jdbc.update("DELETE FROM chore_assignment_assignees WHERE household_id = ?", householdId);
+        jdbc.update("DELETE FROM chore_completions WHERE household_id = ?", householdId);
+        jdbc.update("DELETE FROM chore_assignments WHERE household_id = ?", householdId);
+        jdbc.update("DELETE FROM chore_schedules WHERE household_id = ?", householdId);
+        jdbc.update("DELETE FROM chores WHERE household_id = ?", householdId);
+        jdbc.update("DELETE FROM chore_categories WHERE household_id = ?", householdId);
+        jdbc.update("DELETE FROM household_invitations WHERE household_id = ?", householdId);
+        jdbc.update("DELETE FROM household_memberships WHERE household_id = ?", householdId);
+        householdRepository.delete(household);
     }
 
     @Transactional

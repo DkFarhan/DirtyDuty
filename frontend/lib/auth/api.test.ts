@@ -186,4 +186,38 @@ describe("auth API client", () => {
         expect(validationError.message).not.toContain("internal stack trace")
         expect(validationError.message).not.toContain("<img")
     })
+
+    it("preserves the structured owned-household conflict payload for the account deletion blocker", async () => {
+        fetchMock
+            .mockResolvedValueOnce(
+                new Response(JSON.stringify({ token: "csrf-token", headerName: "X-CSRF-TOKEN" }), {
+                    status: 200,
+                    headers: { "content-type": "application/json" },
+                }),
+            )
+            .mockResolvedValueOnce(
+                new Response(JSON.stringify({
+                    status: 409,
+                    error: "Conflict",
+                    message: "You still own households.",
+                    ownedHouseholds: [{ id: "household-1", name: "Maple House" }],
+                }), {
+                    status: 409,
+                    headers: { "content-type": "application/json" },
+                }),
+            )
+
+        const error = await api.post("/api/auth/delete-account", {
+            password: "password",
+            email: "user@example.com",
+        }).catch((requestError) => requestError)
+
+        expect(error).toBeInstanceOf(ApiError)
+        if (!(error instanceof ApiError)) throw error
+        expect(error.kind).toBe("conflict")
+        expect(error.message).toBe("You still own households.")
+        expect(error.details).toMatchObject({
+            ownedHouseholds: [{ id: "household-1", name: "Maple House" }],
+        })
+    })
 })

@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.dirtyduty.app.dto.auth.CsrfResponse;
 import com.dirtyduty.app.dto.auth.RegisterRequest;
+import com.dirtyduty.app.dto.auth.RegisterResponse;
 import com.dirtyduty.app.entity.User;
 import com.dirtyduty.app.entity.enums.AccountStatus;
 import com.dirtyduty.app.repository.UserRepository;
@@ -36,6 +37,7 @@ import org.springframework.test.web.servlet.MvcResult;
 class AuthSessionIntegrationTest {
 
     private final List<String> testEmails = new ArrayList<>();
+    private final List<UUID> testUserIds = new ArrayList<>();
 
     @Autowired
     private MockMvc mockMvc;
@@ -64,9 +66,12 @@ class AuthSessionIntegrationTest {
                     )
                     """, email);
             jdbcTemplate.update("DELETE FROM spring_session WHERE principal_name = ?", email);
-            userRepository.findByEmailIgnoreCase(email).ifPresent(userRepository::delete);
+        }
+        for (UUID userId : testUserIds) {
+            userRepository.findById(userId).ifPresent(userRepository::delete);
         }
         testEmails.clear();
+        testUserIds.clear();
     }
 
     @Test
@@ -200,6 +205,119 @@ class AuthSessionIntegrationTest {
     }
 
     @Test
+    void passwordChangeRequiresCurrentPasswordAndInvalidatesAllSessions() throws Exception {
+        String email = uniqueEmail("password-change");
+        register(email, AccountStatus.ACTIVE);
+        MvcResult initialLogin = performLogin(email, "StrongPassword123!", csrf());
+        Cookie loginCookie = initialLogin.getResponse().getCookie("SESSION");
+        Cookie secondLoginCookie = performLogin(email, "StrongPassword123!", csrf()).getResponse().getCookie("SESSION");
+        String originalHash = userRepository.findByEmailIgnoreCase(email).orElseThrow().getPasswordHash();
+        MvcResult csrfResult = csrfWithCookie(loginCookie);
+        CsrfResponse csrfResponse = readCsrf(csrfResult);
+
+        mockMvc.perform(post("/api/auth/change-password")
+                .cookie(loginCookie)
+                .contentType(APPLICATION_JSON)
+                .header(csrfResponse.headerName(), csrfResponse.token())
+                .content("{\"currentPassword\":\"StrongPassword123!\",\"newPassword\":\"NewPassword456!\"}"))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/auth/me").cookie(loginCookie))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/auth/me").cookie(secondLoginCookie))
+                .andExpect(status().isUnauthorized());
+        String changedHash = userRepository.findByEmailIgnoreCase(email).orElseThrow().getPasswordHash();
+        assertThat(changedHash).startsWith("{argon2}").isNotEqualTo(originalHash);
+
+        MvcResult newLogin = performLogin(email, "NewPassword456!", csrf());
+        assertThat(newLogin.getResponse().getStatus()).isEqualTo(200);
+        assertThat(performLogin(email, "StrongPassword123!", csrf()).getResponse().getStatus()).isEqualTo(401);
+    }
+
+    @Test
+    void deleteAccountRequiresPasswordAndConfirmationThenTombstonesTheUser() throws Exception {
+        String email = uniqueEmail("delete-account");
+        register(email, AccountStatus.ACTIVE);
+        UUID userId = userRepository.findByEmailIgnoreCase(email).orElseThrow().getId();
+
+        MvcResult login = performLogin(email, "StrongPassword123!", csrf());
+        Cookie loginCookie = login.getResponse().getCookie("SESSION");
+        MvcResult csrfResult = csrfWithCookie(loginCookie);
+        CsrfResponse csrfResponse = readCsrf(csrfResult);
+
+        mockMvc.perform(post("/api/auth/delete-account")
+                .cookie(loginCookie)
+                .contentType(APPLICATION_JSON)
+                .header(csrfResponse.headerName(), csrfResponse.token())
+                .content("{\"password\":\"StrongPassword123!\",\"email\":\"" + email + "\"}"))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/auth/me").cookie(loginCookie))
+                .andExpect(status().isUnauthorized());
+
+        User user = userRepository.findById(userId).orElse(null);
+        assertThat(user).isNotNull();
+        assertThat(user.getAccountStatus()).isEqualTo(AccountStatus.DELETED);
+        assertThat(user.getEmail()).startsWith("deleted-");
+        assertThat(user.getDisplayName()).isEqualTo("Deleted User");
+        assertThat(user.getAvatarUrl()).isNull();
+        assertThat(user.getEmailVerifiedAt()).isNull();
+        assertThat(user.getPasswordHash()).isNotEqualTo("StrongPassword123!");
+        MvcResult oldPasswordLogin = performLogin(email, "StrongPassword123!", csrf());
+        assertThat(oldPasswordLogin.getResponse().getStatus()).isEqualTo(401);
+    }
+
+    @Test
+    void changePasswordRejectsWrongWeakAndUnchangedPasswords() throws Exception {
+        String email = uniqueEmail("password-validation");
+        register(email, AccountStatus.ACTIVE);
+        MvcResult login = performLogin(email, "StrongPassword123!", csrf());
+        Cookie cookie = login.getResponse().getCookie("SESSION");
+
+        assertPasswordChangeStatus(cookie, "WrongPassword123!", "DifferentPassword456!", 400);
+        assertPasswordChangeStatus(cookie, "StrongPassword123!", "short", 400);
+        assertPasswordChangeStatus(cookie, "StrongPassword123!", "StrongPassword123!", 400);
+
+        User user = userRepository.findByEmailIgnoreCase(email).orElseThrow();
+        assertThat(user.getPasswordHash()).startsWith("{argon2}");
+        assertThat(user.getPasswordHash()).isNotEqualTo("StrongPassword123!");
+    }
+
+    @Test
+    void passwordAndAccountRoutesRequireAuthenticationAndCsrf() throws Exception {
+        for (String path : List.of("/api/auth/change-password", "/api/auth/delete-account")) {
+            mockMvc.perform(post(path)
+                    .contentType(APPLICATION_JSON)
+                    .content("{}"))
+                    .andExpect(status().isForbidden());
+
+            MvcResult csrf = csrf();
+            CsrfResponse token = readCsrf(csrf);
+            mockMvc.perform(post(path)
+                    .cookie(csrf.getResponse().getCookie("SESSION"))
+                    .contentType(APPLICATION_JSON)
+                    .header(token.headerName(), token.token())
+                    .content("{}"))
+                    .andExpect(status().isUnauthorized());
+        }
+    }
+
+    @Test
+    void authenticatedPasswordAndAccountMutationsRejectMissingCsrf() throws Exception {
+        for (String path : List.of("/api/auth/change-password", "/api/auth/delete-account")) {
+            String email = uniqueEmail("mutation-csrf");
+            register(email, AccountStatus.ACTIVE);
+            MvcResult login = performLogin(email, "StrongPassword123!", csrf());
+
+            mockMvc.perform(post(path)
+                    .cookie(login.getResponse().getCookie("SESSION"))
+                    .contentType(APPLICATION_JSON)
+                    .content("{}"))
+                    .andExpect(status().isForbidden());
+        }
+    }
+
+    @Test
     void logoutRequiresCsrfInvalidatesSessionAndExpiresCookie() throws Exception {
         String email = uniqueEmail("logout");
         register(email, AccountStatus.ACTIVE);
@@ -241,7 +359,8 @@ class AuthSessionIntegrationTest {
     }
 
     private void register(String email, AccountStatus status) {
-        authService.register(new RegisterRequest("Test User", email, "StrongPassword123!"));
+        RegisterResponse response = authService.register(new RegisterRequest("Test User", email, "StrongPassword123!"));
+        testUserIds.add(response.userId());
         if (status != AccountStatus.ACTIVE) {
             User user = userRepository.findByEmailIgnoreCase(email).orElseThrow();
             user.setAccountStatus(status);
@@ -265,6 +384,18 @@ class AuthSessionIntegrationTest {
                 .header(csrfResponse.headerName(), csrfResponse.token())
                 .content(loginJson(email, password)))
                 .andReturn();
+    }
+
+    private void assertPasswordChangeStatus(Cookie cookie, String currentPassword, String newPassword, int expectedStatus)
+            throws Exception {
+        MvcResult csrf = csrfWithCookie(cookie);
+        CsrfResponse token = readCsrf(csrf);
+        mockMvc.perform(post("/api/auth/change-password")
+                .cookie(cookie)
+                .contentType(APPLICATION_JSON)
+                .header(token.headerName(), token.token())
+                .content("{\"currentPassword\":\"" + currentPassword + "\",\"newPassword\":\"" + newPassword + "\"}"))
+                .andExpect(status().is(expectedStatus));
     }
 
     private CsrfResponse readCsrf(MvcResult result) throws Exception {
