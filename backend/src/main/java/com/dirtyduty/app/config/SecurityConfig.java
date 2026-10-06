@@ -1,6 +1,7 @@
 package com.dirtyduty.app.config;
 
 import com.dirtyduty.app.security.CustomUserDetailsService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.HashMap;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
@@ -113,16 +114,16 @@ public class SecurityConfig {
   }
 
   @Bean
-  public AuthenticationEntryPoint authenticationEntryPoint() {
+  public AuthenticationEntryPoint authenticationEntryPoint(ObjectMapper objectMapper) {
     return (request, response, exception) -> {
       response.setStatus(401);
       response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-      response
-          .getWriter()
-          .write(
-              "{\"status\":401,\"error\":\"Unauthorized\",\"message\":\"Authentication required.\",\"path\":\""
-                  + request.getRequestURI()
-                  + "\"}");
+      objectMapper.writeValue(
+          response.getOutputStream(),
+          Map.of(
+              "status", 401,
+              "error", "Unauthorized",
+              "message", "Authentication required"));
     };
   }
 

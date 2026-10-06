@@ -2,22 +2,27 @@ package com.dirtyduty.app.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
+import static org.springframework.http.MediaType.APPLICATION_JSON_VALUE;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.dirtyduty.app.config.SecurityConfig;
 import com.dirtyduty.app.dto.auth.RegisterResponse;
 import com.dirtyduty.app.exception.DuplicateResourceException;
 import com.dirtyduty.app.exception.GlobalExceptionHandler;
 import com.dirtyduty.app.repository.UserRepository;
 import com.dirtyduty.app.service.AuthService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.InsufficientAuthenticationException;
 import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.test.web.servlet.MockMvc;
@@ -46,6 +51,26 @@ class AuthControllerHttpTest {
             .setControllerAdvice(new GlobalExceptionHandler())
             .setValidator(validator)
             .build();
+  }
+
+  @Test
+  void authenticationEntryPoint_returnsGenericJson401WithoutRequestUri() throws Exception {
+    String userControlledPath = "/private/<script>alert(1)</script>";
+    MockHttpServletRequest request = new MockHttpServletRequest("GET", userControlledPath);
+    MockHttpServletResponse response = new MockHttpServletResponse();
+
+    new SecurityConfig()
+        .authenticationEntryPoint(new ObjectMapper())
+        .commence(request, response, new InsufficientAuthenticationException("Unauthenticated"));
+
+    var body = new ObjectMapper().readTree(response.getContentAsString());
+    assertThat(response.getStatus()).isEqualTo(401);
+    assertThat(response.getContentType()).isEqualTo(APPLICATION_JSON_VALUE);
+    assertThat(body.path("status").asInt()).isEqualTo(401);
+    assertThat(body.path("error").asText()).isEqualTo("Unauthorized");
+    assertThat(body.path("message").asText()).isEqualTo("Authentication required");
+    assertThat(body.has("path")).isFalse();
+    assertThat(response.getContentAsString()).doesNotContain(userControlledPath);
   }
 
   @Test
