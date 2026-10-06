@@ -5,9 +5,9 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 public record HouseholdInvitationSummaryResponse(
-        UUID id,
-        OffsetDateTime createdAt,
-        OffsetDateTime expiresAt,
-        String status,
-        String createdByDisplayName,
-        HouseholdRole roleToAssign) {}
+    UUID id,
+    OffsetDateTime createdAt,
+    OffsetDateTime expiresAt,
+    String status,
+    String createdByDisplayName,
+    HouseholdRole roleToAssign) {}

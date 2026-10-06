@@ -81,7 +81,9 @@ describe("household onboarding", () => {
       .mockResolvedValueOnce(jsonResponse([]))
     render(<AppShell />)
 
-    expect((await screen.findByRole("alert")).textContent).toContain("Unable to connect to DirtyDuty")
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Unable to connect to DirtyDuty",
+    )
     expect(screen.queryByText("Welcome to ChoreSync!")).toBeNull()
     fireEvent.click(screen.getByRole("button", { name: "Try Again" }))
     expect(await screen.findByText("Welcome to ChoreSync!")).toBeTruthy()
@@ -96,18 +98,25 @@ describe("household onboarding", () => {
       .mockResolvedValueOnce(jsonResponse(dashboard))
 
     fireEvent.click(screen.getByRole("button", { name: /Create a Household/ }))
-    fireEvent.change(screen.getByLabelText(/Household Name/), { target: { value: "  Our Place  " } })
-    fireEvent.change(screen.getByLabelText(/Description/), { target: { value: "Not part of the API" } })
+    fireEvent.change(screen.getByLabelText(/Household Name/), {
+      target: { value: "  Our Place  " },
+    })
+    fireEvent.change(screen.getByLabelText(/Description/), {
+      target: { value: "Not part of the API" },
+    })
     fireEvent.click(screen.getByRole("button", { name: "Create Household" }))
 
     expect(await screen.findByText("Today")).toBeTruthy()
     const createRequest = fetchMock.mock.calls.find(
-      ([url, options]) => url === "http://localhost:8080/api/households" && options?.method === "POST",
+      ([url, options]) =>
+        url === "http://localhost:8080/api/households" && options?.method === "POST",
     )
-    expect(createRequest?.[1]?.body).toBe(JSON.stringify({
-      name: "Our Place",
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    }))
+    expect(createRequest?.[1]?.body).toBe(
+      JSON.stringify({
+        name: "Our Place",
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      }),
+    )
     expect(new Headers(createRequest?.[1]?.headers).get("X-CSRF-TOKEN")).toBe("household-csrf")
     const inviteDialog = await screen.findByRole("dialog", { name: "Invite a housemate" })
     expect(inviteDialog.textContent).toContain("add to Apartment 305")
@@ -127,17 +136,21 @@ describe("household onboarding", () => {
 
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ token: "invite-csrf", headerName: "X-CSRF-TOKEN" }))
-      .mockResolvedValueOnce(jsonResponse({
-        inviteCode: "one-time-code-from-server",
-        expiresAt: "2026-09-26T12:00:00Z",
-      }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          inviteCode: "one-time-code-from-server",
+          expiresAt: "2026-09-26T12:00:00Z",
+        }),
+      )
     fireEvent.click(screen.getByRole("button", { name: "Generate invite" }))
 
     expect(await screen.findByText("one-time-code-from-server")).toBeTruthy()
     expect(screen.getByText("This invite can be used once.")).toBeTruthy()
     expect(screen.getByText(/Expires/)).toBeTruthy()
     const createRequest = fetchMock.mock.calls.find(
-      ([url, options]) => url === "http://localhost:8080/api/households/home-1/invitations" && options?.method === "POST",
+      ([url, options]) =>
+        url === "http://localhost:8080/api/households/home-1/invitations" &&
+        options?.method === "POST",
     )
     expect(createRequest?.[1]).toMatchObject({ credentials: "include", method: "POST" })
     expect(new Headers(createRequest?.[1]?.headers).get("X-CSRF-TOKEN")).toBe("invite-csrf")
@@ -196,7 +209,11 @@ describe("household onboarding", () => {
     let resolveCreate!: (response: Response) => void
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ token: "csrf", headerName: "X-CSRF-TOKEN" }))
-      .mockReturnValueOnce(new Promise((resolve) => { resolveCreate = resolve }))
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveCreate = resolve
+        }),
+      )
       .mockResolvedValueOnce(jsonResponse([household]))
       .mockResolvedValueOnce(jsonResponse(dashboard))
 
@@ -204,7 +221,9 @@ describe("household onboarding", () => {
     fireEvent.change(screen.getByLabelText(/Household Name/), { target: { value: household.name } })
     const submit = screen.getByRole("button", { name: "Create Household" })
     fireEvent.click(submit)
-    await waitFor(() => expect(fetchMock.mock.calls.some(([, options]) => options?.method === "POST")).toBe(true))
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([, options]) => options?.method === "POST")).toBe(true),
+    )
     fireEvent.click(submit)
     expect(fetchMock.mock.calls.filter(([, options]) => options?.method === "POST")).toHaveLength(1)
 
@@ -222,7 +241,9 @@ describe("household onboarding", () => {
     fireEvent.change(screen.getByLabelText(/Household Name/), { target: { value: "Our Place" } })
     fireEvent.click(screen.getByRole("button", { name: "Create Household" }))
 
-    expect((await screen.findByRole("alert")).textContent).toContain("Please check your information")
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Please check your information",
+    )
     expect(screen.getByRole("heading", { name: "Create Household" })).toBeTruthy()
     expect(screen.queryByText("Today")).toBeNull()
   })
@@ -242,7 +263,8 @@ describe("household onboarding", () => {
 
     expect(await screen.findByText("Today")).toBeTruthy()
     const joinRequest = fetchMock.mock.calls.find(
-      ([url, options]) => url === "http://localhost:8080/api/households/join" && options?.method === "POST",
+      ([url, options]) =>
+        url === "http://localhost:8080/api/households/join" && options?.method === "POST",
     )
     expect(joinRequest?.[1]?.body).toBe(JSON.stringify({ inviteCode: "abCd12" }))
     expect(new Headers(joinRequest?.[1]?.headers).get("X-CSRF-TOKEN")).toBe("join-csrf")
@@ -255,7 +277,11 @@ describe("household onboarding", () => {
     let resolveJoin!: (response: Response) => void
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ token: "csrf", headerName: "X-CSRF-TOKEN" }))
-      .mockReturnValueOnce(new Promise((resolve) => { resolveJoin = resolve }))
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveJoin = resolve
+        }),
+      )
       .mockResolvedValueOnce(jsonResponse([household]))
       .mockResolvedValueOnce(jsonResponse(dashboard))
 
@@ -263,7 +289,9 @@ describe("household onboarding", () => {
     fireEvent.change(screen.getByLabelText("Invite Code"), { target: { value: "AbC123" } })
     const submit = screen.getByRole("button", { name: "Join Household" })
     fireEvent.click(submit)
-    await waitFor(() => expect(fetchMock.mock.calls.some(([, options]) => options?.method === "POST")).toBe(true))
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([, options]) => options?.method === "POST")).toBe(true),
+    )
     fireEvent.click(submit)
     expect(fetchMock.mock.calls.filter(([, options]) => options?.method === "POST")).toHaveLength(1)
 
@@ -281,7 +309,9 @@ describe("household onboarding", () => {
     fireEvent.change(screen.getByLabelText("Invite Code"), { target: { value: "Code123" } })
     fireEvent.click(screen.getByRole("button", { name: "Join Household" }))
 
-    expect((await screen.findByRole("alert")).textContent).toBe("Invite code is invalid or no longer available.")
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Invite code is invalid or no longer available.",
+    )
     expect(screen.queryByText("Today")).toBeNull()
     expect(localStorage.length).toBe(0)
     expect(sessionStorage.length).toBe(0)
@@ -295,7 +325,9 @@ describe("household onboarding", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }))
     expect(await screen.findByRole("button", { name: "Sign In" })).toBeTruthy()
-    expect(fetchMock.mock.calls.some(([url]) => url === "http://localhost:8080/api/auth/logout")).toBe(true)
+    expect(
+      fetchMock.mock.calls.some(([url]) => url === "http://localhost:8080/api/auth/logout"),
+    ).toBe(true)
   })
 
   it("returns notifications to Home or Profile based on the in-app origin", async () => {
@@ -353,27 +385,32 @@ describe("household onboarding", () => {
   })
 
   it("uses Home as a safe fallback for direct notification URLs with external return targets", async () => {
-    window.history.replaceState({}, "", "/?screen=notifications&returnTo=https%3A%2F%2Fevil.example")
+    window.history.replaceState(
+      {},
+      "",
+      "/?screen=notifications&returnTo=https%3A%2F%2Fevil.example",
+    )
     fetchMock.mockImplementation(async (input) => {
       const url = String(input)
       if (url.endsWith("/api/auth/me")) return jsonResponse(user)
       if (url.endsWith("/api/households")) return jsonResponse([household])
       if (url.endsWith("/api/notifications/unread-count")) return jsonResponse({ count: 0 })
       if (url.endsWith("/api/notifications")) return jsonResponse([])
-      if (url.endsWith("/api/notifications/preferences")) return jsonResponse({
-        choreAssignedEnabled: true,
-        choreRemindersEnabled: true,
-        overdueEnabled: true,
-        choreCompletionEnabled: true,
-        householdUpdatesEnabled: true,
-        quietHoursStart: null,
-        quietHoursEnd: null,
-        notificationStyleOverride: null,
-        householdNotificationStyle: "NORMAL",
-        funnyNotificationsEnabled: false,
-        competitiveNotificationsEnabled: true,
-        pushEnabled: false,
-      })
+      if (url.endsWith("/api/notifications/preferences"))
+        return jsonResponse({
+          choreAssignedEnabled: true,
+          choreRemindersEnabled: true,
+          overdueEnabled: true,
+          choreCompletionEnabled: true,
+          householdUpdatesEnabled: true,
+          quietHoursStart: null,
+          quietHoursEnd: null,
+          notificationStyleOverride: null,
+          householdNotificationStyle: "NORMAL",
+          funnyNotificationsEnabled: false,
+          competitiveNotificationsEnabled: true,
+          pushEnabled: false,
+        })
       if (url.endsWith("/api/households/home-1/dashboard")) return jsonResponse(dashboard)
       throw new Error(`Unexpected request: ${url}`)
     })

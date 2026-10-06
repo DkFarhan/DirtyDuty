@@ -33,9 +33,12 @@ describe("browser push helpers", () => {
     getSubscription.mockReset()
     subscribe.mockReset()
     unsubscribe.mockReset()
-    vi.stubGlobal("Notification", class {
-      static requestPermission = permissionRequest
-    })
+    vi.stubGlobal(
+      "Notification",
+      class {
+        static requestPermission = permissionRequest
+      },
+    )
     Object.defineProperty(window, "PushManager", { configurable: true, value: class {} })
     Object.defineProperty(navigator, "serviceWorker", {
       configurable: true,
@@ -50,7 +53,8 @@ describe("browser push helpers", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
-    if (originalServiceWorker) Object.defineProperty(navigator, "serviceWorker", originalServiceWorker)
+    if (originalServiceWorker)
+      Object.defineProperty(navigator, "serviceWorker", originalServiceWorker)
     else Reflect.deleteProperty(navigator, "serviceWorker")
     if (originalPushManager) Object.defineProperty(window, "PushManager", originalPushManager)
     else Reflect.deleteProperty(window, "PushManager")
@@ -69,7 +73,9 @@ describe("browser push helpers", () => {
   it("stops before registering a worker when browser permission is denied", async () => {
     permissionRequest.mockResolvedValue("denied")
 
-    await expect(createBrowserPushSubscription("BNc-test-key")).rejects.toThrow(/permission was denied/)
+    await expect(createBrowserPushSubscription("BNc-test-key")).rejects.toThrow(
+      /permission was denied/,
+    )
     expect(register).not.toHaveBeenCalled()
   })
 

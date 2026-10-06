@@ -6,13 +6,17 @@ import java.util.concurrent.ExecutionException;
 import org.jose4j.lang.JoseException;
 
 public interface WebPushClient {
-    int send(
-            String publicKey,
-            String privateKey,
-            String subject,
-            String endpoint,
-            String subscriptionPublicKey,
-            String authSecret,
-            byte[] payload)
-            throws IOException, GeneralSecurityException, JoseException, ExecutionException, InterruptedException;
+  int send(
+      String publicKey,
+      String privateKey,
+      String subject,
+      String endpoint,
+      String subscriptionPublicKey,
+      String authSecret,
+      byte[] payload)
+      throws IOException,
+          GeneralSecurityException,
+          JoseException,
+          ExecutionException,
+          InterruptedException;
 }

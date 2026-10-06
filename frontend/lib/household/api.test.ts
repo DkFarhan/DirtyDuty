@@ -19,21 +19,33 @@ describe("household API", () => {
 
   it("creates invitations with a bodyless POST through the shared CSRF-aware client", async () => {
     fetchMock
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        token: "invite-csrf",
-        headerName: "X-CSRF-TOKEN",
-      }), { status: 200, headers: { "content-type": "application/json" } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        inviteCode: "AbC123",
-        expiresAt: "2026-09-26T12:00:00Z",
-      }), { status: 200, headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            token: "invite-csrf",
+            headerName: "X-CSRF-TOKEN",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            inviteCode: "AbC123",
+            expiresAt: "2026-09-26T12:00:00Z",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      )
 
     await expect(householdApi.createInvitation("household/1")).resolves.toEqual({
       inviteCode: "AbC123",
       expiresAt: "2026-09-26T12:00:00Z",
     })
 
-    expect(fetchMock.mock.calls[1][0]).toBe("http://localhost:8080/api/households/household%2F1/invitations")
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      "http://localhost:8080/api/households/household%2F1/invitations",
+    )
     expect(fetchMock.mock.calls[1][1]).toMatchObject({
       method: "POST",
       credentials: "include",
@@ -44,13 +56,23 @@ describe("household API", () => {
 
   it("uses safe invite and membership messages without exposing backend details", async () => {
     fetchMock
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        token: "join-csrf",
-        headerName: "X-CSRF-TOKEN",
-      }), { status: 200, headers: { "content-type": "application/json" } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        message: "internal database exception",
-      }), { status: 400, headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            token: "join-csrf",
+            headerName: "X-CSRF-TOKEN",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            message: "internal database exception",
+          }),
+          { status: 400, headers: { "content-type": "application/json" } },
+        ),
+      )
 
     const invalidInvite = await householdApi.join("AbC123").catch((error) => error)
     expect(invalidInvite).toBeInstanceOf(ApiError)
@@ -59,13 +81,23 @@ describe("household API", () => {
 
     clearCsrfToken()
     fetchMock
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        token: "join-csrf",
-        headerName: "X-CSRF-TOKEN",
-      }), { status: 200, headers: { "content-type": "application/json" } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        message: "internal database exception",
-      }), { status: 409, headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            token: "join-csrf",
+            headerName: "X-CSRF-TOKEN",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            message: "internal database exception",
+          }),
+          { status: 409, headers: { "content-type": "application/json" } },
+        ),
+      )
 
     const activeMember = await householdApi.join("AbC123").catch((error) => error)
     expect(activeMember).toBeInstanceOf(ApiError)
@@ -84,26 +116,56 @@ describe("household API", () => {
       createdAt: "2026-09-25T12:00:00Z",
     }
     fetchMock
-      .mockResolvedValueOnce(new Response(JSON.stringify(settings), { status: 200, headers: { "content-type": "application/json" } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ token: "settings-csrf", headerName: "X-CSRF-TOKEN" }), { status: 200, headers: { "content-type": "application/json" } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ ...settings, name: "Updated Home" }), { status: 200, headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(settings), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ token: "settings-csrf", headerName: "X-CSRF-TOKEN" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ...settings, name: "Updated Home" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
 
     await expect(householdApi.settings("home/1")).resolves.toEqual(settings)
-    await expect(householdApi.updateSettings("home/1", {
-      name: "Updated Home",
-      description: null,
-      timezone: "America/Sao_Paulo",
-    })).resolves.toMatchObject({ name: "Updated Home" })
-    expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:8080/api/households/home%2F1/settings")
-    expect(fetchMock.mock.calls[2][0]).toBe("http://localhost:8080/api/households/home%2F1/settings")
+    await expect(
+      householdApi.updateSettings("home/1", {
+        name: "Updated Home",
+        description: null,
+        timezone: "America/Sao_Paulo",
+      }),
+    ).resolves.toMatchObject({ name: "Updated Home" })
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "http://localhost:8080/api/households/home%2F1/settings",
+    )
+    expect(fetchMock.mock.calls[2][0]).toBe(
+      "http://localhost:8080/api/households/home%2F1/settings",
+    )
     expect(fetchMock.mock.calls[2][1]).toMatchObject({
       method: "PUT",
-      body: JSON.stringify({ name: "Updated Home", description: null, timezone: "America/Sao_Paulo" }),
+      body: JSON.stringify({
+        name: "Updated Home",
+        description: null,
+        timezone: "America/Sao_Paulo",
+      }),
     })
 
     clearCsrfToken()
     fetchMock
-      .mockResolvedValueOnce(new Response(JSON.stringify({ token: "leave-csrf", headerName: "X-CSRF-TOKEN" }), { status: 200, headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ token: "leave-csrf", headerName: "X-CSRF-TOKEN" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
     await expect(householdApi.leave("home/1")).resolves.toBeNull()
     expect(fetchMock.mock.calls[4][0]).toBe("http://localhost:8080/api/households/home%2F1/leave")

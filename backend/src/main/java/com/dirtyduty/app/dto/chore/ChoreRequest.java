@@ -9,12 +9,11 @@ import jakarta.validation.constraints.Size;
 import java.util.UUID;
 
 public record ChoreRequest(
-        @NotBlank @Size(max = 160) String title,
-        String description,
-        UUID categoryId,
-        ChorePriority defaultPriority,
-        @Min(1) @Max(5) Integer difficulty,
-        @Min(1) @Max(1440) Integer estimatedMinutes,
-        Boolean requiresVerification,
-        @Valid ChoreScheduleRequest schedule) {
-}
+    @NotBlank @Size(max = 160) String title,
+    String description,
+    UUID categoryId,
+    ChorePriority defaultPriority,
+    @Min(1) @Max(5) Integer difficulty,
+    @Min(1) @Max(1440) Integer estimatedMinutes,
+    Boolean requiresVerification,
+    @Valid ChoreScheduleRequest schedule) {}

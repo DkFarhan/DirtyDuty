@@ -31,12 +31,18 @@ export function WelcomeScreen() {
       >
         {loggingOut ? "Signing out..." : "Sign out"}
       </button>
-      {error && <p role="alert" className="mb-4 text-center text-sm text-rose-600">{error}</p>}
+      {error && (
+        <p role="alert" className="mb-4 text-center text-sm text-rose-600">
+          {error}
+        </p>
+      )}
       <div className="flex flex-col items-center text-center mb-12">
         <div className="w-20 h-20 bg-teal-50 rounded-3xl flex items-center justify-center mb-6">
           <span className="text-5xl">🎉</span>
         </div>
-        <h1 className="text-3xl font-black text-slate-900 mb-3 font-display">Welcome to ChoreSync!</h1>
+        <h1 className="text-3xl font-black text-slate-900 mb-3 font-display">
+          Welcome to ChoreSync!
+        </h1>
         <p className="text-slate-500 text-[15px] leading-relaxed max-w-xs">
           {
             "Let's set up your household. You can create a new one or join an existing one with an invite code."

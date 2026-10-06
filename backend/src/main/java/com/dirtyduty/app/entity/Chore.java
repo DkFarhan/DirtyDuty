@@ -22,71 +22,74 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 @Entity
-@Table(name = "chores", uniqueConstraints = @UniqueConstraint(name = "uq_chore_id_household", columnNames = {
-        "id", "household_id"
-}))
+@Table(
+    name = "chores",
+    uniqueConstraints =
+        @UniqueConstraint(
+            name = "uq_chore_id_household",
+            columnNames = {"id", "household_id"}))
 @Getter
 @Setter
 @NoArgsConstructor
 public class Chore {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    @Column(name = "id", nullable = false, updatable = false)
-    private UUID id;
+  @Id
+  @GeneratedValue(strategy = GenerationType.UUID)
+  @Column(name = "id", nullable = false, updatable = false)
+  private UUID id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "household_id", nullable = false)
-    private Household household;
+  @ManyToOne(fetch = FetchType.LAZY, optional = false)
+  @JoinColumn(name = "household_id", nullable = false)
+  private Household household;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "category_id")
-    private ChoreCategory category;
+  @ManyToOne(fetch = FetchType.LAZY)
+  @JoinColumn(name = "category_id")
+  private ChoreCategory category;
 
-    @Column(name = "title", nullable = false, length = 160)
-    private String title;
+  @Column(name = "title", nullable = false, length = 160)
+  private String title;
 
-    @Column(name = "description")
-    private String description;
+  @Column(name = "description")
+  private String description;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "default_priority", nullable = false, length = 20)
-    private ChorePriority defaultPriority = ChorePriority.NORMAL;
+  @Enumerated(EnumType.STRING)
+  @Column(name = "default_priority", nullable = false, length = 20)
+  private ChorePriority defaultPriority = ChorePriority.NORMAL;
 
-    @Column(name = "difficulty", nullable = false)
-    private short difficulty = 1;
+  @Column(name = "difficulty", nullable = false)
+  private short difficulty = 1;
 
-    @Column(name = "estimated_minutes")
-    private Integer estimatedMinutes;
+  @Column(name = "estimated_minutes")
+  private Integer estimatedMinutes;
 
-    @Column(name = "requires_verification", nullable = false)
-    private boolean requiresVerification;
+  @Column(name = "requires_verification", nullable = false)
+  private boolean requiresVerification;
 
-    @Column(name = "is_active", nullable = false)
-    private boolean active = true;
+  @Column(name = "is_active", nullable = false)
+  private boolean active = true;
 
-    @Column(name = "archived_at")
-    private OffsetDateTime archivedAt;
+  @Column(name = "archived_at")
+  private OffsetDateTime archivedAt;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "created_by_user_id", nullable = false)
-    private User createdByUser;
+  @ManyToOne(fetch = FetchType.LAZY, optional = false)
+  @JoinColumn(name = "created_by_user_id", nullable = false)
+  private User createdByUser;
 
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private OffsetDateTime createdAt;
+  @Column(name = "created_at", nullable = false, updatable = false)
+  private OffsetDateTime createdAt;
 
-    @Column(name = "updated_at", nullable = false)
-    private OffsetDateTime updatedAt;
+  @Column(name = "updated_at", nullable = false)
+  private OffsetDateTime updatedAt;
 
-    @PrePersist
-    protected void onCreate() {
-        OffsetDateTime now = OffsetDateTime.now();
-        createdAt = now;
-        updatedAt = now;
-    }
+  @PrePersist
+  protected void onCreate() {
+    OffsetDateTime now = OffsetDateTime.now();
+    createdAt = now;
+    updatedAt = now;
+  }
 
-    @PreUpdate
-    protected void onUpdate() {
-        updatedAt = OffsetDateTime.now();
-    }
+  @PreUpdate
+  protected void onUpdate() {
+    updatedAt = OffsetDateTime.now();
+  }
 }

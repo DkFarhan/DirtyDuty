@@ -12,9 +12,10 @@ import org.springframework.data.repository.query.Param;
 
 public interface HouseholdInvitationRepository extends JpaRepository<HouseholdInvitation, UUID> {
 
-    List<HouseholdInvitation> findByHousehold_IdOrderByCreatedAtDesc(UUID householdId);
+  List<HouseholdInvitation> findByHousehold_IdOrderByCreatedAtDesc(UUID householdId);
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select invitation from HouseholdInvitation invitation where invitation.inviteCode = :inviteCode")
-    Optional<HouseholdInvitation> findByInviteCodeForUpdate(@Param("inviteCode") String inviteCode);
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query(
+      "select invitation from HouseholdInvitation invitation where invitation.inviteCode = :inviteCode")
+  Optional<HouseholdInvitation> findByInviteCodeForUpdate(@Param("inviteCode") String inviteCode);
 }

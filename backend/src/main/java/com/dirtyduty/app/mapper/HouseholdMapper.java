@@ -6,15 +6,14 @@ import com.dirtyduty.app.entity.enums.HouseholdRole;
 
 public class HouseholdMapper {
 
-    private HouseholdMapper() {
-    }
+  private HouseholdMapper() {}
 
-    public static HouseholdResponse toResponse(Household household, HouseholdRole currentUserRole) {
-        return new HouseholdResponse(
-                household.getId(),
-                household.getName(),
-                household.getTimezone(),
-                currentUserRole,
-                household.getCreatedAt());
-    }
+  public static HouseholdResponse toResponse(Household household, HouseholdRole currentUserRole) {
+    return new HouseholdResponse(
+        household.getId(),
+        household.getName(),
+        household.getTimezone(),
+        currentUserRole,
+        household.getCreatedAt());
+  }
 }

@@ -20,32 +20,32 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/households/{householdId}")
 public class HouseholdSettingsController {
-    private final HouseholdSettingsService settingsService;
+  private final HouseholdSettingsService settingsService;
 
-    public HouseholdSettingsController(HouseholdSettingsService settingsService) {
-        this.settingsService = settingsService;
-    }
+  public HouseholdSettingsController(HouseholdSettingsService settingsService) {
+    this.settingsService = settingsService;
+  }
 
-    @GetMapping("/settings")
-    public HouseholdSettingsResponse get(
-            @PathVariable UUID householdId, Authentication authentication) {
-        return settingsService.get(householdId, authentication);
-    }
+  @GetMapping("/settings")
+  public HouseholdSettingsResponse get(
+      @PathVariable UUID householdId, Authentication authentication) {
+    return settingsService.get(householdId, authentication);
+  }
 
-    @PutMapping("/settings")
-    public HouseholdSettingsResponse update(
-            @PathVariable UUID householdId,
-            @Valid @RequestBody HouseholdSettingsRequest request,
-            Authentication authentication) {
-        return settingsService.update(householdId, request, authentication);
-    }
+  @PutMapping("/settings")
+  public HouseholdSettingsResponse update(
+      @PathVariable UUID householdId,
+      @Valid @RequestBody HouseholdSettingsRequest request,
+      Authentication authentication) {
+    return settingsService.update(householdId, request, authentication);
+  }
 
-    @PostMapping("/leave")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void leave(
-            @PathVariable UUID householdId,
-            @RequestBody(required = false) LeaveHouseholdRequest request,
-            Authentication authentication) {
-        settingsService.leave(householdId, request, authentication);
-    }
+  @PostMapping("/leave")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void leave(
+      @PathVariable UUID householdId,
+      @RequestBody(required = false) LeaveHouseholdRequest request,
+      Authentication authentication) {
+    settingsService.leave(householdId, request, authentication);
+  }
 }

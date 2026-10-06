@@ -27,7 +27,12 @@ import { HelpSupportScreen } from "./screens/help-support-screen"
 function ScreenRouter() {
   const { screen, adminTab, navigate, setCurrentUser } = useChoreSync()
   const { user, isAuthenticated, isLoading, authError, refreshUser } = useAuth()
-  const { households, status: householdStatus, error: householdError, refresh: refreshHouseholds } = useHouseholds()
+  const {
+    households,
+    status: householdStatus,
+    error: householdError,
+    refresh: refreshHouseholds,
+  } = useHouseholds()
 
   useEffect(() => {
     const target = new URLSearchParams(window.location.search).get("screen")
@@ -65,7 +70,11 @@ function ScreenRouter() {
   }, [householdStatus, households.length, isAuthenticated, isLoading, navigate, screen])
 
   if (isLoading) {
-    return <div className="flex min-h-screen items-center justify-center bg-white text-sm text-slate-400">Loading...</div>
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-white text-sm text-slate-400">
+        Loading...
+      </div>
+    )
   }
 
   if (authError) {
@@ -83,13 +92,19 @@ function ScreenRouter() {
   }
 
   if (isAuthenticated && householdStatus === "loading") {
-    return <div className="flex min-h-screen items-center justify-center bg-white text-sm text-slate-400">Loading...</div>
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-white text-sm text-slate-400">
+        Loading...
+      </div>
+    )
   }
 
   if (isAuthenticated && householdStatus === "error") {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-white px-6 text-center">
-        <p role="alert" className="text-sm text-slate-600">{householdError}</p>
+        <p role="alert" className="text-sm text-slate-600">
+          {householdError}
+        </p>
         <button
           onClick={() => refreshHouseholds().catch(() => undefined)}
           className="rounded-xl bg-teal-600 px-5 py-3 text-sm font-bold text-white"

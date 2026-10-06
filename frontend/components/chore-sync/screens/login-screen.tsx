@@ -38,21 +38,36 @@ export function LoginScreen() {
         <div className="w-16 h-16 bg-teal-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-teal-200">
           <span className="text-3xl">🏠</span>
         </div>
-        <h1 className="text-3xl font-black text-slate-900 tracking-tight font-display">ChoreSync</h1>
+        <h1 className="text-3xl font-black text-slate-900 tracking-tight font-display">
+          ChoreSync
+        </h1>
         <p className="text-slate-500 text-sm mt-1">Keep your home running smoothly</p>
       </div>
 
       <div className="flex flex-col gap-4 mb-6">
         {authNotice && (
-          <div className="rounded-xl border border-teal-100 bg-teal-50 px-3 py-2 text-sm text-teal-800" role="status">
+          <div
+            className="rounded-xl border border-teal-100 bg-teal-50 px-3 py-2 text-sm text-teal-800"
+            role="status"
+          >
             <div className="flex items-start justify-between gap-3">
               <span>{authNotice}</span>
-              <button aria-label="Dismiss message" className="font-bold" onClick={dismissAuthNotice} type="button">×</button>
+              <button
+                aria-label="Dismiss message"
+                className="font-bold"
+                onClick={dismissAuthNotice}
+                type="button"
+              >
+                ×
+              </button>
             </div>
           </div>
         )}
         <div>
-          <label htmlFor="login-email" className="block text-sm font-semibold text-slate-700 mb-1.5">
+          <label
+            htmlFor="login-email"
+            className="block text-sm font-semibold text-slate-700 mb-1.5"
+          >
             Email
           </label>
           <input
@@ -65,7 +80,10 @@ export function LoginScreen() {
           />
         </div>
         <div>
-          <label htmlFor="login-password" className="block text-sm font-semibold text-slate-700 mb-1.5">
+          <label
+            htmlFor="login-password"
+            className="block text-sm font-semibold text-slate-700 mb-1.5"
+          >
             Password
           </label>
           <input
@@ -77,10 +95,16 @@ export function LoginScreen() {
             className={inputClass}
           />
         </div>
-        <button className="text-right text-sm text-teal-600 font-semibold -mt-2">Forgot password?</button>
+        <button className="text-right text-sm text-teal-600 font-semibold -mt-2">
+          Forgot password?
+        </button>
       </div>
 
-      {error && <p className="mb-4 text-sm text-rose-600" role="alert">{error}</p>}
+      {error && (
+        <p className="mb-4 text-sm text-rose-600" role="alert">
+          {error}
+        </p>
+      )}
 
       <button
         onClick={handleSubmit}

@@ -59,23 +59,43 @@ export const householdApi = {
   createInvitation: (householdId: string) =>
     api.post<HouseholdInvitation>(`/api/households/${encodeURIComponent(householdId)}/invitations`),
   listInvitations: (householdId: string) =>
-    api.get<HouseholdInvitationSummary[]>(`/api/households/${encodeURIComponent(householdId)}/invitations`),
+    api.get<HouseholdInvitationSummary[]>(
+      `/api/households/${encodeURIComponent(householdId)}/invitations`,
+    ),
   revokeInvitation: (householdId: string, invitationId: string) =>
-    api.delete<void>(`/api/households/${encodeURIComponent(householdId)}/invitations/${encodeURIComponent(invitationId)}`),
+    api.delete<void>(
+      `/api/households/${encodeURIComponent(householdId)}/invitations/${encodeURIComponent(invitationId)}`,
+    ),
   deleteHousehold: (householdId: string, input: DeleteHouseholdRequest) =>
     api.delete<void>(`/api/households/${encodeURIComponent(householdId)}`, input),
   members: (householdId: string) =>
     api.get<HouseholdMemberDTO[]>(`/api/households/${encodeURIComponent(householdId)}/members`),
   updateMemberRole: (householdId: string, userId: string, role: "OWNER" | "ADMIN" | "MEMBER") =>
-    api.put<void>(`/api/households/${encodeURIComponent(householdId)}/members/${encodeURIComponent(userId)}/role`, { role }),
+    api.put<void>(
+      `/api/households/${encodeURIComponent(householdId)}/members/${encodeURIComponent(userId)}/role`,
+      { role },
+    ),
   removeMember: (householdId: string, userId: string) =>
-    api.delete<HouseholdMemberRemovalResponse>(`/api/households/${encodeURIComponent(householdId)}/members/${encodeURIComponent(userId)}`),
+    api.delete<HouseholdMemberRemovalResponse>(
+      `/api/households/${encodeURIComponent(householdId)}/members/${encodeURIComponent(userId)}`,
+    ),
   transferOwnership: (householdId: string, userId: string) =>
-    api.post<void>(`/api/households/${encodeURIComponent(householdId)}/members/${encodeURIComponent(userId)}/transfer-ownership`),
+    api.post<void>(
+      `/api/households/${encodeURIComponent(householdId)}/members/${encodeURIComponent(userId)}/transfer-ownership`,
+    ),
   settings: (householdId: string) =>
     api.get<HouseholdSettings>(`/api/households/${encodeURIComponent(householdId)}/settings`),
-  updateSettings: (householdId: string, input: Pick<HouseholdSettings, "name" | "description" | "timezone">) =>
-    api.put<HouseholdSettings>(`/api/households/${encodeURIComponent(householdId)}/settings`, input),
+  updateSettings: (
+    householdId: string,
+    input: Pick<HouseholdSettings, "name" | "description" | "timezone">,
+  ) =>
+    api.put<HouseholdSettings>(
+      `/api/households/${encodeURIComponent(householdId)}/settings`,
+      input,
+    ),
   leave: (householdId: string, newOwnerUserId?: string) =>
-    api.post<void>(`/api/households/${encodeURIComponent(householdId)}/leave`, newOwnerUserId ? { newOwnerUserId } : undefined),
+    api.post<void>(
+      `/api/households/${encodeURIComponent(householdId)}/leave`,
+      newOwnerUserId ? { newOwnerUserId } : undefined,
+    ),
 }

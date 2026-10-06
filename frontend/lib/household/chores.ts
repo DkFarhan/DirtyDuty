@@ -94,7 +94,21 @@ export type HouseholdDashboard = {
 
 export function categoryIcon(iconKey: string | null | undefined) {
   if (!iconKey) return "🧹"
-  const icons = new Set(["🧹", "🗑️", "🛁", "🧺", "🍽️", "🌀", "🫧", "♻️", "🪴", "🛒", "🧽", "🪣", "🏠"])
+  const icons = new Set([
+    "🧹",
+    "🗑️",
+    "🛁",
+    "🧺",
+    "🍽️",
+    "🌀",
+    "🫧",
+    "♻️",
+    "🪴",
+    "🛒",
+    "🧽",
+    "🪣",
+    "🏠",
+  ])
   if (icons.has(iconKey)) return iconKey
   const normalized = iconKey.toLowerCase()
   if (normalized.includes("bath")) return "🛁"
@@ -133,5 +147,7 @@ export const choreApi = {
   myChores: (householdId: string, status: "UPCOMING" | "COMPLETED") =>
     api.get<AssignmentDTO[]>(`${householdPath(householdId)}/my-chores?status=${status}`),
   complete: (householdId: string, assignmentId: string) =>
-    api.post<AssignmentDTO>(`${householdPath(householdId)}/assignments/${encodeURIComponent(assignmentId)}/complete`),
+    api.post<AssignmentDTO>(
+      `${householdPath(householdId)}/assignments/${encodeURIComponent(assignmentId)}/complete`,
+    ),
 }

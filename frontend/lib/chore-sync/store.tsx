@@ -55,9 +55,10 @@ export function ChoreSyncProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const returnFromNotifications = useCallback(() => {
-    const target = notificationReturnScreen && validReturnScreens.has(notificationReturnScreen)
-      ? notificationReturnScreen
-      : "dashboard"
+    const target =
+      notificationReturnScreen && validReturnScreens.has(notificationReturnScreen)
+        ? notificationReturnScreen
+        : "dashboard"
     setNotificationReturnScreen(null)
     setScreen(target)
     if (typeof window !== "undefined") {
@@ -65,7 +66,11 @@ export function ChoreSyncProvider({ children }: { children: React.ReactNode }) {
       params.delete("screen")
       params.delete("returnTo")
       const query = params.toString()
-      window.history.replaceState({}, "", query ? `${window.location.pathname}?${query}` : window.location.pathname)
+      window.history.replaceState(
+        {},
+        "",
+        query ? `${window.location.pathname}?${query}` : window.location.pathname,
+      )
     }
   }, [notificationReturnScreen])
 
@@ -114,7 +119,21 @@ export function ChoreSyncProvider({ children }: { children: React.ReactNode }) {
       addChore,
       removeChore,
     }),
-    [state, screen, adminTab, editingChoreId, navigate, openNotifications, returnFromNotifications, editChore, setCurrentUser, resetUserData, markComplete, addChore, removeChore],
+    [
+      state,
+      screen,
+      adminTab,
+      editingChoreId,
+      navigate,
+      openNotifications,
+      returnFromNotifications,
+      editChore,
+      setCurrentUser,
+      resetUserData,
+      markComplete,
+      addChore,
+      removeChore,
+    ],
   )
 
   return <ChoreSyncContext.Provider value={value}>{children}</ChoreSyncContext.Provider>

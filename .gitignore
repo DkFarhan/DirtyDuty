@@ -1,0 +1,22 @@
+# Local environment secrets
+.env
+.env.*
+!.env.example
+!.env.local.example
+
+# IDE/editor files
+.vscode/
+.idea/
+.DS_Store
+
+# Node / frontend artifacts
+frontend/node_modules/
+frontend/.next/
+frontend/.turbo/
+
+# Java / backend artifacts
+backend/target/
+backend/.mvn/wrapper/maven-wrapper.jar
+
+# TypeScript build cache
+*.tsbuildinfo

@@ -5,7 +5,9 @@ import { cn } from "@/lib/utils"
 export function SectionHeader({ title, action }: { title: string; action?: ReactNode }) {
   return (
     <div className="flex items-center justify-between mb-3">
-      <h2 className="text-xs font-black text-slate-500 uppercase tracking-wider font-display">{title}</h2>
+      <h2 className="text-xs font-black text-slate-500 uppercase tracking-wider font-display">
+        {title}
+      </h2>
       {action}
     </div>
   )
@@ -51,7 +53,13 @@ export function Avatar({
   colorClass?: string
 }) {
   return (
-    <div className={cn("rounded-xl flex items-center justify-center flex-shrink-0", colorClass, className)}>
+    <div
+      className={cn(
+        "rounded-xl flex items-center justify-center flex-shrink-0",
+        colorClass,
+        className,
+      )}
+    >
       <span className="text-white font-black font-display">{initial}</span>
     </div>
   )

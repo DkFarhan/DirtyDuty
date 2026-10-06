@@ -5,5 +5,9 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 public record HouseholdMemberStatsResponse(
-        UUID userId, String displayName, HouseholdRole role, OffsetDateTime joinedAt,
-        long assignedThisWeek, long completedThisWeek) {}
+    UUID userId,
+    String displayName,
+    HouseholdRole role,
+    OffsetDateTime joinedAt,
+    long assignedThisWeek,
+    long completedThisWeek) {}

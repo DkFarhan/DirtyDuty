@@ -6,7 +6,12 @@ import { AppShell } from "./app-shell"
 import { clearCsrfToken } from "@/lib/auth/api"
 
 const fetchMock = vi.fn<typeof fetch>()
-const user = { userId: "user-1", displayName: "Jahid", email: "jahid@example.com", emailVerified: true }
+const user = {
+  userId: "user-1",
+  displayName: "Jahid",
+  email: "jahid@example.com",
+  emailVerified: true,
+}
 const household = {
   id: "home-1",
   name: "Apartment 305",
@@ -27,7 +32,10 @@ const pendingAssignment: import("@/lib/household/chores").AssignmentDTO = {
   priority: "HIGH",
   difficulty: 3,
   estimatedMinutes: 20,
-  assignees: [{ userId: user.userId, displayName: "Jahid" }, { userId: "user-2", displayName: "Ahmed" }],
+  assignees: [
+    { userId: user.userId, displayName: "Jahid" },
+    { userId: "user-2", displayName: "Ahmed" },
+  ],
   canComplete: true,
   completedAt: null,
   completedByDisplayName: null,
@@ -40,7 +48,10 @@ const dashboard = {
 }
 
 function jsonResponse(payload: unknown, status = 200) {
-  return new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json" } })
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { "content-type": "application/json" },
+  })
 }
 
 async function startAtDashboard(data = dashboard, householdData = household) {
@@ -74,37 +85,65 @@ describe("server-backed chore data", () => {
       scheduledFor: "2026-09-27T00:30:00Z",
       dueAt: "2026-09-27T01:30:00Z",
     }
-    await startAtDashboard({ ...dashboard, today: [timezoneBoundaryAssignment], thisWeek: [timezoneBoundaryAssignment] })
+    await startAtDashboard({
+      ...dashboard,
+      today: [timezoneBoundaryAssignment],
+      thisWeek: [timezoneBoundaryAssignment],
+    })
     expect(screen.getByText("1/2")).toBeTruthy()
     expect(screen.getAllByText("Assigned to You, Ahmed")).toHaveLength(2)
     expect(screen.getAllByText("Overdue")).toHaveLength(2)
-    const scheduledDay = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" })
-      .format(new Date(Date.UTC(2026, 8, 27, 12)))
-    const householdTime = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit", timeZone: household.timezone })
-      .format(new Date(timezoneBoundaryAssignment.dueAt))
+    const scheduledDay = new Intl.DateTimeFormat(undefined, {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
+    }).format(new Date(Date.UTC(2026, 8, 27, 12)))
+    const householdTime = new Intl.DateTimeFormat(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: household.timezone,
+    }).format(new Date(timezoneBoundaryAssignment.dueAt))
     expect(screen.getAllByText(`${scheduledDay} · ${householdTime}`)).toHaveLength(2)
     expect(screen.queryByText("Bathroom Cleaning")).toBeNull()
 
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ token: "complete-csrf", headerName: "X-CSRF-TOKEN" }))
       .mockResolvedValueOnce(jsonResponse({ ...pendingAssignment, status: "COMPLETED" }))
-      .mockResolvedValueOnce(jsonResponse({
-        weekSummary: { completedCount: 2, totalCount: 2, completionPercentage: 100 },
-        today: [{ ...pendingAssignment, status: "COMPLETED", canComplete: false, completedByDisplayName: "Jahid" }],
-        thisWeek: [],
-      }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          weekSummary: { completedCount: 2, totalCount: 2, completionPercentage: 100 },
+          today: [
+            {
+              ...pendingAssignment,
+              status: "COMPLETED",
+              canComplete: false,
+              completedByDisplayName: "Jahid",
+            },
+          ],
+          thisWeek: [],
+        }),
+      )
     fireEvent.click(screen.getByRole("button", { name: "Mark Clean Kitchen complete" }))
 
     expect(await screen.findByText("100% done")).toBeTruthy()
-    expect(fetchMock.mock.calls.some(([url, request]) =>
-      url === "http://localhost:8080/api/households/home-1/assignments/assignment-1/complete" && request?.method === "POST",
-    )).toBe(true)
+    expect(
+      fetchMock.mock.calls.some(
+        ([url, request]) =>
+          url === "http://localhost:8080/api/households/home-1/assignments/assignment-1/complete" &&
+          request?.method === "POST",
+      ),
+    ).toBe(true)
     const completeRequest = fetchMock.mock.calls.find(([, request]) => request?.method === "POST")
     expect(new Headers(completeRequest?.[1]?.headers).get("X-CSRF-TOKEN")).toBe("complete-csrf")
   })
 
   it("loads upcoming and completed chores, shows server counts and refreshes after completion", async () => {
-    await startAtDashboard({ weekSummary: { completedCount: 0, totalCount: 0, completionPercentage: 0 }, today: [], thisWeek: [] })
+    await startAtDashboard({
+      weekSummary: { completedCount: 0, totalCount: 0, completionPercentage: 0 },
+      today: [],
+      thisWeek: [],
+    })
     fetchMock
       .mockResolvedValueOnce(jsonResponse([pendingAssignment]))
       .mockResolvedValueOnce(jsonResponse([]))
@@ -114,7 +153,13 @@ describe("server-backed chore data", () => {
     expect(screen.getByText("1 upcoming · 0 completed")).toBeTruthy()
     expect(screen.getByText("Assigned to You, Ahmed")).toBeTruthy()
 
-    const completed = { ...pendingAssignment, status: "COMPLETED", canComplete: false, overdue: false, completedByDisplayName: "Jahid" }
+    const completed = {
+      ...pendingAssignment,
+      status: "COMPLETED",
+      canComplete: false,
+      overdue: false,
+      completedByDisplayName: "Jahid",
+    }
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ token: "my-chores-csrf", headerName: "X-CSRF-TOKEN" }))
       .mockResolvedValueOnce(jsonResponse(completed))
@@ -123,16 +168,38 @@ describe("server-backed chore data", () => {
     fireEvent.click(screen.getByRole("button", { name: "Mark Clean Kitchen complete" }))
 
     await waitFor(() => expect(screen.getByText("0 upcoming · 1 completed")).toBeTruthy())
-    expect(fetchMock.mock.calls.some(([url]) => url === "http://localhost:8080/api/households/home-1/my-chores?status=UPCOMING")).toBe(true)
+    expect(
+      fetchMock.mock.calls.some(
+        ([url]) => url === "http://localhost:8080/api/households/home-1/my-chores?status=UPCOMING",
+      ),
+    ).toBe(true)
     fireEvent.click(screen.getByRole("button", { name: /completed/i }))
     expect(await screen.findByText("Completed by Jahid")).toBeTruthy()
   })
 
   it("uses real member roles, join dates and progress in Household and Household Management", async () => {
-    await startAtDashboard({ weekSummary: { completedCount: 0, totalCount: 0, completionPercentage: 0 }, today: [], thisWeek: [] })
+    await startAtDashboard({
+      weekSummary: { completedCount: 0, totalCount: 0, completionPercentage: 0 },
+      today: [],
+      thisWeek: [],
+    })
     const members = [
-      { userId: "user-1", displayName: "Jahid", role: "OWNER", joinedAt: "2026-01-15T12:00:00Z", assignedThisWeek: 4, completedThisWeek: 3 },
-      { userId: "user-2", displayName: "Ahmed", role: "MEMBER", joinedAt: "2026-02-20T12:00:00Z", assignedThisWeek: 2, completedThisWeek: 1 },
+      {
+        userId: "user-1",
+        displayName: "Jahid",
+        role: "OWNER",
+        joinedAt: "2026-01-15T12:00:00Z",
+        assignedThisWeek: 4,
+        completedThisWeek: 3,
+      },
+      {
+        userId: "user-2",
+        displayName: "Ahmed",
+        role: "MEMBER",
+        joinedAt: "2026-02-20T12:00:00Z",
+        assignedThisWeek: 2,
+        completedThisWeek: 1,
+      },
     ]
     fetchMock.mockResolvedValueOnce(jsonResponse(members))
     fireEvent.click(screen.getByRole("button", { name: "Household" }))
@@ -150,15 +217,63 @@ describe("server-backed chore data", () => {
   })
 
   it("lets an owner transfer ownership and leave in one atomic request", async () => {
-    await startAtDashboard({ weekSummary: { completedCount: 0, totalCount: 0, completionPercentage: 0 }, today: [], thisWeek: [] })
-    fetchMock.mockResolvedValueOnce(jsonResponse([
-      { userId: user.userId, displayName: "Jahid", role: "OWNER", joinedAt: "2026-01-15T12:00:00Z", assignedThisWeek: 0, completedThisWeek: 0 },
-      { userId: "user-2", displayName: "Ahmed", role: "ADMIN", joinedAt: "2026-02-20T12:00:00Z", assignedThisWeek: 0, completedThisWeek: 0 },
-      { userId: "user-3", displayName: "Mina", role: "MEMBER", joinedAt: "2026-03-20T12:00:00Z", assignedThisWeek: 0, completedThisWeek: 0 },
-      { userId: "user-4", displayName: "Invited user", role: "INVITED", joinedAt: "2026-03-20T12:00:00Z", assignedThisWeek: 0, completedThisWeek: 0 },
-      { userId: "user-5", displayName: "Former member", role: "LEFT", joinedAt: "2026-03-20T12:00:00Z", assignedThisWeek: 0, completedThisWeek: 0 },
-      { userId: "user-6", displayName: "Removed member", role: "REMOVED", joinedAt: "2026-03-20T12:00:00Z", assignedThisWeek: 0, completedThisWeek: 0 },
-    ]))
+    await startAtDashboard({
+      weekSummary: { completedCount: 0, totalCount: 0, completionPercentage: 0 },
+      today: [],
+      thisWeek: [],
+    })
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        {
+          userId: user.userId,
+          displayName: "Jahid",
+          role: "OWNER",
+          joinedAt: "2026-01-15T12:00:00Z",
+          assignedThisWeek: 0,
+          completedThisWeek: 0,
+        },
+        {
+          userId: "user-2",
+          displayName: "Ahmed",
+          role: "ADMIN",
+          joinedAt: "2026-02-20T12:00:00Z",
+          assignedThisWeek: 0,
+          completedThisWeek: 0,
+        },
+        {
+          userId: "user-3",
+          displayName: "Mina",
+          role: "MEMBER",
+          joinedAt: "2026-03-20T12:00:00Z",
+          assignedThisWeek: 0,
+          completedThisWeek: 0,
+        },
+        {
+          userId: "user-4",
+          displayName: "Invited user",
+          role: "INVITED",
+          joinedAt: "2026-03-20T12:00:00Z",
+          assignedThisWeek: 0,
+          completedThisWeek: 0,
+        },
+        {
+          userId: "user-5",
+          displayName: "Former member",
+          role: "LEFT",
+          joinedAt: "2026-03-20T12:00:00Z",
+          assignedThisWeek: 0,
+          completedThisWeek: 0,
+        },
+        {
+          userId: "user-6",
+          displayName: "Removed member",
+          role: "REMOVED",
+          joinedAt: "2026-03-20T12:00:00Z",
+          assignedThisWeek: 0,
+          completedThisWeek: 0,
+        },
+      ]),
+    )
     fireEvent.click(screen.getByRole("button", { name: "Household" }))
     expect(await screen.findByText("Ahmed")).toBeTruthy()
     expect(screen.getByRole("button", { name: "Leave household" })).toBeTruthy()
@@ -168,28 +283,54 @@ describe("server-backed chore data", () => {
     expect(screen.getAllByRole("radio")).toHaveLength(2)
     fireEvent.click(screen.getByRole("radio", { name: /Ahmed ADMIN/ }))
     fireEvent.click(screen.getByRole("button", { name: "Continue" }))
-    expect(screen.getByRole("heading", { name: "Transfer ownership to Ahmed and leave Apartment 305?" })).toBeTruthy()
-    expect(screen.getByText(/Ahmed becomes Owner, you leave the household, and rejoining later requires a new invite/)).toBeTruthy()
+    expect(
+      screen.getByRole("heading", { name: "Transfer ownership to Ahmed and leave Apartment 305?" }),
+    ).toBeTruthy()
+    expect(
+      screen.getByText(
+        /Ahmed becomes Owner, you leave the household, and rejoining later requires a new invite/,
+      ),
+    ).toBeTruthy()
 
     fetchMock
-      .mockResolvedValueOnce(jsonResponse({ token: "leave-owner-csrf", headerName: "X-CSRF-TOKEN" }))
+      .mockResolvedValueOnce(
+        jsonResponse({ token: "leave-owner-csrf", headerName: "X-CSRF-TOKEN" }),
+      )
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
       .mockResolvedValueOnce(jsonResponse([]))
     fireEvent.click(screen.getByRole("button", { name: "Transfer and leave" }))
 
     await screen.findByText("Welcome to ChoreSync!")
     const leaveRequest = fetchMock.mock.calls.find(
-      ([url, request]) => url === "http://localhost:8080/api/households/home-1/leave" && request?.method === "POST",
+      ([url, request]) =>
+        url === "http://localhost:8080/api/households/home-1/leave" && request?.method === "POST",
     )
     expect(leaveRequest?.[1]?.body).toBe(JSON.stringify({ newOwnerUserId: "user-2" }))
-    expect(fetchMock.mock.calls.filter(([url]) => url === "http://localhost:8080/api/households/home-1/leave")).toHaveLength(1)
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url]) => url === "http://localhost:8080/api/households/home-1/leave",
+      ),
+    ).toHaveLength(1)
   })
 
   it("offers the existing invite and delete household paths to a sole owner", async () => {
-    await startAtDashboard({ weekSummary: { completedCount: 0, totalCount: 0, completionPercentage: 0 }, today: [], thisWeek: [] })
-    fetchMock.mockResolvedValueOnce(jsonResponse([
-      { userId: user.userId, displayName: "Jahid", role: "OWNER", joinedAt: "2026-01-15T12:00:00Z", assignedThisWeek: 0, completedThisWeek: 0 },
-    ]))
+    await startAtDashboard({
+      weekSummary: { completedCount: 0, totalCount: 0, completionPercentage: 0 },
+      today: [],
+      thisWeek: [],
+    })
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        {
+          userId: user.userId,
+          displayName: "Jahid",
+          role: "OWNER",
+          joinedAt: "2026-01-15T12:00:00Z",
+          assignedThisWeek: 0,
+          completedThisWeek: 0,
+        },
+      ]),
+    )
     fireEvent.click(screen.getByRole("button", { name: "Household" }))
     expect(await screen.findByText("Jahid")).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "Leave household" }))
@@ -202,45 +343,73 @@ describe("server-backed chore data", () => {
     fireEvent.click(screen.getByRole("button", { name: "Leave household" }))
     expect(screen.getByRole("button", { name: "Delete Household" })).toBeTruthy()
     fetchMock
-      .mockResolvedValueOnce(jsonResponse({
-        id: household.id,
-        name: household.name,
-        timezone: household.timezone,
-        currentUserRole: "OWNER",
-        createdAt: household.createdAt,
-        description: null,
-        notificationStyle: "NORMAL",
-      }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: household.id,
+          name: household.name,
+          timezone: household.timezone,
+          currentUserRole: "OWNER",
+          createdAt: household.createdAt,
+          description: null,
+          notificationStyle: "NORMAL",
+        }),
+      )
       .mockResolvedValueOnce(jsonResponse([]))
     fireEvent.click(screen.getByRole("button", { name: "Delete Household" }))
     expect(await screen.findByRole("heading", { name: "Household Settings" })).toBeTruthy()
-    expect(fetchMock.mock.calls.some(([url]) => url === "http://localhost:8080/api/households/home-1/settings")).toBe(true)
+    expect(
+      fetchMock.mock.calls.some(
+        ([url]) => url === "http://localhost:8080/api/households/home-1/settings",
+      ),
+    ).toBe(true)
   })
 
-  it.each(["MEMBER", "ADMIN"])("%s retains the existing leave confirmation and leave request", async (role) => {
-    const roleHousehold = { ...household, currentUserRole: role }
-    await startAtDashboard({ weekSummary: { completedCount: 0, totalCount: 0, completionPercentage: 0 }, today: [], thisWeek: [] }, roleHousehold)
-    fetchMock.mockResolvedValueOnce(jsonResponse([
-      { userId: user.userId, displayName: "Jahid", role, joinedAt: "2026-01-15T12:00:00Z", assignedThisWeek: 0, completedThisWeek: 0 },
-    ]))
-    fireEvent.click(screen.getByRole("button", { name: "Household" }))
-    expect(await screen.findByText("Jahid")).toBeTruthy()
-    fireEvent.click(screen.getByRole("button", { name: "Leave household" }))
-    expect(screen.getByRole("heading", { name: "Leave Apartment 305?" })).toBeTruthy()
-    expect(screen.getByRole("button", { name: "Confirm" })).toBeTruthy()
+  it.each(["MEMBER", "ADMIN"])(
+    "%s retains the existing leave confirmation and leave request",
+    async (role) => {
+      const roleHousehold = { ...household, currentUserRole: role }
+      await startAtDashboard(
+        {
+          weekSummary: { completedCount: 0, totalCount: 0, completionPercentage: 0 },
+          today: [],
+          thisWeek: [],
+        },
+        roleHousehold,
+      )
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse([
+          {
+            userId: user.userId,
+            displayName: "Jahid",
+            role,
+            joinedAt: "2026-01-15T12:00:00Z",
+            assignedThisWeek: 0,
+            completedThisWeek: 0,
+          },
+        ]),
+      )
+      fireEvent.click(screen.getByRole("button", { name: "Household" }))
+      expect(await screen.findByText("Jahid")).toBeTruthy()
+      fireEvent.click(screen.getByRole("button", { name: "Leave household" }))
+      expect(screen.getByRole("heading", { name: "Leave Apartment 305?" })).toBeTruthy()
+      expect(screen.getByRole("button", { name: "Confirm" })).toBeTruthy()
 
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse({ token: "member-leave-csrf", headerName: "X-CSRF-TOKEN" }))
-      .mockResolvedValueOnce(new Response(null, { status: 204 }))
-      .mockResolvedValueOnce(jsonResponse([]))
-    fireEvent.click(screen.getByRole("button", { name: "Confirm" }))
+      fetchMock
+        .mockResolvedValueOnce(
+          jsonResponse({ token: "member-leave-csrf", headerName: "X-CSRF-TOKEN" }),
+        )
+        .mockResolvedValueOnce(new Response(null, { status: 204 }))
+        .mockResolvedValueOnce(jsonResponse([]))
+      fireEvent.click(screen.getByRole("button", { name: "Confirm" }))
 
-    await screen.findByText("Welcome to ChoreSync!")
-    const leaveRequest = fetchMock.mock.calls.find(
-      ([url, request]) => url === "http://localhost:8080/api/households/home-1/leave" && request?.method === "POST",
-    )
-    expect(leaveRequest?.[1]?.body).toBeUndefined()
-  })
+      await screen.findByText("Welcome to ChoreSync!")
+      const leaveRequest = fetchMock.mock.calls.find(
+        ([url, request]) =>
+          url === "http://localhost:8080/api/households/home-1/leave" && request?.method === "POST",
+      )
+      expect(leaveRequest?.[1]?.body).toBeUndefined()
+    },
+  )
 
   it("keeps API failures distinct from empty dashboard and chore states", async () => {
     fetchMock
@@ -248,7 +417,10 @@ describe("server-backed chore data", () => {
       .mockResolvedValueOnce(jsonResponse([household]))
       .mockRejectedValueOnce(new TypeError("offline"))
     render(<AppShell />)
-    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Unable to connect to DirtyDuty. Please try again.")
+    expect(await screen.findByRole("alert")).toHaveProperty(
+      "textContent",
+      "Unable to connect to DirtyDuty. Please try again.",
+    )
     expect(screen.queryByText("No chores due today!")).toBeNull()
   })
 
@@ -263,7 +435,10 @@ describe("server-backed chore data", () => {
       .mockRejectedValueOnce(new TypeError("offline"))
       .mockResolvedValueOnce(jsonResponse([]))
     fireEvent.click(screen.getByRole("button", { name: "My Chores" }))
-    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Unable to connect to DirtyDuty. Please try again.")
+    expect(await screen.findByRole("alert")).toHaveProperty(
+      "textContent",
+      "Unable to connect to DirtyDuty. Please try again.",
+    )
     expect(screen.queryByText("All caught up!")).toBeNull()
   })
 
