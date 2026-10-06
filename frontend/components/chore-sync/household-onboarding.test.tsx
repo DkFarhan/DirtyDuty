@@ -65,7 +65,7 @@ describe("household onboarding", () => {
     startAuthenticated([household])
 
     expect(await screen.findByText("Today")).toBeTruthy()
-    expect(screen.queryByText("Welcome to ChoreSync!")).toBeNull()
+    expect(screen.queryByText("Welcome!")).toBeNull()
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       "http://localhost:8080/api/auth/me",
       "http://localhost:8080/api/households",
@@ -84,9 +84,9 @@ describe("household onboarding", () => {
     expect((await screen.findByRole("alert")).textContent).toContain(
       "Unable to connect to DirtyDuty",
     )
-    expect(screen.queryByText("Welcome to ChoreSync!")).toBeNull()
+    expect(screen.queryByText("Welcome!")).toBeNull()
     fireEvent.click(screen.getByRole("button", { name: "Try Again" }))
-    expect(await screen.findByText("Welcome to ChoreSync!")).toBeTruthy()
+    expect(await screen.findByText("Welcome!")).toBeTruthy()
   })
 
   it("creates a household with browser timezone, omits description, and refreshes into the dashboard", async () => {

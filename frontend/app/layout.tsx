@@ -16,26 +16,38 @@ const nunito = Nunito({
 })
 
 export const metadata: Metadata = {
-  title: "ChoreSync — Keep your home running smoothly",
+  applicationName: "DirtyDuty",
+  title: {
+    default: "DirtyDuty — Keep your home running smoothly",
+    template: "%s | DirtyDuty",
+  },
   description:
-    "ChoreSync is a mobile-first household chore management app. Track chores, share your household, and keep everyone in sync.",
+    "DirtyDuty is a mobile-first household chore management app. Track chores, share your household, and keep everyone in sync.",
   generator: "v0.app",
+  manifest: "/manifest.webmanifest",
   icons: {
-    icon: [
-      {
-        url: "/icon-light-32x32.png",
-        media: "(prefers-color-scheme: light)",
-      },
-      {
-        url: "/icon-dark-32x32.png",
-        media: "(prefers-color-scheme: dark)",
-      },
-      {
-        url: "/icon.svg",
-        type: "image/svg+xml",
-      },
-    ],
-    apple: "/apple-icon.png",
+    icon: {
+      url: "/brand/dirtyduty-mark.svg",
+      type: "image/svg+xml",
+    },
+  },
+  openGraph: {
+    type: "website",
+    siteName: "DirtyDuty",
+    title: "DirtyDuty — Keep your home running smoothly",
+    description:
+      "DirtyDuty is a mobile-first household chore management app. Track chores, share your household, and keep everyone in sync.",
+  },
+  twitter: {
+    card: "summary",
+    title: "DirtyDuty — Keep your home running smoothly",
+    description:
+      "DirtyDuty is a mobile-first household chore management app. Track chores, share your household, and keep everyone in sync.",
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "DirtyDuty",
   },
 }
 

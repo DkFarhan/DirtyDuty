@@ -4,6 +4,7 @@ import { useState } from "react"
 import { ApiError } from "@/lib/auth/api"
 import { useAuth } from "@/lib/auth/auth-context"
 import { useChoreSync } from "@/lib/chore-sync/store"
+import { ProductLogo } from "@/components/brand/product-logo"
 
 const inputClass =
   "w-full px-4 py-3.5 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent text-[15px] transition-all"
@@ -35,12 +36,7 @@ export function LoginScreen() {
   return (
     <div className="flex flex-col min-h-screen bg-white px-6 pt-16 pb-10">
       <div className="flex flex-col items-center mb-12">
-        <div className="w-16 h-16 bg-teal-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-teal-200">
-          <span className="text-3xl">🏠</span>
-        </div>
-        <h1 className="text-3xl font-black text-slate-900 tracking-tight font-display">
-          ChoreSync
-        </h1>
+        <ProductLogo className="mb-3 h-auto w-48 max-w-full" />
         <p className="text-slate-500 text-sm mt-1">Keep your home running smoothly</p>
       </div>
 
