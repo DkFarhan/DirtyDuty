@@ -9,251 +9,319 @@ import { notificationApi } from "@/lib/notifications/api"
 import { removeBrowserPushSubscription } from "@/lib/notifications/push"
 
 vi.mock("./api", () => {
-    class MockApiError extends Error {
-        status: number | null
-        kind: string
+  class MockApiError extends Error {
+    status: number | null
+    kind: string
 
-        constructor(message: string, status: number | null, kind: string) {
-            super(message)
-            this.status = status
-            this.kind = kind
-        }
+    constructor(message: string, status: number | null, kind: string) {
+      super(message)
+      this.status = status
+      this.kind = kind
     }
+  }
 
-    return {
-        ApiError: MockApiError,
-        api: { get: vi.fn(), post: vi.fn() },
-        clearCsrfToken: vi.fn(),
-        getCsrfToken: vi.fn(),
-    }
+  return {
+    ApiError: MockApiError,
+    api: { get: vi.fn(), post: vi.fn() },
+    clearCsrfToken: vi.fn(),
+    getCsrfToken: vi.fn(),
+  }
 })
 
 vi.mock("@/lib/notifications/api", () => ({
-    notificationApi: { unsubscribePush: vi.fn() },
+  notificationApi: { unsubscribePush: vi.fn() },
 }))
 
 vi.mock("@/lib/notifications/push", () => ({
-    removeBrowserPushSubscription: vi.fn(),
+  removeBrowserPushSubscription: vi.fn(),
 }))
 
 const user = {
-    userId: "user-1",
-    displayName: "Browser User",
-    email: "user@example.com",
-    emailVerified: false,
+  userId: "user-1",
+  displayName: "Browser User",
+  email: "user@example.com",
+  emailVerified: false,
 }
 
 function Probe() {
-    const [operation, setOperation] = useState("none")
-    const auth = useAuth()
-    return (
-        <div>
-            <span data-testid="loading">{String(auth.isLoading)}</span>
-            <span data-testid="authenticated">{String(auth.isAuthenticated)}</span>
-            <span data-testid="user">{auth.user?.email ?? "none"}</span>
-            <span data-testid="error">{auth.authError ?? "none"}</span>
-            <span data-testid="notice">{auth.authNotice ?? "none"}</span>
-            <span data-testid="operation">{operation}</span>
-            <button onClick={() => void auth.login("user@example.com", "password").then(() => setOperation("success"), () => setOperation("error"))}>Login</button>
-            <button onClick={() => void auth.register({ displayName: "Browser User", email: "user@example.com", password: "password" }).then(() => setOperation("success"), () => setOperation("error"))}>Register</button>
-            <button onClick={() => void auth.logout().then(() => setOperation("success"), () => setOperation("error"))}>Logout</button>
-            <button onClick={() => void auth.changePassword("old-password", "new-password").then(() => setOperation("success"), () => setOperation("error"))}>Change password</button>
-            <button onClick={() => void auth.deleteAccount("password", "user@example.com").then(() => setOperation("success"), () => setOperation("error"))}>Delete account</button>
-        </div>
-    )
+  const [operation, setOperation] = useState("none")
+  const auth = useAuth()
+  return (
+    <div>
+      <span data-testid="loading">{String(auth.isLoading)}</span>
+      <span data-testid="authenticated">{String(auth.isAuthenticated)}</span>
+      <span data-testid="user">{auth.user?.email ?? "none"}</span>
+      <span data-testid="error">{auth.authError ?? "none"}</span>
+      <span data-testid="notice">{auth.authNotice ?? "none"}</span>
+      <span data-testid="operation">{operation}</span>
+      <button
+        onClick={() =>
+          void auth.login("user@example.com", "password").then(
+            () => setOperation("success"),
+            () => setOperation("error"),
+          )
+        }
+      >
+        Login
+      </button>
+      <button
+        onClick={() =>
+          void auth
+            .register({
+              displayName: "Browser User",
+              email: "user@example.com",
+              password: "password",
+            })
+            .then(
+              () => setOperation("success"),
+              () => setOperation("error"),
+            )
+        }
+      >
+        Register
+      </button>
+      <button
+        onClick={() =>
+          void auth.logout().then(
+            () => setOperation("success"),
+            () => setOperation("error"),
+          )
+        }
+      >
+        Logout
+      </button>
+      <button
+        onClick={() =>
+          void auth.changePassword("old-password", "new-password").then(
+            () => setOperation("success"),
+            () => setOperation("error"),
+          )
+        }
+      >
+        Change password
+      </button>
+      <button
+        onClick={() =>
+          void auth.deleteAccount("password", "user@example.com").then(
+            () => setOperation("success"),
+            () => setOperation("error"),
+          )
+        }
+      >
+        Delete account
+      </button>
+    </div>
+  )
 }
 
 function renderAuth() {
-    return render(
-        <AuthProvider>
-            <Probe />
-        </AuthProvider>,
-    )
+  return render(
+    <AuthProvider>
+      <Probe />
+    </AuthProvider>,
+  )
 }
 
 describe("AuthProvider", () => {
-    beforeEach(() => {
-        vi.resetAllMocks()
-        vi.mocked(removeBrowserPushSubscription).mockReset()
-        vi.mocked(notificationApi.unsubscribePush).mockReset()
-        clearCsrfToken()
+  beforeEach(() => {
+    vi.resetAllMocks()
+    vi.mocked(removeBrowserPushSubscription).mockReset()
+    vi.mocked(notificationApi.unsubscribePush).mockReset()
+    clearCsrfToken()
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  it("restores an authenticated user from /me", async () => {
+    vi.mocked(api.get).mockResolvedValueOnce(user)
+
+    renderAuth()
+
+    await waitFor(() => expect(screen.getByTestId("loading").textContent).toBe("false"))
+    expect(screen.getByTestId("authenticated").textContent).toBe("true")
+    expect(screen.getByTestId("user").textContent).toBe("user@example.com")
+  })
+
+  it("keeps auth loading until /me restoration settles", async () => {
+    let resolveMe!: (value: typeof user) => void
+    vi.mocked(api.get).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveMe = resolve
+      }),
+    )
+
+    renderAuth()
+
+    expect(screen.getByTestId("loading").textContent).toBe("true")
+    expect(screen.getByTestId("authenticated").textContent).toBe("false")
+    resolveMe(user)
+    await waitFor(() => expect(screen.getByTestId("loading").textContent).toBe("false"))
+    expect(screen.getByTestId("authenticated").textContent).toBe("true")
+  })
+
+  it("treats a 401 from /me as unauthenticated", async () => {
+    vi.mocked(api.get).mockRejectedValueOnce(
+      new ApiError("Invalid email or password", 401, "unauthenticated"),
+    )
+
+    renderAuth()
+
+    await waitFor(() => expect(screen.getByTestId("loading").textContent).toBe("false"))
+    expect(screen.getByTestId("authenticated").textContent).toBe("false")
+    expect(screen.getByTestId("error").textContent).toBe("none")
+  })
+
+  it("keeps server verification errors distinct from unauthenticated state", async () => {
+    vi.mocked(api.get).mockRejectedValueOnce(new ApiError("offline", null, "network"))
+
+    renderAuth()
+
+    await waitFor(() => expect(screen.getByTestId("error").textContent).not.toBe("none"))
+    expect(screen.getByTestId("authenticated").textContent).toBe("false")
+    expect(screen.getByTestId("error").textContent).toContain("Unable to verify your session")
+  })
+
+  it("sets the user and fetches fresh CSRF after successful login", async () => {
+    vi.mocked(api.get)
+      .mockRejectedValueOnce(new ApiError("anonymous", 401, "unauthenticated"))
+      .mockResolvedValueOnce(user)
+    vi.mocked(api.post).mockResolvedValueOnce(undefined)
+    vi.mocked(getCsrfToken).mockResolvedValueOnce({
+      token: "fresh-token",
+      headerName: "X-CSRF-TOKEN",
     })
 
-    afterEach(() => {
-        cleanup()
+    renderAuth()
+    await waitFor(() => expect(screen.getByTestId("loading").textContent).toBe("false"))
+    fireEvent.click(screen.getByRole("button", { name: "Login" }))
+
+    await waitFor(() => expect(screen.getByTestId("authenticated").textContent).toBe("true"))
+    expect(getCsrfToken).toHaveBeenCalledOnce()
+    expect(vi.mocked(api.post).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(getCsrfToken).mock.invocationCallOrder[0],
+    )
+    expect(api.post).toHaveBeenCalledWith("/api/auth/login", {
+      email: "user@example.com",
+      password: "password",
     })
+    expect(api.get).toHaveBeenNthCalledWith(2, "/api/auth/me")
+  })
 
-    it("restores an authenticated user from /me", async () => {
-        vi.mocked(api.get).mockResolvedValueOnce(user)
+  it("registers without authenticating the new account", async () => {
+    vi.mocked(api.get).mockRejectedValueOnce(new ApiError("anonymous", 401, "unauthenticated"))
+    vi.mocked(api.post).mockResolvedValueOnce(undefined)
 
-        renderAuth()
+    renderAuth()
+    await waitFor(() => expect(screen.getByTestId("loading").textContent).toBe("false"))
+    fireEvent.click(screen.getByRole("button", { name: "Register" }))
 
-        await waitFor(() => expect(screen.getByTestId("loading").textContent).toBe("false"))
-        expect(screen.getByTestId("authenticated").textContent).toBe("true")
-        expect(screen.getByTestId("user").textContent).toBe("user@example.com")
+    await waitFor(() => expect(screen.getByTestId("operation").textContent).toBe("success"))
+    expect(api.post).toHaveBeenCalledWith("/api/auth/register", {
+      displayName: "Browser User",
+      email: "user@example.com",
+      password: "password",
     })
+    expect(screen.getByTestId("authenticated").textContent).toBe("false")
+  })
 
-    it("keeps auth loading until /me restoration settles", async () => {
-        let resolveMe!: (value: typeof user) => void
-        vi.mocked(api.get).mockReturnValueOnce(new Promise((resolve) => {
-            resolveMe = resolve
-        }))
+  it("clears authenticated state only after the backend confirms logout", async () => {
+    vi.mocked(api.get).mockResolvedValueOnce(user)
+    let resolveLogout!: () => void
+    vi.mocked(api.post).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveLogout = () => resolve(undefined)
+      }),
+    )
 
-        renderAuth()
+    renderAuth()
+    await waitFor(() => expect(screen.getByTestId("authenticated").textContent).toBe("true"))
+    vi.mocked(clearCsrfToken).mockClear()
+    fireEvent.click(screen.getByRole("button", { name: "Logout" }))
 
-        expect(screen.getByTestId("loading").textContent).toBe("true")
-        expect(screen.getByTestId("authenticated").textContent).toBe("false")
-        resolveMe(user)
-        await waitFor(() => expect(screen.getByTestId("loading").textContent).toBe("false"))
-        expect(screen.getByTestId("authenticated").textContent).toBe("true")
+    expect(screen.getByTestId("authenticated").textContent).toBe("true")
+    expect(clearCsrfToken).not.toHaveBeenCalled()
+    resolveLogout()
+
+    await waitFor(() => expect(screen.getByTestId("authenticated").textContent).toBe("false"))
+    expect(api.post).toHaveBeenCalledWith("/api/auth/logout")
+    expect(clearCsrfToken).toHaveBeenCalledOnce()
+  })
+
+  it("cleans up the current browser subscription before logout and ignores cleanup failures", async () => {
+    vi.mocked(api.get).mockResolvedValueOnce(user)
+    vi.mocked(removeBrowserPushSubscription).mockResolvedValueOnce(
+      "https://push.example.test/current-subscription",
+    )
+    vi.mocked(notificationApi.unsubscribePush).mockResolvedValueOnce(undefined)
+    vi.mocked(api.post).mockResolvedValueOnce(undefined)
+
+    renderAuth()
+    await waitFor(() => expect(screen.getByTestId("authenticated").textContent).toBe("true"))
+    fireEvent.click(screen.getByRole("button", { name: "Logout" }))
+
+    await waitFor(() => expect(screen.getByTestId("authenticated").textContent).toBe("false"))
+    expect(removeBrowserPushSubscription).toHaveBeenCalledOnce()
+    expect(notificationApi.unsubscribePush).toHaveBeenCalledWith(
+      "https://push.example.test/current-subscription",
+    )
+    expect(vi.mocked(notificationApi.unsubscribePush).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(api.post).mock.invocationCallOrder[0],
+    )
+  })
+
+  it("retains authenticated state when backend logout fails", async () => {
+    vi.mocked(api.get).mockResolvedValueOnce(user)
+    vi.mocked(api.post).mockRejectedValueOnce(new ApiError("network failure", null, "network"))
+
+    renderAuth()
+    await waitFor(() => expect(screen.getByTestId("authenticated").textContent).toBe("true"))
+    vi.mocked(clearCsrfToken).mockClear()
+    fireEvent.click(screen.getByRole("button", { name: "Logout" }))
+
+    await waitFor(() => expect(screen.getByTestId("operation").textContent).toBe("error"))
+    expect(screen.getByTestId("authenticated").textContent).toBe("true")
+    expect(clearCsrfToken).not.toHaveBeenCalled()
+  })
+
+  it("clears auth state after password change and preserves the forced-sign-in notice", async () => {
+    vi.mocked(api.get).mockResolvedValueOnce(user)
+    vi.mocked(api.post).mockResolvedValueOnce(undefined)
+
+    renderAuth()
+    await waitFor(() => expect(screen.getByTestId("authenticated").textContent).toBe("true"))
+    vi.mocked(clearCsrfToken).mockClear()
+    fireEvent.click(screen.getByRole("button", { name: "Change password" }))
+
+    await waitFor(() => expect(screen.getByTestId("authenticated").textContent).toBe("false"))
+    expect(api.post).toHaveBeenCalledWith("/api/auth/change-password", {
+      currentPassword: "old-password",
+      newPassword: "new-password",
     })
+    expect(screen.getByTestId("notice").textContent).toBe(
+      "Password changed successfully. Please sign in again.",
+    )
+    expect(clearCsrfToken).toHaveBeenCalledOnce()
+  })
 
-    it("treats a 401 from /me as unauthenticated", async () => {
-        vi.mocked(api.get).mockRejectedValueOnce(new ApiError("Invalid email or password", 401, "unauthenticated"))
+  it("clears auth state after account deletion using the typed email", async () => {
+    vi.mocked(api.get).mockResolvedValueOnce(user)
+    vi.mocked(api.post).mockResolvedValueOnce(undefined)
 
-        renderAuth()
+    renderAuth()
+    await waitFor(() => expect(screen.getByTestId("authenticated").textContent).toBe("true"))
+    vi.mocked(clearCsrfToken).mockClear()
+    fireEvent.click(screen.getByRole("button", { name: "Delete account" }))
 
-        await waitFor(() => expect(screen.getByTestId("loading").textContent).toBe("false"))
-        expect(screen.getByTestId("authenticated").textContent).toBe("false")
-        expect(screen.getByTestId("error").textContent).toBe("none")
+    await waitFor(() => expect(screen.getByTestId("authenticated").textContent).toBe("false"))
+    expect(api.post).toHaveBeenCalledWith("/api/auth/delete-account", {
+      password: "password",
+      email: "user@example.com",
     })
-
-    it("keeps server verification errors distinct from unauthenticated state", async () => {
-        vi.mocked(api.get).mockRejectedValueOnce(new ApiError("offline", null, "network"))
-
-        renderAuth()
-
-        await waitFor(() => expect(screen.getByTestId("error").textContent).not.toBe("none"))
-        expect(screen.getByTestId("authenticated").textContent).toBe("false")
-        expect(screen.getByTestId("error").textContent).toContain("Unable to verify your session")
-    })
-
-    it("sets the user and fetches fresh CSRF after successful login", async () => {
-        vi.mocked(api.get)
-            .mockRejectedValueOnce(new ApiError("anonymous", 401, "unauthenticated"))
-            .mockResolvedValueOnce(user)
-        vi.mocked(api.post).mockResolvedValueOnce(undefined)
-        vi.mocked(getCsrfToken).mockResolvedValueOnce({ token: "fresh-token", headerName: "X-CSRF-TOKEN" })
-
-        renderAuth()
-        await waitFor(() => expect(screen.getByTestId("loading").textContent).toBe("false"))
-        fireEvent.click(screen.getByRole("button", { name: "Login" }))
-
-        await waitFor(() => expect(screen.getByTestId("authenticated").textContent).toBe("true"))
-        expect(getCsrfToken).toHaveBeenCalledOnce()
-        expect(vi.mocked(api.post).mock.invocationCallOrder[0]).toBeLessThan(
-            vi.mocked(getCsrfToken).mock.invocationCallOrder[0],
-        )
-        expect(api.post).toHaveBeenCalledWith("/api/auth/login", {
-            email: "user@example.com",
-            password: "password",
-        })
-        expect(api.get).toHaveBeenNthCalledWith(2, "/api/auth/me")
-    })
-
-    it("registers without authenticating the new account", async () => {
-        vi.mocked(api.get).mockRejectedValueOnce(new ApiError("anonymous", 401, "unauthenticated"))
-        vi.mocked(api.post).mockResolvedValueOnce(undefined)
-
-        renderAuth()
-        await waitFor(() => expect(screen.getByTestId("loading").textContent).toBe("false"))
-        fireEvent.click(screen.getByRole("button", { name: "Register" }))
-
-        await waitFor(() => expect(screen.getByTestId("operation").textContent).toBe("success"))
-        expect(api.post).toHaveBeenCalledWith("/api/auth/register", {
-            displayName: "Browser User",
-            email: "user@example.com",
-            password: "password",
-        })
-        expect(screen.getByTestId("authenticated").textContent).toBe("false")
-    })
-
-    it("clears authenticated state only after the backend confirms logout", async () => {
-        vi.mocked(api.get).mockResolvedValueOnce(user)
-        let resolveLogout!: () => void
-        vi.mocked(api.post).mockReturnValueOnce(new Promise((resolve) => {
-            resolveLogout = () => resolve(undefined)
-        }))
-
-        renderAuth()
-        await waitFor(() => expect(screen.getByTestId("authenticated").textContent).toBe("true"))
-        vi.mocked(clearCsrfToken).mockClear()
-        fireEvent.click(screen.getByRole("button", { name: "Logout" }))
-
-        expect(screen.getByTestId("authenticated").textContent).toBe("true")
-        expect(clearCsrfToken).not.toHaveBeenCalled()
-        resolveLogout()
-
-        await waitFor(() => expect(screen.getByTestId("authenticated").textContent).toBe("false"))
-        expect(api.post).toHaveBeenCalledWith("/api/auth/logout")
-        expect(clearCsrfToken).toHaveBeenCalledOnce()
-    })
-
-    it("cleans up the current browser subscription before logout and ignores cleanup failures", async () => {
-        vi.mocked(api.get).mockResolvedValueOnce(user)
-        vi.mocked(removeBrowserPushSubscription).mockResolvedValueOnce("https://push.example.test/current-subscription")
-        vi.mocked(notificationApi.unsubscribePush).mockResolvedValueOnce(undefined)
-        vi.mocked(api.post).mockResolvedValueOnce(undefined)
-
-        renderAuth()
-        await waitFor(() => expect(screen.getByTestId("authenticated").textContent).toBe("true"))
-        fireEvent.click(screen.getByRole("button", { name: "Logout" }))
-
-        await waitFor(() => expect(screen.getByTestId("authenticated").textContent).toBe("false"))
-        expect(removeBrowserPushSubscription).toHaveBeenCalledOnce()
-        expect(notificationApi.unsubscribePush).toHaveBeenCalledWith("https://push.example.test/current-subscription")
-        expect(vi.mocked(notificationApi.unsubscribePush).mock.invocationCallOrder[0]).toBeLessThan(
-            vi.mocked(api.post).mock.invocationCallOrder[0],
-        )
-    })
-
-    it("retains authenticated state when backend logout fails", async () => {
-        vi.mocked(api.get).mockResolvedValueOnce(user)
-        vi.mocked(api.post).mockRejectedValueOnce(new ApiError("network failure", null, "network"))
-
-        renderAuth()
-        await waitFor(() => expect(screen.getByTestId("authenticated").textContent).toBe("true"))
-        vi.mocked(clearCsrfToken).mockClear()
-        fireEvent.click(screen.getByRole("button", { name: "Logout" }))
-
-        await waitFor(() => expect(screen.getByTestId("operation").textContent).toBe("error"))
-        expect(screen.getByTestId("authenticated").textContent).toBe("true")
-        expect(clearCsrfToken).not.toHaveBeenCalled()
-    })
-
-    it("clears auth state after password change and preserves the forced-sign-in notice", async () => {
-        vi.mocked(api.get).mockResolvedValueOnce(user)
-        vi.mocked(api.post).mockResolvedValueOnce(undefined)
-
-        renderAuth()
-        await waitFor(() => expect(screen.getByTestId("authenticated").textContent).toBe("true"))
-        vi.mocked(clearCsrfToken).mockClear()
-        fireEvent.click(screen.getByRole("button", { name: "Change password" }))
-
-        await waitFor(() => expect(screen.getByTestId("authenticated").textContent).toBe("false"))
-        expect(api.post).toHaveBeenCalledWith("/api/auth/change-password", {
-            currentPassword: "old-password",
-            newPassword: "new-password",
-        })
-        expect(screen.getByTestId("notice").textContent).toBe("Password changed successfully. Please sign in again.")
-        expect(clearCsrfToken).toHaveBeenCalledOnce()
-    })
-
-    it("clears auth state after account deletion using the typed email", async () => {
-        vi.mocked(api.get).mockResolvedValueOnce(user)
-        vi.mocked(api.post).mockResolvedValueOnce(undefined)
-
-        renderAuth()
-        await waitFor(() => expect(screen.getByTestId("authenticated").textContent).toBe("true"))
-        vi.mocked(clearCsrfToken).mockClear()
-        fireEvent.click(screen.getByRole("button", { name: "Delete account" }))
-
-        await waitFor(() => expect(screen.getByTestId("authenticated").textContent).toBe("false"))
-        expect(api.post).toHaveBeenCalledWith("/api/auth/delete-account", {
-            password: "password",
-            email: "user@example.com",
-        })
-        expect(screen.getByTestId("notice").textContent).toBe("Your account has been permanently deleted.")
-        expect(clearCsrfToken).toHaveBeenCalledOnce()
-    })
+    expect(screen.getByTestId("notice").textContent).toBe(
+      "Your account has been permanently deleted.",
+    )
+    expect(clearCsrfToken).toHaveBeenCalledOnce()
+  })
 })

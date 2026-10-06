@@ -14,20 +14,20 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/profile")
 public class ProfileController {
-    private final ProfileService profileService;
+  private final ProfileService profileService;
 
-    public ProfileController(ProfileService profileService) {
-        this.profileService = profileService;
-    }
+  public ProfileController(ProfileService profileService) {
+    this.profileService = profileService;
+  }
 
-    @GetMapping
-    public ProfileResponse get(Authentication authentication) {
-        return profileService.get(authentication);
-    }
+  @GetMapping
+  public ProfileResponse get(Authentication authentication) {
+    return profileService.get(authentication);
+  }
 
-    @PutMapping
-    public ProfileResponse update(
-            @Valid @RequestBody UpdateProfileRequest request, Authentication authentication) {
-        return profileService.update(request, authentication);
-    }
+  @PutMapping
+  public ProfileResponse update(
+      @Valid @RequestBody UpdateProfileRequest request, Authentication authentication) {
+    return profileService.update(request, authentication);
+  }
 }

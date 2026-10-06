@@ -61,31 +61,49 @@ describe("PrivacySecurityScreen", () => {
 
   it("validates password length, same-password changes, and confirmation", async () => {
     render(<PrivacySecurityScreen />)
-    fireEvent.change(screen.getByLabelText("Current password"), { target: { value: "StrongPassword123!" } })
+    fireEvent.change(screen.getByLabelText("Current password"), {
+      target: { value: "StrongPassword123!" },
+    })
     fireEvent.change(screen.getByLabelText("New password"), { target: { value: "short" } })
     fireEvent.change(screen.getByLabelText("Confirm new password"), { target: { value: "short" } })
     fireEvent.click(screen.getByRole("button", { name: "Change password" }))
     expect((await screen.findByRole("alert")).textContent).toContain("between 12 and 128")
     expect(mocks.changePassword).not.toHaveBeenCalled()
 
-    fireEvent.change(screen.getByLabelText("New password"), { target: { value: "StrongPassword123!" } })
-    fireEvent.change(screen.getByLabelText("Confirm new password"), { target: { value: "StrongPassword123!" } })
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "StrongPassword123!" },
+    })
+    fireEvent.change(screen.getByLabelText("Confirm new password"), {
+      target: { value: "StrongPassword123!" },
+    })
     fireEvent.click(screen.getByRole("button", { name: "Change password" }))
-    expect((await screen.findByRole("alert")).textContent).toContain("different from your current password")
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "different from your current password",
+    )
 
-    fireEvent.change(screen.getByLabelText("New password"), { target: { value: "AQuiteDifferentPassword456!" } })
-    fireEvent.change(screen.getByLabelText("Confirm new password"), { target: { value: "NotTheSamePassword456!" } })
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "AQuiteDifferentPassword456!" },
+    })
+    fireEvent.change(screen.getByLabelText("Confirm new password"), {
+      target: { value: "NotTheSamePassword456!" },
+    })
     fireEvent.click(screen.getByRole("button", { name: "Change password" }))
     expect((await screen.findByRole("alert")).textContent).toContain("do not match")
   })
 
   it("shows the server's wrong-current-password response without clearing the session", async () => {
-    mocks.changePassword.mockRejectedValue(new ApiError("Current password incorrect.", 400, "validation"))
+    mocks.changePassword.mockRejectedValue(
+      new ApiError("Current password incorrect.", 400, "validation"),
+    )
     render(<PrivacySecurityScreen />)
 
     fireEvent.change(screen.getByLabelText("Current password"), { target: { value: "incorrect" } })
-    fireEvent.change(screen.getByLabelText("New password"), { target: { value: "AQuiteDifferentPassword456!" } })
-    fireEvent.change(screen.getByLabelText("Confirm new password"), { target: { value: "AQuiteDifferentPassword456!" } })
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "AQuiteDifferentPassword456!" },
+    })
+    fireEvent.change(screen.getByLabelText("Confirm new password"), {
+      target: { value: "AQuiteDifferentPassword456!" },
+    })
     fireEvent.click(screen.getByRole("button", { name: "Change password" }))
 
     expect((await screen.findByRole("alert")).textContent).toContain("Current password incorrect.")
@@ -97,13 +115,22 @@ describe("PrivacySecurityScreen", () => {
     mocks.changePassword.mockResolvedValue(undefined)
     render(<PrivacySecurityScreen />)
 
-    fireEvent.change(screen.getByLabelText("Current password"), { target: { value: "StrongPassword123!" } })
-    fireEvent.change(screen.getByLabelText("New password"), { target: { value: "AQuiteDifferentPassword456!" } })
-    fireEvent.change(screen.getByLabelText("Confirm new password"), { target: { value: "AQuiteDifferentPassword456!" } })
+    fireEvent.change(screen.getByLabelText("Current password"), {
+      target: { value: "StrongPassword123!" },
+    })
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "AQuiteDifferentPassword456!" },
+    })
+    fireEvent.change(screen.getByLabelText("Confirm new password"), {
+      target: { value: "AQuiteDifferentPassword456!" },
+    })
     fireEvent.click(screen.getByRole("button", { name: "Change password" }))
 
     await waitFor(() => {
-      expect(mocks.changePassword).toHaveBeenCalledWith("StrongPassword123!", "AQuiteDifferentPassword456!")
+      expect(mocks.changePassword).toHaveBeenCalledWith(
+        "StrongPassword123!",
+        "AQuiteDifferentPassword456!",
+      )
       expect(mocks.resetUserData).toHaveBeenCalledOnce()
       expect(mocks.navigate).toHaveBeenCalledWith("login")
     })
@@ -140,10 +167,16 @@ describe("PrivacySecurityScreen", () => {
     const deleteButton = screen.getByRole("button", { name: "Permanently delete my account" })
     expect((deleteButton as HTMLButtonElement).disabled).toBe(true)
 
-    fireEvent.change(screen.getByLabelText("Account email"), { target: { value: "other@example.com" } })
-    fireEvent.change(screen.getAllByLabelText("Current password")[1], { target: { value: "StrongPassword123!" } })
+    fireEvent.change(screen.getByLabelText("Account email"), {
+      target: { value: "other@example.com" },
+    })
+    fireEvent.change(screen.getAllByLabelText("Current password")[1], {
+      target: { value: "StrongPassword123!" },
+    })
     expect((deleteButton as HTMLButtonElement).disabled).toBe(true)
-    fireEvent.change(screen.getByLabelText("Account email"), { target: { value: "user@example.com" } })
+    fireEvent.change(screen.getByLabelText("Account email"), {
+      target: { value: "user@example.com" },
+    })
     expect((deleteButton as HTMLButtonElement).disabled).toBe(false)
     fireEvent.click(deleteButton)
 
@@ -156,15 +189,21 @@ describe("PrivacySecurityScreen", () => {
   })
 
   it("turns the server ownership conflict into a visible household blocker", async () => {
-    mocks.deleteAccount.mockRejectedValue(new ApiError("You still own households.", 409, "conflict", {
-      ownedHouseholds: [{ id: "house-2", name: "Cedar Home" }],
-    }))
+    mocks.deleteAccount.mockRejectedValue(
+      new ApiError("You still own households.", 409, "conflict", {
+        ownedHouseholds: [{ id: "house-2", name: "Cedar Home" }],
+      }),
+    )
     render(<PrivacySecurityScreen />)
     fireEvent.click(screen.getByRole("button", { name: "Delete account" }))
     fireEvent.click(screen.getByLabelText("I understand that deleting my account is permanent."))
     fireEvent.click(screen.getByRole("button", { name: "Continue" }))
-    fireEvent.change(screen.getByLabelText("Account email"), { target: { value: "user@example.com" } })
-    fireEvent.change(screen.getAllByLabelText("Current password")[1], { target: { value: "StrongPassword123!" } })
+    fireEvent.change(screen.getByLabelText("Account email"), {
+      target: { value: "user@example.com" },
+    })
+    fireEvent.change(screen.getAllByLabelText("Current password")[1], {
+      target: { value: "StrongPassword123!" },
+    })
     fireEvent.click(screen.getByRole("button", { name: "Permanently delete my account" }))
 
     expect(await screen.findByText("Cedar Home")).toBeTruthy()

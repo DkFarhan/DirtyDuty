@@ -12,30 +12,37 @@ import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 class DefaultNotificationGeneratorTest {
-    @Test
-    void rerunningReminderPlanningProducesTheSameDeduplicationKeyAndExpiry() {
-        NotificationTemplateResolver resolver = mock(NotificationTemplateResolver.class);
-        JdbcTemplate jdbc = mock(JdbcTemplate.class);
-        DefaultNotificationGenerator generator = new DefaultNotificationGenerator(resolver, jdbc);
-        UUID userId = UUID.randomUUID();
-        UUID assignmentId = UUID.randomUUID();
-        OffsetDateTime scheduledAt = OffsetDateTime.parse("2026-10-01T12:00:00Z");
-        OffsetDateTime expiresAt = scheduledAt.plusHours(5);
-        NotificationEvent event = new NotificationEvent(
-                "CHORE_DUE_SOON", null, null, "CHORE_ASSIGNMENT", assignmentId,
-                "CHORE_REMINDER", Map.of(
-                        "scheduled_at", scheduledAt.toString(),
-                        "expires_at", expiresAt.toString()),
-                List.of(userId));
-        when(resolver.resolve(event, userId))
-                .thenReturn(new NotificationTemplateResolver.ResolvedTemplate("Reminder", "Chore due soon"));
+  @Test
+  void rerunningReminderPlanningProducesTheSameDeduplicationKeyAndExpiry() {
+    NotificationTemplateResolver resolver = mock(NotificationTemplateResolver.class);
+    JdbcTemplate jdbc = mock(JdbcTemplate.class);
+    DefaultNotificationGenerator generator = new DefaultNotificationGenerator(resolver, jdbc);
+    UUID userId = UUID.randomUUID();
+    UUID assignmentId = UUID.randomUUID();
+    OffsetDateTime scheduledAt = OffsetDateTime.parse("2026-10-01T12:00:00Z");
+    OffsetDateTime expiresAt = scheduledAt.plusHours(5);
+    NotificationEvent event =
+        new NotificationEvent(
+            "CHORE_DUE_SOON",
+            null,
+            null,
+            "CHORE_ASSIGNMENT",
+            assignmentId,
+            "CHORE_REMINDER",
+            Map.of(
+                "scheduled_at", scheduledAt.toString(),
+                "expires_at", expiresAt.toString()),
+            List.of(userId));
+    when(resolver.resolve(event, userId))
+        .thenReturn(
+            new NotificationTemplateResolver.ResolvedTemplate("Reminder", "Chore due soon"));
 
-        NotificationMessage first = generator.generate(event).getFirst();
-        NotificationMessage rerun = generator.generate(event).getFirst();
+    NotificationMessage first = generator.generate(event).getFirst();
+    NotificationMessage rerun = generator.generate(event).getFirst();
 
-        assertThat(first.deduplicationKey()).isEqualTo(rerun.deduplicationKey());
-        assertThat(first.scheduledAt()).isEqualTo(scheduledAt);
-        assertThat(first.expiresAt()).isEqualTo(expiresAt);
-        assertThat(first.deduplicationKey()).contains(assignmentId.toString(), userId.toString());
-    }
+    assertThat(first.deduplicationKey()).isEqualTo(rerun.deduplicationKey());
+    assertThat(first.scheduledAt()).isEqualTo(scheduledAt);
+    assertThat(first.expiresAt()).isEqualTo(expiresAt);
+    assertThat(first.deduplicationKey()).contains(assignmentId.toString(), userId.toString());
+  }
 }

@@ -11,25 +11,26 @@ import org.springframework.stereotype.Service;
 @Service
 public class CustomUserDetailsService implements UserDetailsService {
 
-    private final UserRepository userRepository;
+  private final UserRepository userRepository;
 
-    public CustomUserDetailsService(UserRepository userRepository) {
-        this.userRepository = userRepository;
-    }
+  public CustomUserDetailsService(UserRepository userRepository) {
+    this.userRepository = userRepository;
+  }
 
-    @Override
-    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        User user = userRepository.findByEmailIgnoreCase(username)
-                .orElseThrow(() -> new UsernameNotFoundException("Invalid credentials"));
+  @Override
+  public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+    User user =
+        userRepository
+            .findByEmailIgnoreCase(username)
+            .orElseThrow(() -> new UsernameNotFoundException("Invalid credentials"));
 
-        boolean enabled = user.getAccountStatus() == AccountStatus.ACTIVE;
+    boolean enabled = user.getAccountStatus() == AccountStatus.ACTIVE;
 
-        return org.springframework.security.core.userdetails.User
-                .withUsername(user.getEmail())
-                .password(user.getPasswordHash())
-                .authorities("ROLE_USER")
-                .accountLocked(!enabled)
-                .disabled(!enabled)
-                .build();
-    }
+    return org.springframework.security.core.userdetails.User.withUsername(user.getEmail())
+        .password(user.getPasswordHash())
+        .authorities("ROLE_USER")
+        .accountLocked(!enabled)
+        .disabled(!enabled)
+        .build();
+  }
 }

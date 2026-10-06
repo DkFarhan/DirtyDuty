@@ -23,14 +23,19 @@ export function JoinHouseholdScreen() {
       setCode("")
       navigate("dashboard")
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Unable to join household. Please try again.")
+      setError(
+        cause instanceof Error ? cause.message : "Unable to join household. Please try again.",
+      )
       setSubmitting(false)
     }
   }
 
   return (
     <div className="flex flex-col min-h-screen bg-white px-6 pt-12 pb-10">
-      <button onClick={() => navigate("welcome")} className="flex items-center gap-1 text-slate-500 mb-8 -ml-1 w-fit">
+      <button
+        onClick={() => navigate("welcome")}
+        className="flex items-center gap-1 text-slate-500 mb-8 -ml-1 w-fit"
+      >
         <ChevronLeftIcon className="w-5 h-5" />
         <span className="text-sm font-medium">Back</span>
       </button>
@@ -38,7 +43,9 @@ export function JoinHouseholdScreen() {
       <div className="mb-8">
         <div className="text-4xl mb-4">🔗</div>
         <h1 className="text-3xl font-black text-slate-900 mb-1 font-display">Join Household</h1>
-        <p className="text-slate-500 text-sm">Enter the invite code your housemate shared with you</p>
+        <p className="text-slate-500 text-sm">
+          Enter the invite code your housemate shared with you
+        </p>
       </div>
 
       <div className="mb-6">
@@ -54,7 +61,11 @@ export function JoinHouseholdScreen() {
         />
       </div>
 
-      {error && <p role="alert" className="mb-6 text-sm text-rose-600">{error}</p>}
+      {error && (
+        <p role="alert" className="mb-6 text-sm text-rose-600">
+          {error}
+        </p>
+      )}
 
       <button
         onClick={() => void handleJoin()}

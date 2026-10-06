@@ -43,9 +43,11 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     try {
       const result = await householdApi.list()
       setHouseholds(result)
-      setSelectedHouseholdId((selectedId) => result.some((household) => household.id === selectedId)
-        ? selectedId
-        : result[0]?.id ?? null)
+      setSelectedHouseholdId((selectedId) =>
+        result.some((household) => household.id === selectedId)
+          ? selectedId
+          : (result[0]?.id ?? null),
+      )
       setStatus(result.length === 0 ? "empty" : "has-households")
       setHasLoaded(true)
       return result
@@ -70,30 +72,38 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     void refresh().catch(() => undefined)
   }, [isAuthenticated, isAuthLoading, refresh])
 
-  const create = useCallback(async (input: CreateHouseholdInput) => {
-    const created = await householdApi.create(input)
-    await refresh().catch(() => undefined)
-    return created
-  }, [refresh])
+  const create = useCallback(
+    async (input: CreateHouseholdInput) => {
+      const created = await householdApi.create(input)
+      await refresh().catch(() => undefined)
+      return created
+    },
+    [refresh],
+  )
 
-  const join = useCallback(async (inviteCode: string) => {
-    await householdApi.join(inviteCode)
-    await refresh().catch(() => undefined)
-  }, [refresh])
+  const join = useCallback(
+    async (inviteCode: string) => {
+      await householdApi.join(inviteCode)
+      await refresh().catch(() => undefined)
+    },
+    [refresh],
+  )
 
   const queueCreatedHouseholdInvite = useCallback((household: Household | null) => {
     setCreatedHouseholdInvite(household)
   }, [])
 
-  const selectHousehold = useCallback((householdId: string) => {
-    if (households.some((household) => household.id === householdId)) {
-      setSelectedHouseholdId(householdId)
-    }
-  }, [households])
+  const selectHousehold = useCallback(
+    (householdId: string) => {
+      if (households.some((household) => household.id === householdId)) {
+        setSelectedHouseholdId(householdId)
+      }
+    },
+    [households],
+  )
 
-  const activeHousehold = households.find((household) => household.id === selectedHouseholdId)
-    ?? households[0]
-    ?? null
+  const activeHousehold =
+    households.find((household) => household.id === selectedHouseholdId) ?? households[0] ?? null
 
   const visibleStatus = isAuthenticated && !hasLoaded ? "loading" : status
   const value = useMemo(
@@ -109,7 +119,18 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
       join,
       queueCreatedHouseholdInvite,
     }),
-    [households, activeHousehold, visibleStatus, error, createdHouseholdInvite, refresh, selectHousehold, create, join, queueCreatedHouseholdInvite],
+    [
+      households,
+      activeHousehold,
+      visibleStatus,
+      error,
+      createdHouseholdInvite,
+      refresh,
+      selectHousehold,
+      create,
+      join,
+      queueCreatedHouseholdInvite,
+    ],
   )
 
   return <HouseholdContext.Provider value={value}>{children}</HouseholdContext.Provider>

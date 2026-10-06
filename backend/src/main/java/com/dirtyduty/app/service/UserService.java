@@ -9,23 +9,25 @@ import org.springframework.stereotype.Service;
 @Service
 public class UserService {
 
-    private final UserRepository userRepository;
+  private final UserRepository userRepository;
 
-    public UserService(UserRepository userRepository) {
-        this.userRepository = userRepository;
-    }
+  public UserService(UserRepository userRepository) {
+    this.userRepository = userRepository;
+  }
 
-    public User findById(UUID id) {
-        return userRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + id));
-    }
+  public User findById(UUID id) {
+    return userRepository
+        .findById(id)
+        .orElseThrow(() -> new ResourceNotFoundException("User not found: " + id));
+  }
 
-    public User findByEmail(String email) {
-        return userRepository.findByEmailIgnoreCase(email)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + email));
-    }
+  public User findByEmail(String email) {
+    return userRepository
+        .findByEmailIgnoreCase(email)
+        .orElseThrow(() -> new ResourceNotFoundException("User not found: " + email));
+  }
 
-    public boolean emailExists(String email) {
-        return userRepository.existsByEmailIgnoreCase(email);
-    }
+  public boolean emailExists(String email) {
+    return userRepository.existsByEmailIgnoreCase(email);
+  }
 }

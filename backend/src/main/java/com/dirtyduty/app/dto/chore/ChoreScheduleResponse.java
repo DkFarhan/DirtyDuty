@@ -7,14 +7,13 @@ import java.util.List;
 import java.util.UUID;
 
 public record ChoreScheduleResponse(
-        String recurrenceRule,
-        String timezone,
-        LocalDate startsOn,
-        LocalDate endsOn,
-        LocalTime dueTime,
-        AssignmentStrategy assignmentStrategy,
-        UUID fixedAssigneeUserId,
-        List<UUID> participantUserIds,
-        boolean active,
-        int peopleNeeded) {
-}
+    String recurrenceRule,
+    String timezone,
+    LocalDate startsOn,
+    LocalDate endsOn,
+    LocalTime dueTime,
+    AssignmentStrategy assignmentStrategy,
+    UUID fixedAssigneeUserId,
+    List<UUID> participantUserIds,
+    boolean active,
+    int peopleNeeded) {}

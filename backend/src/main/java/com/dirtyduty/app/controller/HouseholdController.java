@@ -29,110 +29,100 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/households")
 public class HouseholdController {
 
-    private final HouseholdService householdService;
+  private final HouseholdService householdService;
 
-    public HouseholdController(HouseholdService householdService) {
-        this.householdService = householdService;
-    }
+  public HouseholdController(HouseholdService householdService) {
+    this.householdService = householdService;
+  }
 
-    @GetMapping
-    public List<HouseholdResponse> listHouseholds(Authentication authentication) {
-        return householdService.listCurrentUserHouseholds(authentication);
-    }
+  @GetMapping
+  public List<HouseholdResponse> listHouseholds(Authentication authentication) {
+    return householdService.listCurrentUserHouseholds(authentication);
+  }
 
-    @PostMapping
-    public ResponseEntity<HouseholdResponse> createHousehold(
-            @Valid @RequestBody CreateHouseholdRequest request,
-            Authentication authentication) {
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(householdService.createHousehold(request, authentication));
-    }
+  @PostMapping
+  public ResponseEntity<HouseholdResponse> createHousehold(
+      @Valid @RequestBody CreateHouseholdRequest request, Authentication authentication) {
+    return ResponseEntity.status(HttpStatus.CREATED)
+        .body(householdService.createHousehold(request, authentication));
+  }
 
-    @PostMapping("/{householdId}/invitations")
-    public ResponseEntity<CreateInvitationResponse> createInvitation(
-            @PathVariable UUID householdId,
-            Authentication authentication) {
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(householdService.createInvitation(householdId, authentication));
-    }
+  @PostMapping("/{householdId}/invitations")
+  public ResponseEntity<CreateInvitationResponse> createInvitation(
+      @PathVariable UUID householdId, Authentication authentication) {
+    return ResponseEntity.status(HttpStatus.CREATED)
+        .body(householdService.createInvitation(householdId, authentication));
+  }
 
-    @GetMapping("/{householdId}/invitations")
-    public List<HouseholdInvitationSummaryResponse> listInvitations(
-            @PathVariable UUID householdId,
-            Authentication authentication) {
-        return householdService.listActiveInvitations(householdId, authentication);
-    }
+  @GetMapping("/{householdId}/invitations")
+  public List<HouseholdInvitationSummaryResponse> listInvitations(
+      @PathVariable UUID householdId, Authentication authentication) {
+    return householdService.listActiveInvitations(householdId, authentication);
+  }
 
-    @DeleteMapping("/{householdId}/invitations/{invitationId}")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void revokeInvitation(
-            @PathVariable UUID householdId,
-            @PathVariable UUID invitationId,
-            Authentication authentication) {
-        householdService.revokeInvitation(householdId, invitationId, authentication);
-    }
+  @DeleteMapping("/{householdId}/invitations/{invitationId}")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void revokeInvitation(
+      @PathVariable UUID householdId,
+      @PathVariable UUID invitationId,
+      Authentication authentication) {
+    householdService.revokeInvitation(householdId, invitationId, authentication);
+  }
 
-    @DeleteMapping("/{householdId}")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void deleteHousehold(
-            @PathVariable UUID householdId,
-            @Valid @RequestBody DeleteHouseholdRequest request,
-            Authentication authentication) {
-        householdService.deleteHousehold(householdId, request, authentication);
-    }
+  @DeleteMapping("/{householdId}")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void deleteHousehold(
+      @PathVariable UUID householdId,
+      @Valid @RequestBody DeleteHouseholdRequest request,
+      Authentication authentication) {
+    householdService.deleteHousehold(householdId, request, authentication);
+  }
 
-    @PutMapping("/{householdId}/members/{userId}/role")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void updateMemberRole(
-            @PathVariable UUID householdId,
-            @PathVariable UUID userId,
-            @Valid @RequestBody UpdateMemberRoleRequest request,
-            Authentication authentication) {
-        householdService.updateMemberRole(householdId, userId, request.role(), authentication);
-    }
+  @PutMapping("/{householdId}/members/{userId}/role")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void updateMemberRole(
+      @PathVariable UUID householdId,
+      @PathVariable UUID userId,
+      @Valid @RequestBody UpdateMemberRoleRequest request,
+      Authentication authentication) {
+    householdService.updateMemberRole(householdId, userId, request.role(), authentication);
+  }
 
-    @DeleteMapping("/{householdId}/members/{userId}")
-    public RemoveMemberResponse removeMember(
-            @PathVariable UUID householdId,
-            @PathVariable UUID userId,
-            Authentication authentication) {
-        return householdService.removeMember(householdId, userId, authentication);
-    }
+  @DeleteMapping("/{householdId}/members/{userId}")
+  public RemoveMemberResponse removeMember(
+      @PathVariable UUID householdId, @PathVariable UUID userId, Authentication authentication) {
+    return householdService.removeMember(householdId, userId, authentication);
+  }
 
-    @PostMapping("/{householdId}/members/{userId}/remove")
-    public RemoveMemberResponse removeMemberAlternate(
-            @PathVariable UUID householdId,
-            @PathVariable UUID userId,
-            Authentication authentication) {
-        return householdService.removeMember(householdId, userId, authentication);
-    }
+  @PostMapping("/{householdId}/members/{userId}/remove")
+  public RemoveMemberResponse removeMemberAlternate(
+      @PathVariable UUID householdId, @PathVariable UUID userId, Authentication authentication) {
+    return householdService.removeMember(householdId, userId, authentication);
+  }
 
-    @PostMapping("/{householdId}/members/{userId}/transfer-ownership")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void transferOwnership(
-            @PathVariable UUID householdId,
-            @PathVariable UUID userId,
-            Authentication authentication) {
-        householdService.transferOwnership(householdId, userId, authentication);
-    }
+  @PostMapping("/{householdId}/members/{userId}/transfer-ownership")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void transferOwnership(
+      @PathVariable UUID householdId, @PathVariable UUID userId, Authentication authentication) {
+    householdService.transferOwnership(householdId, userId, authentication);
+  }
 
-    @PostMapping("/{householdId}/transfer-ownership")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void transferOwnershipBody(
-            @PathVariable UUID householdId,
-            @Valid @RequestBody java.util.Map<String, UUID> payload,
-            Authentication authentication) {
-        UUID userId = payload.get("userId");
-        if (userId == null) {
-            throw new IllegalArgumentException("userId is required.");
-        }
-        householdService.transferOwnership(householdId, userId, authentication);
+  @PostMapping("/{householdId}/transfer-ownership")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void transferOwnershipBody(
+      @PathVariable UUID householdId,
+      @Valid @RequestBody java.util.Map<String, UUID> payload,
+      Authentication authentication) {
+    UUID userId = payload.get("userId");
+    if (userId == null) {
+      throw new IllegalArgumentException("userId is required.");
     }
+    householdService.transferOwnership(householdId, userId, authentication);
+  }
 
-    @PostMapping("/join")
-    public HouseholdResponse joinHousehold(
-            @Valid @RequestBody JoinHouseholdRequest request,
-            Authentication authentication) {
-        return householdService.joinHousehold(request, authentication);
-    }
+  @PostMapping("/join")
+  public HouseholdResponse joinHousehold(
+      @Valid @RequestBody JoinHouseholdRequest request, Authentication authentication) {
+    return householdService.joinHousehold(request, authentication);
+  }
 }

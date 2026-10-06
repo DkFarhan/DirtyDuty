@@ -4,7 +4,13 @@ import { Button } from "@/components/ui/button"
 import type { HouseholdMemberDTO } from "@/lib/household/api"
 import { Avatar, ProgressBar } from "./primitives"
 
-export const MEMBER_COLORS = ["bg-teal-500", "bg-violet-500", "bg-amber-500", "bg-rose-500", "bg-sky-500"]
+export const MEMBER_COLORS = [
+  "bg-teal-500",
+  "bg-violet-500",
+  "bg-amber-500",
+  "bg-rose-500",
+  "bg-sky-500",
+]
 
 export type MemberAction = "promote" | "demote" | "remove" | "transfer"
 
@@ -12,7 +18,11 @@ export function memberColor(index: number) {
   return MEMBER_COLORS[index % MEMBER_COLORS.length]
 }
 
-export function getMemberActionOptions({ member, currentUserRole, isCurrentUser }: {
+export function getMemberActionOptions({
+  member,
+  currentUserRole,
+  isCurrentUser,
+}: {
   member: HouseholdMemberDTO
   currentUserRole: "OWNER" | "ADMIN" | "MEMBER"
   isCurrentUser: boolean
@@ -41,7 +51,11 @@ export function getMemberActionOptions({ member, currentUserRole, isCurrentUser 
   return actions
 }
 
-export function getMemberActionCopy(action: MemberAction, member: HouseholdMemberDTO, householdName: string) {
+export function getMemberActionCopy(
+  action: MemberAction,
+  member: HouseholdMemberDTO,
+  householdName: string,
+) {
   switch (action) {
     case "promote":
       return {
@@ -89,13 +103,24 @@ export function MemberActionDialog({
 }) {
   if (!pendingMemberAction) return null
 
-  const copy = getMemberActionCopy(pendingMemberAction.action, pendingMemberAction.member, householdName)
+  const copy = getMemberActionCopy(
+    pendingMemberAction.action,
+    pendingMemberAction.member,
+    householdName,
+  )
   if (!copy) return null
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
-      <section aria-labelledby="member-action-title" aria-modal="true" className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl" role="dialog">
-        <h2 className="font-display text-lg font-black text-slate-900" id="member-action-title">{copy.title}</h2>
+      <section
+        aria-labelledby="member-action-title"
+        aria-modal="true"
+        className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl"
+        role="dialog"
+      >
+        <h2 className="font-display text-lg font-black text-slate-900" id="member-action-title">
+          {copy.title}
+        </h2>
         <p className="mt-2 text-sm text-slate-500">{copy.description}</p>
 
         {pendingMemberAction.action === "transfer" && (
@@ -112,10 +137,16 @@ export function MemberActionDialog({
           </label>
         )}
 
-        {memberActionError && <p role="alert" className="mt-3 text-sm text-rose-600">{memberActionError}</p>}
+        {memberActionError && (
+          <p role="alert" className="mt-3 text-sm text-rose-600">
+            {memberActionError}
+          </p>
+        )}
 
         <div className="mt-5 flex gap-2">
-          <Button className="flex-1 rounded-xl" onClick={onCancel} type="button" variant="outline">Cancel</Button>
+          <Button className="flex-1 rounded-xl" onClick={onCancel} type="button" variant="outline">
+            Cancel
+          </Button>
           <Button
             className="flex-1 rounded-xl bg-teal-600 text-white hover:bg-teal-700"
             disabled={busyMemberId === pendingMemberAction.member.userId}
@@ -132,7 +163,9 @@ export function MemberActionDialog({
 
 function formatJoinedAt(joinedAt: string) {
   const date = new Date(joinedAt)
-  return Number.isNaN(date.getTime()) ? "Join date unavailable" : `Member since ${new Intl.DateTimeFormat(undefined, { month: "short", year: "numeric" }).format(date)}`
+  return Number.isNaN(date.getTime())
+    ? "Join date unavailable"
+    : `Member since ${new Intl.DateTimeFormat(undefined, { month: "short", year: "numeric" }).format(date)}`
 }
 
 export function MemberCard({
@@ -163,22 +196,35 @@ export function MemberCard({
   }, [menuOpen])
 
   const actions = getMemberActionOptions({ member, currentUserRole, isCurrentUser })
-  const rate = member.assignedThisWeek > 0
-    ? Math.round((member.completedThisWeek / member.assignedThisWeek) * 100)
-    : 0
+  const rate =
+    member.assignedThisWeek > 0
+      ? Math.round((member.completedThisWeek / member.assignedThisWeek) * 100)
+      : 0
 
   return (
     <div className="relative bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
       <div className="flex items-start gap-3">
-        <Avatar initial={member.displayName.slice(0, 1).toUpperCase()} colorClass={colorClass} className="w-12 h-12 text-lg shrink-0" />
+        <Avatar
+          initial={member.displayName.slice(0, 1).toUpperCase()}
+          colorClass={colorClass}
+          className="w-12 h-12 text-lg shrink-0"
+        />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="font-bold text-slate-900">{member.displayName}</p>
-            <span className="text-[10px] bg-teal-100 text-teal-700 font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wide">{member.role}</span>
-            {isCurrentUser && <span className="text-[10px] bg-slate-100 text-slate-500 font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wide">You</span>}
+            <span className="text-[10px] bg-teal-100 text-teal-700 font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wide">
+              {member.role}
+            </span>
+            {isCurrentUser && (
+              <span className="text-[10px] bg-slate-100 text-slate-500 font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wide">
+                You
+              </span>
+            )}
           </div>
           <p className="text-slate-400 text-xs mt-0.5">{formatJoinedAt(member.joinedAt)}</p>
-          <p className="text-slate-400 text-xs mt-0.5">{member.completedThisWeek}/{member.assignedThisWeek} chores done this week</p>
+          <p className="text-slate-400 text-xs mt-0.5">
+            {member.completedThisWeek}/{member.assignedThisWeek} chores done this week
+          </p>
         </div>
 
         {actions.length > 0 && (
@@ -197,7 +243,11 @@ export function MemberCard({
                 {actions.map((item) => (
                   <button
                     key={item.action}
-                    className={item.action === "remove" ? "w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-rose-600 hover:bg-rose-50" : "w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100"}
+                    className={
+                      item.action === "remove"
+                        ? "w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-rose-600 hover:bg-rose-50"
+                        : "w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100"
+                    }
                     onClick={() => {
                       setMenuOpen(false)
                       onAction?.(item.action, member)

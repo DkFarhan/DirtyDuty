@@ -23,31 +23,31 @@ import lombok.Setter;
 @NoArgsConstructor
 public class ChoreCategory {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    @Column(name = "id", nullable = false, updatable = false)
-    private UUID id;
+  @Id
+  @GeneratedValue(strategy = GenerationType.UUID)
+  @Column(name = "id", nullable = false, updatable = false)
+  private UUID id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "household_id", nullable = false)
-    private Household household;
+  @ManyToOne(fetch = FetchType.LAZY, optional = false)
+  @JoinColumn(name = "household_id", nullable = false)
+  private Household household;
 
-    @Column(name = "name", nullable = false, length = 80)
-    private String name;
+  @Column(name = "name", nullable = false, length = 80)
+  private String name;
 
-    @Column(name = "icon_key", length = 80)
-    private String iconKey;
+  @Column(name = "icon_key", length = 80)
+  private String iconKey;
 
-    @Column(name = "sort_order", nullable = false)
-    private int sortOrder;
+  @Column(name = "sort_order", nullable = false)
+  private int sortOrder;
 
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private OffsetDateTime createdAt;
+  @Column(name = "created_at", nullable = false, updatable = false)
+  private OffsetDateTime createdAt;
 
-    @PrePersist
-    protected void onCreate() {
-        if (createdAt == null) {
-            createdAt = OffsetDateTime.now();
-        }
+  @PrePersist
+  protected void onCreate() {
+    if (createdAt == null) {
+      createdAt = OffsetDateTime.now();
     }
+  }
 }

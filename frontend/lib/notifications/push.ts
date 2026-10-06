@@ -1,13 +1,19 @@
 export async function createBrowserPushSubscription(publicKey: string): Promise<PushSubscription> {
-  if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+  if (
+    !("Notification" in window) ||
+    !("serviceWorker" in navigator) ||
+    !("PushManager" in window)
+  ) {
     throw new Error("Push notifications are not supported in this browser.")
   }
 
   const permission = await Notification.requestPermission()
   if (permission !== "granted") {
-    throw new Error(permission === "denied"
-      ? "Notification permission was denied in your browser settings."
-      : "Notification permission is required to enable push notifications.")
+    throw new Error(
+      permission === "denied"
+        ? "Notification permission was denied in your browser settings."
+        : "Notification permission is required to enable push notifications.",
+    )
   }
 
   const registration = await navigator.serviceWorker.register("/service-worker.js")
@@ -32,7 +38,10 @@ export async function removeBrowserPushSubscription(): Promise<string | null> {
 }
 
 function decodeVapidKey(encoded: string): ArrayBuffer {
-  const padded = encoded.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(encoded.length / 4) * 4, "=")
+  const padded = encoded
+    .replace(/-/g, "+")
+    .replace(/_/g, "/")
+    .padEnd(Math.ceil(encoded.length / 4) * 4, "=")
   const raw = window.atob(padded)
   const bytes = Uint8Array.from(raw, (character) => character.charCodeAt(0))
   return bytes.buffer

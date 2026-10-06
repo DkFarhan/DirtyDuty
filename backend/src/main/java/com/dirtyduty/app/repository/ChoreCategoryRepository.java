@@ -7,5 +7,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface ChoreCategoryRepository extends JpaRepository<ChoreCategory, UUID> {
 
-    List<ChoreCategory> findByHousehold_IdOrderBySortOrderAscNameAsc(UUID householdId);
+  List<ChoreCategory> findByHousehold_IdOrderBySortOrderAscNameAsc(UUID householdId);
 }

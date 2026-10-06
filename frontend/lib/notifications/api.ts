@@ -50,10 +50,18 @@ export const notificationApi = {
   unsubscribePush: (endpoint: string) =>
     api.post<void>("/api/notifications/push-subscriptions/unsubscribe", { endpoint }),
   setHouseholdStyle: (householdId: string, style: NotificationStyle) =>
-    api.put<void>(`/api/notifications/households/${encodeURIComponent(householdId)}/style`, { style }),
-  preferences: async () => normalizePreferences(await api.get<NotificationPreferences>("/api/notifications/preferences")),
+    api.put<void>(`/api/notifications/households/${encodeURIComponent(householdId)}/style`, {
+      style,
+    }),
+  preferences: async () =>
+    normalizePreferences(await api.get<NotificationPreferences>("/api/notifications/preferences")),
   updatePreferences: async (preferences: NotificationPreferences) =>
-    normalizePreferences(await api.put<NotificationPreferences>("/api/notifications/preferences", serializePreferences(preferences))),
+    normalizePreferences(
+      await api.put<NotificationPreferences>(
+        "/api/notifications/preferences",
+        serializePreferences(preferences),
+      ),
+    ),
 }
 
 function normalizePreferences(preferences: NotificationPreferences): NotificationPreferences {
@@ -74,15 +82,23 @@ function normalizePreferences(preferences: NotificationPreferences): Notificatio
   }
 }
 
-function serializePreferences(preferences: NotificationPreferences): Omit<NotificationPreferences, "householdNotificationStyle"> {
+function serializePreferences(
+  preferences: NotificationPreferences,
+): Omit<NotificationPreferences, "householdNotificationStyle"> {
   return {
     choreAssignedEnabled: preferences.choreAssignedEnabled,
     choreRemindersEnabled: preferences.choreRemindersEnabled,
     overdueEnabled: preferences.overdueEnabled,
     choreCompletionEnabled: preferences.choreCompletionEnabled,
     householdUpdatesEnabled: preferences.householdUpdatesEnabled,
-    quietHoursStart: preferences.quietHoursStart && preferences.quietHoursStart.length === 5 ? `${preferences.quietHoursStart}:00` : preferences.quietHoursStart,
-    quietHoursEnd: preferences.quietHoursEnd && preferences.quietHoursEnd.length === 5 ? `${preferences.quietHoursEnd}:00` : preferences.quietHoursEnd,
+    quietHoursStart:
+      preferences.quietHoursStart && preferences.quietHoursStart.length === 5
+        ? `${preferences.quietHoursStart}:00`
+        : preferences.quietHoursStart,
+    quietHoursEnd:
+      preferences.quietHoursEnd && preferences.quietHoursEnd.length === 5
+        ? `${preferences.quietHoursEnd}:00`
+        : preferences.quietHoursEnd,
     notificationStyleOverride: preferences.notificationStyleOverride,
     funnyNotificationsEnabled: preferences.funnyNotificationsEnabled,
     competitiveNotificationsEnabled: preferences.competitiveNotificationsEnabled,

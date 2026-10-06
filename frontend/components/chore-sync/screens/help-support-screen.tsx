@@ -5,10 +5,22 @@ import { useChoreSync } from "@/lib/chore-sync/store"
 import { SubpageHeader } from "./subpage-header"
 
 const helpItems = [
-  ["How do household chores work?", "Your household dashboard lists chores scheduled for today and this week. Use My Chores to see assignments and mark eligible chores complete."],
-  ["How do I invite someone?", "Open Household and choose Invite Member in the admin actions. An owner or admin can create an invitation."],
-  ["How do I change household details?", "An owner can open Household Settings from the Household admin actions to update the name or description."],
-  ["What if I need to transfer ownership?", "Open the household members list, open the member menu, and choose Transfer ownership. The chosen member must already be an active household member."],
+  [
+    "How do household chores work?",
+    "Your household dashboard lists chores scheduled for today and this week. Use My Chores to see assignments and mark eligible chores complete.",
+  ],
+  [
+    "How do I invite someone?",
+    "Open Household and choose Invite Member in the admin actions. An owner or admin can create an invitation.",
+  ],
+  [
+    "How do I change household details?",
+    "An owner can open Household Settings from the Household admin actions to update the name or description.",
+  ],
+  [
+    "What if I need to transfer ownership?",
+    "Open the household members list, open the member menu, and choose Transfer ownership. The chosen member must already be an active household member.",
+  ],
 ]
 
 const supportEmail = process.env.NEXT_PUBLIC_SUPPORT_EMAIL ?? "support@dirtyduty.app"
@@ -47,7 +59,9 @@ export function HelpSupportScreen() {
           </div>
           {helpItems.map(([question, answer]) => (
             <details className="border-t border-slate-100 px-4 py-3" key={question}>
-              <summary className="cursor-pointer text-sm font-semibold text-slate-800">{question}</summary>
+              <summary className="cursor-pointer text-sm font-semibold text-slate-800">
+                {question}
+              </summary>
               <p className="pt-2 text-sm leading-relaxed text-slate-500">{answer}</p>
             </details>
           ))}
@@ -55,7 +69,9 @@ export function HelpSupportScreen() {
 
         <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
           <h2 className="font-bold text-slate-900">Contact support</h2>
-          <p className="mt-1 text-sm leading-relaxed text-slate-500">Share a quick note and send it directly to the support address configured for this app.</p>
+          <p className="mt-1 text-sm leading-relaxed text-slate-500">
+            Share a quick note and send it directly to the support address configured for this app.
+          </p>
           <label className="mt-3 block text-xs font-bold uppercase tracking-wide text-slate-500">
             What do you need help with?
             <textarea

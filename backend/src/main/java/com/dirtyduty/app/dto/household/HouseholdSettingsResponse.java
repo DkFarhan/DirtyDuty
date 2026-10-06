@@ -5,10 +5,10 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 public record HouseholdSettingsResponse(
-        UUID id,
-        String name,
-        String description,
-        String timezone,
-        String notificationStyle,
-        HouseholdRole currentUserRole,
-        OffsetDateTime createdAt) {}
+    UUID id,
+    String name,
+    String description,
+    String timezone,
+    String notificationStyle,
+    HouseholdRole currentUserRole,
+    OffsetDateTime createdAt) {}

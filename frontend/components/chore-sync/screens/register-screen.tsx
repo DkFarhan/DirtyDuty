@@ -46,7 +46,10 @@ export function RegisterScreen() {
 
   return (
     <div className="flex flex-col min-h-screen bg-white px-6 pt-12 pb-10">
-      <button onClick={() => navigate("login")} className="flex items-center gap-1 text-slate-500 mb-8 -ml-1 w-fit">
+      <button
+        onClick={() => navigate("login")}
+        className="flex items-center gap-1 text-slate-500 mb-8 -ml-1 w-fit"
+      >
         <ChevronLeftIcon className="w-5 h-5" />
         <span className="text-sm font-medium">Back</span>
       </button>
@@ -57,7 +60,10 @@ export function RegisterScreen() {
       <div className="flex flex-col gap-4 mb-6">
         {fields.map(({ key, label, placeholder, type }) => (
           <div key={key}>
-            <label htmlFor={`register-${key}`} className="block text-sm font-semibold text-slate-700 mb-1.5">
+            <label
+              htmlFor={`register-${key}`}
+              className="block text-sm font-semibold text-slate-700 mb-1.5"
+            >
               {label}
             </label>
             <input
@@ -72,7 +78,11 @@ export function RegisterScreen() {
         ))}
       </div>
 
-      {error && <p className="mb-4 text-sm text-rose-600" role="alert">{error}</p>}
+      {error && (
+        <p className="mb-4 text-sm text-rose-600" role="alert">
+          {error}
+        </p>
+      )}
 
       <button
         onClick={handleSubmit}
@@ -83,7 +93,8 @@ export function RegisterScreen() {
       </button>
 
       <p className="text-center text-xs text-slate-400 mt-4">
-        By signing up you agree to our <span className="text-teal-600 font-medium">Terms of Service</span>
+        By signing up you agree to our{" "}
+        <span className="text-teal-600 font-medium">Terms of Service</span>
       </p>
     </div>
   )

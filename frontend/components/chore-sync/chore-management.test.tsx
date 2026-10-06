@@ -25,8 +25,19 @@ const dashboard = {
   thisWeek: [],
 }
 const options = {
-  categories: [{ id: "category-1", name: "Kitchen", iconKey: "🧹", sortOrder: 0, createdAt: "2026-09-25T12:00:00Z" }],
-  activeMembers: [{ userId: "user-1", displayName: "Jahid" }, { userId: "user-2", displayName: "Ahmed" }],
+  categories: [
+    {
+      id: "category-1",
+      name: "Kitchen",
+      iconKey: "🧹",
+      sortOrder: 0,
+      createdAt: "2026-09-25T12:00:00Z",
+    },
+  ],
+  activeMembers: [
+    { userId: "user-1", displayName: "Jahid" },
+    { userId: "user-2", displayName: "Ahmed" },
+  ],
 }
 const savedChore = {
   id: "chore-1",
@@ -98,7 +109,11 @@ describe("chore management", () => {
     let resolveList!: (response: Response) => void
     await openHousehold()
     fetchMock
-      .mockReturnValueOnce(new Promise((resolve) => { resolveList = resolve }))
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveList = resolve
+        }),
+      )
       .mockResolvedValueOnce(jsonResponse(options))
     await enterChores()
     expect(screen.getByLabelText("Loading chores")).toBeTruthy()
@@ -113,7 +128,10 @@ describe("chore management", () => {
       .mockRejectedValueOnce(new TypeError("offline"))
       .mockResolvedValueOnce(jsonResponse(options))
     await enterChores()
-    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Unable to connect to DirtyDuty. Please try again.")
+    expect(await screen.findByRole("alert")).toHaveProperty(
+      "textContent",
+      "Unable to connect to DirtyDuty. Please try again.",
+    )
     expect(screen.queryByText("No chores yet")).toBeNull()
   })
 
@@ -131,13 +149,23 @@ describe("chore management", () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ token: "lifecycle-csrf", headerName: "X-CSRF-TOKEN" }))
       .mockResolvedValueOnce(jsonResponse({ ...savedChore, active: false }))
-      .mockResolvedValueOnce(jsonResponse([{ ...savedChore, active: false, schedule: { ...savedChore.schedule, active: false } }]))
+      .mockResolvedValueOnce(
+        jsonResponse([
+          { ...savedChore, active: false, schedule: { ...savedChore.schedule, active: false } },
+        ]),
+      )
       .mockResolvedValueOnce(jsonResponse(options))
     fireEvent.click(screen.getByRole("button", { name: "Pause" }))
 
-    await waitFor(() => expect(fetchMock.mock.calls.some(
-      ([url, request]) => url === "http://localhost:8080/api/households/home-1/chores/chore-1/pause" && request?.method === "POST",
-    )).toBe(true))
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, request]) =>
+            url === "http://localhost:8080/api/households/home-1/chores/chore-1/pause" &&
+            request?.method === "POST",
+        ),
+      ).toBe(true),
+    )
     expect(await screen.findByText("Paused")).toBeTruthy()
   })
 
@@ -157,12 +185,15 @@ describe("chore management", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create a chore" }))
     await screen.findByRole("heading", { name: "Create Chore" })
     fireEvent.change(screen.getByLabelText("Category"), { target: { value: "category-1" } })
-    fireEvent.change(screen.getByPlaceholderText("e.g. Clean Kitchen"), { target: { value: "  Clean Kitchen  " } })
+    fireEvent.change(screen.getByPlaceholderText("e.g. Clean Kitchen"), {
+      target: { value: "  Clean Kitchen  " },
+    })
     fireEvent.click(screen.getByRole("button", { name: "Create Chore" }))
 
     await screen.findByRole("heading", { name: "Household Management" })
     const createRequest = fetchMock.mock.calls.find(
-      ([url, request]) => url === "http://localhost:8080/api/households/home-1/chores" && request?.method === "POST",
+      ([url, request]) =>
+        url === "http://localhost:8080/api/households/home-1/chores" && request?.method === "POST",
     )
     expect(JSON.parse(String(createRequest?.[1]?.body))).toMatchObject({
       title: "Clean Kitchen",
@@ -201,12 +232,16 @@ describe("chore management", () => {
 
     expect(await screen.findByRole("heading", { name: "Edit Chore" })).toBeTruthy()
     expect(await screen.findByDisplayValue("Clean Kitchen")).toBeTruthy()
-    fireEvent.change(screen.getByDisplayValue("Clean Kitchen"), { target: { value: "Wipe Kitchen" } })
+    fireEvent.change(screen.getByDisplayValue("Clean Kitchen"), {
+      target: { value: "Wipe Kitchen" },
+    })
     fireEvent.click(screen.getByRole("button", { name: "Save Changes" }))
     expect(await screen.findByRole("heading", { name: "Wipe Kitchen" })).toBeTruthy()
 
     const updateRequest = fetchMock.mock.calls.find(
-      ([url, request]) => url === "http://localhost:8080/api/households/home-1/chores/chore-1" && request?.method === "PUT",
+      ([url, request]) =>
+        url === "http://localhost:8080/api/households/home-1/chores/chore-1" &&
+        request?.method === "PUT",
     )
     expect(JSON.parse(String(updateRequest?.[1]?.body))).toMatchObject({
       title: "Wipe Kitchen",
@@ -233,29 +268,35 @@ describe("chore management", () => {
     expect(screen.getByText(/Its history will be preserved/)).toBeTruthy()
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ token: "archive-csrf", headerName: "X-CSRF-TOKEN" }))
-      .mockResolvedValueOnce(jsonResponse({ ...savedChore, active: false, archivedAt: "2026-09-27T12:00:00Z" }))
+      .mockResolvedValueOnce(
+        jsonResponse({ ...savedChore, active: false, archivedAt: "2026-09-27T12:00:00Z" }),
+      )
       .mockResolvedValueOnce(jsonResponse([]))
       .mockResolvedValueOnce(jsonResponse(options))
     fireEvent.click(screen.getByRole("button", { name: "Archive" }))
 
     expect(await screen.findByText("No chores yet")).toBeTruthy()
-    expect(fetchMock.mock.calls.some(
-      ([url, request]) => url === "http://localhost:8080/api/households/home-1/chores/chore-1/archive" && request?.method === "POST",
-    )).toBe(true)
+    expect(
+      fetchMock.mock.calls.some(
+        ([url, request]) =>
+          url === "http://localhost:8080/api/households/home-1/chores/chore-1/archive" &&
+          request?.method === "POST",
+      ),
+    ).toBe(true)
   })
 
   it("asks before discarding a dirty create form and lets the user keep editing", async () => {
     await openHousehold()
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse([]))
-      .mockResolvedValueOnce(jsonResponse(options))
+    fetchMock.mockResolvedValueOnce(jsonResponse([])).mockResolvedValueOnce(jsonResponse(options))
     await enterChores()
     await screen.findByText("No chores yet")
     fetchMock.mockResolvedValueOnce(jsonResponse(options))
     fireEvent.click(screen.getByRole("button", { name: "Create a chore" }))
     await screen.findByRole("heading", { name: "Create Chore" })
 
-    fireEvent.change(screen.getByPlaceholderText("e.g. Clean Kitchen"), { target: { value: "New chore" } })
+    fireEvent.change(screen.getByPlaceholderText("e.g. Clean Kitchen"), {
+      target: { value: "New chore" },
+    })
     fireEvent.click(screen.getByRole("button", { name: "Back to chores" }))
     expect(screen.getByRole("dialog", { name: "Discard changes?" })).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "Keep editing" }))
@@ -263,29 +304,38 @@ describe("chore management", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Back to chores" }))
     fireEvent.click(screen.getByRole("button", { name: "Discard" }))
-    expect(    await screen.findByRole("heading", { name: "Household Management" })).toBeTruthy()
+    expect(await screen.findByRole("heading", { name: "Household Management" })).toBeTruthy()
   })
 
   it("requires exactly K fixed members and persists multi-person scheduling", async () => {
     await openHousehold()
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse([]))
-      .mockResolvedValueOnce(jsonResponse(options))
+    fetchMock.mockResolvedValueOnce(jsonResponse([])).mockResolvedValueOnce(jsonResponse(options))
     await enterChores()
     await screen.findByText("No chores yet")
 
     fetchMock.mockResolvedValueOnce(jsonResponse(options))
     fireEvent.click(screen.getByRole("button", { name: "Create a chore" }))
     await screen.findByRole("heading", { name: "Create Chore" })
-    fireEvent.change(screen.getByPlaceholderText("e.g. Clean Kitchen"), { target: { value: "Move Sofa" } })
+    fireEvent.change(screen.getByPlaceholderText("e.g. Clean Kitchen"), {
+      target: { value: "Move Sofa" },
+    })
     fireEvent.change(screen.getByLabelText("People Needed"), { target: { value: "2" } })
     expect(screen.getByText("Select exactly 2 members")).toBeTruthy()
     expect(screen.queryByText("Require completion verification")).toBeNull()
 
     fireEvent.click(screen.getByRole("button", { name: "Ahmed" }))
     fireEvent.click(screen.getByRole("button", { name: "Create Chore" }))
-    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Choose exactly 2 members for this chore.")
-    expect(fetchMock.mock.calls.some(([url, request]) => url === "http://localhost:8080/api/households/home-1/chores" && request?.method === "POST")).toBe(false)
+    expect(await screen.findByRole("alert")).toHaveProperty(
+      "textContent",
+      "Choose exactly 2 members for this chore.",
+    )
+    expect(
+      fetchMock.mock.calls.some(
+        ([url, request]) =>
+          url === "http://localhost:8080/api/households/home-1/chores" &&
+          request?.method === "POST",
+      ),
+    ).toBe(false)
 
     fireEvent.click(screen.getByRole("button", { name: "Jahid" }))
     fetchMock
@@ -297,7 +347,8 @@ describe("chore management", () => {
     await screen.findByRole("heading", { name: "Household Management" })
 
     const createRequest = fetchMock.mock.calls.find(
-      ([url, request]) => url === "http://localhost:8080/api/households/home-1/chores" && request?.method === "POST",
+      ([url, request]) =>
+        url === "http://localhost:8080/api/households/home-1/chores" && request?.method === "POST",
     )
     expect(JSON.parse(String(createRequest?.[1]?.body))).toMatchObject({
       title: "Move Sofa",
@@ -312,21 +363,30 @@ describe("chore management", () => {
 
   it("explains the fair rotation ratio and does not save when the eligible pool is too small", async () => {
     await openHousehold()
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse([]))
-      .mockResolvedValueOnce(jsonResponse(options))
+    fetchMock.mockResolvedValueOnce(jsonResponse([])).mockResolvedValueOnce(jsonResponse(options))
     await enterChores()
     await screen.findByText("No chores yet")
     fetchMock.mockResolvedValueOnce(jsonResponse(options))
     fireEvent.click(screen.getByRole("button", { name: "Create a chore" }))
     await screen.findByRole("heading", { name: "Create Chore" })
 
-    fireEvent.change(screen.getByPlaceholderText("e.g. Clean Kitchen"), { target: { value: "Sweep Floor" } })
+    fireEvent.change(screen.getByPlaceholderText("e.g. Clean Kitchen"), {
+      target: { value: "Sweep Floor" },
+    })
     fireEvent.click(screen.getByRole("button", { name: "Rotate" }))
     expect(screen.getByText("Rotate 1/0 people fairly.")).toBeTruthy()
     fireEvent.change(screen.getByLabelText("People Needed"), { target: { value: "2" } })
     fireEvent.click(screen.getByRole("button", { name: "Create Chore" }))
-    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "People needed must be between 1 and the number of eligible members.")
-    expect(fetchMock.mock.calls.some(([url, request]) => url === "http://localhost:8080/api/households/home-1/chores" && request?.method === "POST")).toBe(false)
+    expect(await screen.findByRole("alert")).toHaveProperty(
+      "textContent",
+      "People needed must be between 1 and the number of eligible members.",
+    )
+    expect(
+      fetchMock.mock.calls.some(
+        ([url, request]) =>
+          url === "http://localhost:8080/api/households/home-1/chores" &&
+          request?.method === "POST",
+      ),
+    ).toBe(false)
   })
 })

@@ -23,7 +23,11 @@ function expirationLabel(value: string) {
   }).format(date)
 }
 
-export function InviteHousemateDialog({ household, open, onOpenChange }: InviteHousemateDialogProps) {
+export function InviteHousemateDialog({
+  household,
+  open,
+  onOpenChange,
+}: InviteHousemateDialogProps) {
   const [invitation, setInvitation] = useState<HouseholdInvitation | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -40,7 +44,8 @@ export function InviteHousemateDialog({ household, open, onOpenChange }: InviteH
   useEffect(() => {
     if (!open) return
 
-    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const previouslyFocused =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = "hidden"
     closeButtonRef.current?.focus()
@@ -135,10 +140,16 @@ export function InviteHousemateDialog({ household, open, onOpenChange }: InviteH
               <House aria-hidden="true" className="h-5 w-5" />
             </span>
             <div className="min-w-0">
-              <h2 id="invite-housemate-title" className="font-display text-xl font-black text-slate-900">
+              <h2
+                id="invite-housemate-title"
+                className="font-display text-xl font-black text-slate-900"
+              >
                 Invite a housemate
               </h2>
-              <p id="invite-housemate-description" className="mt-1 text-sm leading-relaxed text-slate-500">
+              <p
+                id="invite-housemate-description"
+                className="mt-1 text-sm leading-relaxed text-slate-500"
+              >
                 Generate a secure one-time invite code for someone you want to add to{" "}
                 <span className="break-words font-semibold text-slate-700">{household.name}</span>.
               </p>
@@ -158,7 +169,9 @@ export function InviteHousemateDialog({ household, open, onOpenChange }: InviteH
         {invitation ? (
           <div className="space-y-4">
             <div>
-              <p className="mb-2 text-xs font-black uppercase tracking-wider text-slate-500">Invite code</p>
+              <p className="mb-2 text-xs font-black uppercase tracking-wider text-slate-500">
+                Invite code
+              </p>
               <div className="flex min-w-0 items-center gap-2 rounded-xl border border-teal-100 bg-teal-50/70 p-2">
                 <code className="min-w-0 flex-1 select-all break-all px-2 py-1 font-mono text-sm font-semibold leading-relaxed text-teal-900 sm:text-base">
                   {invitation.inviteCode}
@@ -176,9 +189,16 @@ export function InviteHousemateDialog({ household, open, onOpenChange }: InviteH
             </div>
             <p className="text-sm text-slate-500">This invite can be used once.</p>
             <p className="text-sm text-slate-500">
-              Expires <span className="font-medium text-slate-700">{expirationLabel(invitation.expiresAt)}</span>
+              Expires{" "}
+              <span className="font-medium text-slate-700">
+                {expirationLabel(invitation.expiresAt)}
+              </span>
             </p>
-            {error && <p role="alert" className="text-sm text-rose-600">{error}</p>}
+            {error && (
+              <p role="alert" className="text-sm text-rose-600">
+                {error}
+              </p>
+            )}
             <Button
               className="h-11 w-full rounded-xl bg-teal-600 font-bold text-white hover:bg-teal-700"
               onClick={() => onOpenChange(false)}
@@ -192,7 +212,11 @@ export function InviteHousemateDialog({ household, open, onOpenChange }: InviteH
             <p className="text-sm leading-relaxed text-slate-500">
               Each code is secure, expires automatically, and can only be redeemed once.
             </p>
-            {error && <p role="alert" className="text-sm text-rose-600">{error}</p>}
+            {error && (
+              <p role="alert" className="text-sm text-rose-600">
+                {error}
+              </p>
+            )}
             <Button
               className="h-11 w-full rounded-xl bg-teal-600 font-bold text-white hover:bg-teal-700"
               disabled={isGenerating}
