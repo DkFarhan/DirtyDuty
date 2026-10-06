@@ -14,7 +14,6 @@ import com.dirtyduty.app.exception.DuplicateResourceException;
 import com.dirtyduty.app.exception.GlobalExceptionHandler;
 import com.dirtyduty.app.repository.UserRepository;
 import com.dirtyduty.app.service.AuthService;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -28,6 +27,7 @@ import org.springframework.security.web.context.HttpSessionSecurityContextReposi
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
+import tools.jackson.databind.json.JsonMapper;
 
 class AuthControllerHttpTest {
 
@@ -58,12 +58,13 @@ class AuthControllerHttpTest {
     String userControlledPath = "/private/<script>alert(1)</script>";
     MockHttpServletRequest request = new MockHttpServletRequest("GET", userControlledPath);
     MockHttpServletResponse response = new MockHttpServletResponse();
+    JsonMapper jsonMapper = JsonMapper.builder().build();
 
     new SecurityConfig()
-        .authenticationEntryPoint(new ObjectMapper())
+        .authenticationEntryPoint(jsonMapper)
         .commence(request, response, new InsufficientAuthenticationException("Unauthenticated"));
 
-    var body = new ObjectMapper().readTree(response.getContentAsString());
+    var body = jsonMapper.readTree(response.getContentAsString());
     assertThat(response.getStatus()).isEqualTo(401);
     assertThat(response.getContentType()).isEqualTo(APPLICATION_JSON_VALUE);
     assertThat(body.path("status").asInt()).isEqualTo(401);

@@ -1,7 +1,6 @@
 package com.dirtyduty.app.config;
 
 import com.dirtyduty.app.security.CustomUserDetailsService;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.HashMap;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
@@ -33,6 +32,7 @@ import org.springframework.session.web.http.DefaultCookieSerializer;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import tools.jackson.databind.json.JsonMapper;
 
 @Configuration
 @EnableWebSecurity
@@ -114,11 +114,11 @@ public class SecurityConfig {
   }
 
   @Bean
-  public AuthenticationEntryPoint authenticationEntryPoint(ObjectMapper objectMapper) {
+  public AuthenticationEntryPoint authenticationEntryPoint(JsonMapper jsonMapper) {
     return (request, response, exception) -> {
       response.setStatus(401);
       response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-      objectMapper.writeValue(
+      jsonMapper.writeValue(
           response.getOutputStream(),
           Map.of(
               "status", 401,
