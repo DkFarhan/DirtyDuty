@@ -57,6 +57,8 @@ public class SecurityConfig {
             auth ->
                 auth.requestMatchers(HttpMethod.OPTIONS, "/**")
                     .permitAll()
+                    .requestMatchers("/actuator/health")
+                    .permitAll()
                     .requestMatchers(HttpMethod.GET, "/api/auth/csrf")
                     .permitAll()
                     .requestMatchers(HttpMethod.POST, "/api/auth/register")

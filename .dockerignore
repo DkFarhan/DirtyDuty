@@ -1,0 +1,12 @@
+**/.git/
+**/.idea/
+**/.vscode/
+**/.next/
+**/node_modules/
+**/target/
+**/.DS_Store
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.local.example
+!**/.env.production.example

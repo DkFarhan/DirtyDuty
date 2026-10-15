@@ -1,0 +1,11 @@
+target/
+.git/
+.gitignore
+.idea/
+.vscode/
+.env
+.env.*
+!.env.example
+!.env.local.example
+!.env.production.example
+Dockerfile

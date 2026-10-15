@@ -1,8 +1,16 @@
 # Local environment secrets
 .env
 .env.*
+.env.production
+.env.production.local
 !.env.example
 !.env.local.example
+!.env.production.example
+
+# Frontend production env templates
+frontend/.env.production
+frontend/.env.production.local
+!frontend/.env.production.example
 
 # IDE/editor files
 .vscode/
