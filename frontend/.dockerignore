@@ -1,0 +1,11 @@
+node_modules/
+.next/
+.git/
+.gitignore
+.env
+.env.*
+!.env.example
+!.env.local.example
+!.env.production.example
+npm-debug.log
+.DS_Store

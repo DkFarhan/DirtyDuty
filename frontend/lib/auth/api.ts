@@ -3,6 +3,8 @@ const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:
   "",
 )
 
+const apiUrl = (path: string) => `${API_BASE_URL}${path}`
+
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
 
 type ApiRequestOptions = {
@@ -95,7 +97,7 @@ async function request<T>(path: string, options: ApiRequestOptions = {}): Promis
 
   let response: Response
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, {
+    response = await fetch(apiUrl(path), {
       method,
       credentials: "include",
       headers,
@@ -125,7 +127,7 @@ export async function getCsrfToken(): Promise<CsrfResponse> {
 
   let response: Response
   try {
-    response = await fetch(`${API_BASE_URL}/api/auth/csrf`, { credentials: "include" })
+    response = await fetch(apiUrl("/api/auth/csrf"), { credentials: "include" })
   } catch {
     throw new ApiError("Unable to connect to DirtyDuty. Please try again.", null, "network")
   }
