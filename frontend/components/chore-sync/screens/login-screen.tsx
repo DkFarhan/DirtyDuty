@@ -5,6 +5,7 @@ import { ApiError } from "@/lib/auth/api"
 import { useAuth } from "@/lib/auth/auth-context"
 import { useChoreSync } from "@/lib/chore-sync/store"
 import { ProductLogo } from "@/components/brand/product-logo"
+import { PasswordInput } from "@/components/ui/password-input"
 
 const inputClass =
   "w-full px-4 py-3.5 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent text-[15px] transition-all"
@@ -82,9 +83,10 @@ export function LoginScreen() {
           >
             Password
           </label>
-          <input
+          <PasswordInput
+            autoComplete="current-password"
             id="login-password"
-            type="password"
+            name="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="••••••••"

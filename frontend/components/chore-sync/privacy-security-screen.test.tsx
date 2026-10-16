@@ -59,6 +59,26 @@ describe("PrivacySecurityScreen", () => {
 
   afterEach(() => cleanup())
 
+  it("toggles each change-password field independently without submitting", () => {
+    render(<PrivacySecurityScreen />)
+    const current = screen.getByLabelText("Current password") as HTMLInputElement
+    const next = screen.getByLabelText("New password") as HTMLInputElement
+    const confirmation = screen.getByLabelText("Confirm new password") as HTMLInputElement
+    fireEvent.change(current, { target: { value: "current-secret" } })
+    fireEvent.change(next, { target: { value: "new-secret" } })
+    fireEvent.change(confirmation, { target: { value: "new-secret" } })
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Show password" })[1])
+    expect(current.type).toBe("password")
+    expect(next.type).toBe("text")
+    expect(confirmation.type).toBe("password")
+    expect(next.value).toBe("new-secret")
+    expect(screen.getByRole("button", { name: "Hide password" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    )
+    expect(mocks.changePassword).not.toHaveBeenCalled()
+  })
+
   it("validates password length, same-password changes, and confirmation", async () => {
     render(<PrivacySecurityScreen />)
     fireEvent.change(screen.getByLabelText("Current password"), {

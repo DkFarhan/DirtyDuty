@@ -7,6 +7,7 @@ import { useChoreSync } from "@/lib/chore-sync/store"
 import { useHouseholds } from "@/lib/household/household-context"
 import type { Household } from "@/lib/household/api"
 import { removeBrowserPushSubscription } from "@/lib/notifications/push"
+import { PasswordInput } from "@/components/ui/password-input"
 import { SubpageHeader } from "./subpage-header"
 
 type OwnedHousehold = Pick<Household, "id" | "name">
@@ -208,9 +209,11 @@ export function PrivacySecurityScreen() {
           <div className="mt-3 space-y-3">
             <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
               Current password
-              <input
+              <PasswordInput
                 autoComplete="current-password"
                 className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-teal-500 focus:bg-white"
+                id="change-current-password"
+                name="currentPassword"
                 onChange={(event) =>
                   setPasswordForm((current) => ({
                     ...current,
@@ -218,30 +221,32 @@ export function PrivacySecurityScreen() {
                   }))
                 }
                 required
-                type="password"
                 value={passwordForm.currentPassword}
               />
             </label>
             <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
               New password
-              <input
+              <PasswordInput
                 autoComplete="new-password"
                 className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-teal-500 focus:bg-white"
+                id="change-new-password"
                 maxLength={128}
+                name="newPassword"
                 onChange={(event) =>
                   setPasswordForm((current) => ({ ...current, newPassword: event.target.value }))
                 }
                 required
-                type="password"
                 value={passwordForm.newPassword}
               />
             </label>
             <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
               Confirm new password
-              <input
+              <PasswordInput
                 autoComplete="new-password"
                 className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-teal-500 focus:bg-white"
+                id="change-confirm-password"
                 maxLength={128}
+                name="confirmPassword"
                 onChange={(event) =>
                   setPasswordForm((current) => ({
                     ...current,
@@ -249,7 +254,6 @@ export function PrivacySecurityScreen() {
                   }))
                 }
                 required
-                type="password"
                 value={passwordForm.confirmPassword}
               />
             </label>
@@ -391,14 +395,15 @@ export function PrivacySecurityScreen() {
               </label>
               <label className="mt-3 block text-xs font-bold uppercase tracking-wide text-slate-500">
                 Current password
-                <input
+                <PasswordInput
                   autoComplete="current-password"
                   className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-rose-400"
+                  id="delete-account-password"
+                  name="password"
                   onChange={(event) =>
                     setDeleteForm((current) => ({ ...current, password: event.target.value }))
                   }
                   required
-                  type="password"
                   value={deleteForm.password}
                 />
               </label>

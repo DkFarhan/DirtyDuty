@@ -77,6 +77,48 @@ describe("authentication screens", () => {
     expect(fetchMock.mock.calls[1][0]).toBe("http://localhost:8080/api/households")
   })
 
+  it("toggles login password visibility without changing the value or submitting", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({}, 401))
+    await openLogin()
+
+    const password = screen.getByLabelText("Password") as HTMLInputElement
+    fireEvent.change(password, { target: { value: "StrongPassword123!" } })
+    expect(password.type).toBe("password")
+
+    const showButton = screen.getByRole("button", { name: "Show password" })
+    expect(showButton.getAttribute("aria-pressed")).toBe("false")
+    expect(showButton.getAttribute("type")).toBe("button")
+    fireEvent.click(showButton)
+    expect(password.type).toBe("text")
+    expect(password.value).toBe("StrongPassword123!")
+    expect(screen.getByRole("button", { name: "Hide password" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide password" }))
+    expect(password.type).toBe("password")
+    expect(password.value).toBe("StrongPassword123!")
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("keeps registration password toggles independent", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({}, 401))
+    await openLogin()
+    fireEvent.click(screen.getByRole("button", { name: "Sign up" }))
+
+    const password = screen.getByLabelText("Password") as HTMLInputElement
+    const confirmation = screen.getByLabelText("Confirm password") as HTMLInputElement
+    fireEvent.change(password, { target: { value: "StrongPassword123!" } })
+    fireEvent.change(confirmation, { target: { value: "StrongPassword123!" } })
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Show password" })[0])
+    expect(password.type).toBe("text")
+    expect(password.value).toBe("StrongPassword123!")
+    expect(confirmation.type).toBe("password")
+    expect(confirmation.value).toBe("StrongPassword123!")
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
   it("registers with CSRF and returns to login without authenticating", async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ message: "Authentication required" }, 401))
