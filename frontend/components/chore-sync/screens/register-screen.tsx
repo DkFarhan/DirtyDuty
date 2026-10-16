@@ -5,13 +5,14 @@ import { ApiError } from "@/lib/auth/api"
 import { useAuth } from "@/lib/auth/auth-context"
 import { useChoreSync } from "@/lib/chore-sync/store"
 import { ProductLogo } from "@/components/brand/product-logo"
+import { PasswordInput } from "@/components/ui/password-input"
 import { ChevronLeftIcon } from "../icons"
 
 const inputClass =
   "w-full px-4 py-3.5 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent text-[15px] transition-all"
 
 const fields = [
-  { key: "name", label: "Full name", placeholder: "Jahid Hossain", type: "text" },
+  { key: "name", label: "Full name", placeholder: "John Doe", type: "text" },
   { key: "email", label: "Email", placeholder: "you@example.com", type: "email" },
   { key: "password", label: "Password", placeholder: "••••••••", type: "password" },
   { key: "confirm", label: "Confirm password", placeholder: "••••••••", type: "password" },
@@ -68,14 +69,26 @@ export function RegisterScreen() {
             >
               {label}
             </label>
-            <input
-              id={`register-${key}`}
-              type={type}
-              value={form[key]}
-              onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
-              placeholder={placeholder}
-              className={inputClass}
-            />
+            {type === "password" ? (
+              <PasswordInput
+                autoComplete="new-password"
+                id={`register-${key}`}
+                name={key}
+                value={form[key]}
+                onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+                placeholder={placeholder}
+                className={inputClass}
+              />
+            ) : (
+              <input
+                id={`register-${key}`}
+                type={type}
+                value={form[key]}
+                onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+                placeholder={placeholder}
+                className={inputClass}
+              />
+            )}
           </div>
         ))}
       </div>

@@ -10,6 +10,7 @@ import {
 } from "@/lib/household/api"
 import { useHouseholds } from "@/lib/household/household-context"
 import { notificationApi, type NotificationStyle } from "@/lib/notifications/api"
+import { PasswordInput } from "@/components/ui/password-input"
 import { SubpageHeader } from "./subpage-header"
 
 const notificationStyles: Array<[NotificationStyle, string]> = [
@@ -653,11 +654,13 @@ export function HouseholdSettingsScreen() {
                   </label>
                   <label className="block text-sm font-medium text-slate-700">
                     Password
-                    <input
+                    <PasswordInput
+                      autoComplete="current-password"
                       className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-teal-400 focus:bg-white"
+                      id="delete-household-password"
+                      name="password"
                       onChange={(event) => setDeletePassword(event.target.value)}
                       placeholder="Current password"
-                      type="password"
                       value={deletePassword}
                     />
                   </label>
