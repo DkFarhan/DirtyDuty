@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { AppShell } from "./app-shell"
 import { clearCsrfToken } from "@/lib/auth/api"
+import { stubAuthFeatures } from "../../test/stub-auth-features"
 
 const fetchMock = vi.fn<typeof fetch>()
 const user = {
@@ -11,6 +12,8 @@ const user = {
   displayName: "Jahid",
   email: "jahid@example.com",
   emailVerified: true,
+  hasPassword: true,
+  authProviders: ["PASSWORD"],
 }
 const household = {
   id: "home-1",
@@ -92,7 +95,7 @@ async function enterChores() {
 describe("chore management", () => {
   beforeEach(() => {
     fetchMock.mockReset()
-    vi.stubGlobal("fetch", fetchMock)
+    stubAuthFeatures(fetchMock)
     clearCsrfToken()
     localStorage.clear()
     sessionStorage.clear()

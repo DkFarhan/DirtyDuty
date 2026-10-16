@@ -3,7 +3,7 @@ const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:
   "",
 )
 
-const apiUrl = (path: string) => `${API_BASE_URL}${path}`
+export const apiUrl = (path: string) => `${API_BASE_URL}${path}`
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
 
@@ -52,6 +52,9 @@ function messageFor(status: number, path: string): string {
   }
   if (status === 400 && path === "/api/auth/change-password") {
     return "Your current password is incorrect or the new password is not valid."
+  }
+  if (status === 400 && path === "/api/auth/password-reset/confirm") {
+    return "This reset link is invalid or expired. Request a new one."
   }
   if (status === 400 && path === "/api/auth/delete-account") {
     return "We couldn't delete this account. Check your password and email confirmation."

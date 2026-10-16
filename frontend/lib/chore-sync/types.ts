@@ -1,6 +1,8 @@
 export type Screen =
   | "login"
   | "register"
+  | "forgot-password"
+  | "reset-password"
   | "welcome"
   | "create-household"
   | "join-household"

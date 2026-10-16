@@ -23,6 +23,8 @@ import { NotificationsScreen } from "./screens/notifications-screen"
 import { EditProfileScreen } from "./screens/edit-profile-screen"
 import { PrivacySecurityScreen } from "./screens/privacy-security-screen"
 import { HelpSupportScreen } from "./screens/help-support-screen"
+import { ForgotPasswordScreen } from "./screens/forgot-password-screen"
+import { ResetPasswordScreen } from "./screens/reset-password-screen"
 
 function ScreenRouter() {
   const { screen, adminTab, navigate, setCurrentUser } = useChoreSync()
@@ -44,6 +46,7 @@ function ScreenRouter() {
       ["profile", "profile"],
       ["household-settings", "household-settings"],
       ["admin", "admin"],
+      ["privacy-security", "privacy-security"],
     ])
     const screenTarget = target ? screenTargets.get(target) : undefined
     if (screenTarget) {
@@ -120,6 +123,10 @@ function ScreenRouter() {
       return <LoginScreen />
     case "register":
       return <RegisterScreen />
+    case "forgot-password":
+      return <ForgotPasswordScreen initialEmail={user?.email ?? ""} />
+    case "reset-password":
+      return <ResetPasswordScreen />
     case "welcome":
       return <WelcomeScreen />
     case "create-household":
@@ -155,11 +162,11 @@ function ScreenRouter() {
   }
 }
 
-export function AppShell() {
+export function AppShell({ initialScreen = "login" }: { initialScreen?: Screen }) {
   return (
     <AuthProvider>
       <HouseholdProvider>
-        <ChoreSyncProvider>
+        <ChoreSyncProvider initialScreen={initialScreen}>
           <div className="min-h-screen bg-slate-200 flex items-start justify-center">
             <div className="w-full max-w-sm bg-white min-h-screen relative overflow-hidden shadow-2xl">
               <ScreenRouter />

@@ -81,6 +81,15 @@ class AuthSessionIntegrationTest {
   }
 
   @Test
+  void providerDiscoveryIsAvailableBeforeAuthentication() throws Exception {
+    mockMvc
+        .perform(get("/api/auth/providers"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.google").isBoolean())
+        .andExpect(jsonPath("$.passwordReset").isBoolean());
+  }
+
+  @Test
   void validLoginCreatesArgonAuthenticatedSessionAndReturnsSafeResponse() throws Exception {
     String email = uniqueEmail("valid");
     register(email, AccountStatus.ACTIVE);

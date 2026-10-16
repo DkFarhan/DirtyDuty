@@ -19,7 +19,10 @@ const mocks = vi.hoisted(() => ({
     displayName: "Test User",
     email: "user@example.com",
     emailVerified: false,
+    hasPassword: true,
+    authProviders: ["PASSWORD"],
   },
+  features: { google: false, passwordReset: false },
   households: [] as Array<{ id: string; name: string; currentUserRole: string }>,
 }))
 
@@ -29,6 +32,7 @@ vi.mock("@/lib/auth/auth-context", () => ({
     logout: mocks.logout,
     changePassword: mocks.changePassword,
     deleteAccount: mocks.deleteAccount,
+    features: mocks.features,
   }),
 }))
 
@@ -52,6 +56,9 @@ describe("PrivacySecurityScreen", () => {
   beforeEach(() => {
     vi.resetAllMocks()
     mocks.user.email = "user@example.com"
+    mocks.user.hasPassword = true
+    mocks.user.authProviders = ["PASSWORD"]
+    mocks.features = { google: false, passwordReset: false }
     mocks.households = []
     mocks.removeBrowserPushSubscription.mockResolvedValue(null)
     mocks.refresh.mockResolvedValue([])
@@ -230,5 +237,51 @@ describe("PrivacySecurityScreen", () => {
     expect(screen.getAllByText("You still own households.").length).toBeGreaterThan(0)
     expect(mocks.refresh).toHaveBeenCalledOnce()
     expect(mocks.resetUserData).not.toHaveBeenCalled()
+  })
+
+  it("supports passwordless Google users without requiring password fields for deletion", async () => {
+    mocks.user.hasPassword = false
+    mocks.user.authProviders = ["GOOGLE"]
+    mocks.features = { google: true, passwordReset: true }
+    mocks.deleteAccount.mockResolvedValue(undefined)
+    render(<PrivacySecurityScreen />)
+
+    expect(screen.getByText(/uses Google to sign in/i)).toBeTruthy()
+    expect(screen.queryByLabelText("Current password")).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Set a password by email" }))
+    expect(mocks.navigate).toHaveBeenCalledWith("forgot-password")
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete account" }))
+    fireEvent.click(screen.getByLabelText("I understand that deleting my account is permanent."))
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    expect(screen.queryByLabelText("Current password")).toBeNull()
+    expect(
+      screen.getByRole("button", { name: /Reauthenticate with Google, then retry/ }),
+    ).toBeTruthy()
+    fireEvent.change(screen.getByLabelText("Account email"), {
+      target: { value: "user@example.com" },
+    })
+    const deleteButton = screen.getByRole("button", { name: "Permanently delete my account" })
+    expect((deleteButton as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(deleteButton)
+
+    await waitFor(() => {
+      expect(mocks.deleteAccount).toHaveBeenCalledWith("", "user@example.com")
+    })
+  })
+
+  it("preserves failed Google reauthentication context and offers a retry message", () => {
+    mocks.user.hasPassword = false
+    mocks.user.authProviders = ["GOOGLE"]
+    mocks.features = { google: true, passwordReset: true }
+    window.history.replaceState({}, "", "/?auth=google-error&screen=privacy-security")
+
+    render(<PrivacySecurityScreen />)
+
+    expect(screen.getByRole("status").textContent).toContain(
+      "Google verification was not completed",
+    )
+    expect(window.location.search).toBe("?screen=privacy-security")
+    window.history.replaceState({}, "", "/")
   })
 })

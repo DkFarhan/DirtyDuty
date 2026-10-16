@@ -8,20 +8,31 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.dirtyduty.app.config.AuthFeatureConfiguration;
 import com.dirtyduty.app.config.SecurityConfig;
 import com.dirtyduty.app.dto.auth.RegisterResponse;
 import com.dirtyduty.app.exception.DuplicateResourceException;
 import com.dirtyduty.app.exception.GlobalExceptionHandler;
 import com.dirtyduty.app.repository.UserRepository;
 import com.dirtyduty.app.service.AuthService;
+import com.dirtyduty.app.service.GoogleIdentityService;
+import com.dirtyduty.app.service.PasswordResetService;
+import com.dirtyduty.app.service.RecentReauthenticationService;
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.InsufficientAuthenticationException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.test.web.servlet.MockMvc;
@@ -32,18 +43,35 @@ import tools.jackson.databind.json.JsonMapper;
 class AuthControllerHttpTest {
 
   private AuthService authService;
+  private AuthFeatureConfiguration authFeatures;
+  private AuthenticationManager authenticationManager;
+  private GoogleIdentityService googleIdentityService;
+  private SessionAuthenticationStrategy sessionAuthenticationStrategy;
   private MockMvc mockMvc;
+
+  @AfterEach
+  void clearSecurityContext() {
+    org.springframework.security.core.context.SecurityContextHolder.clearContext();
+  }
 
   @BeforeEach
   void setUp() {
     authService = org.mockito.Mockito.mock(AuthService.class);
+    authFeatures = org.mockito.Mockito.mock(AuthFeatureConfiguration.class);
+    authenticationManager = org.mockito.Mockito.mock(AuthenticationManager.class);
+    googleIdentityService = org.mockito.Mockito.mock(GoogleIdentityService.class);
+    sessionAuthenticationStrategy = org.mockito.Mockito.mock(SessionAuthenticationStrategy.class);
     AuthController controller =
         new AuthController(
             authService,
-            org.mockito.Mockito.mock(AuthenticationManager.class),
+            authenticationManager,
             new HttpSessionSecurityContextRepository(),
-            org.mockito.Mockito.mock(SessionAuthenticationStrategy.class),
-            org.mockito.Mockito.mock(UserRepository.class));
+            sessionAuthenticationStrategy,
+            org.mockito.Mockito.mock(UserRepository.class),
+            googleIdentityService,
+            org.mockito.Mockito.mock(PasswordResetService.class),
+            authFeatures,
+            org.mockito.Mockito.mock(RecentReauthenticationService.class));
     LocalValidatorFactoryBean validator = new LocalValidatorFactoryBean();
     validator.afterPropertiesSet();
     mockMvc =
@@ -148,6 +176,108 @@ class AuthControllerHttpTest {
                 .contentType(APPLICATION_JSON)
                 .content(validRequestWithPassword("short@example.com", "short")))
         .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void googleLinkRejectsExpiredPendingIdentityBeforeAuthenticating() throws Exception {
+    MockHttpSession session =
+        pendingGoogleLinkSession(System.currentTimeMillis() - 11 * 60 * 1000L);
+
+    mockMvc
+        .perform(
+            post("/api/auth/google/link")
+                .session(session)
+                .contentType(APPLICATION_JSON)
+                .content("{\"password\":\"StrongPassword123!\"}"))
+        .andExpect(status().isUnauthorized());
+
+    org.mockito.Mockito.verifyNoInteractions(authenticationManager, googleIdentityService);
+  }
+
+  @Test
+  void googleLinkRequiresTheExistingAccountPassword() throws Exception {
+    MockHttpSession session = pendingGoogleLinkSession(Instant.now().toEpochMilli());
+    org.mockito.Mockito.when(
+            authenticationManager.authenticate(
+                org.mockito.ArgumentMatchers.any(Authentication.class)))
+        .thenThrow(new BadCredentialsException("bad credentials"));
+
+    mockMvc
+        .perform(
+            post("/api/auth/google/link")
+                .session(session)
+                .contentType(APPLICATION_JSON)
+                .content("{\"password\":\"WrongPassword123!\"}"))
+        .andExpect(status().isUnauthorized());
+
+    org.mockito.Mockito.verify(authenticationManager)
+        .authenticate(org.mockito.ArgumentMatchers.any(Authentication.class));
+    org.mockito.Mockito.verifyNoInteractions(googleIdentityService);
+  }
+
+  @Test
+  void googleLinkLinksOnlyAfterPasswordAuthenticationSucceeds() throws Exception {
+    MockHttpSession session = pendingGoogleLinkSession(Instant.now().toEpochMilli());
+    Authentication authentication =
+        UsernamePasswordAuthenticationToken.authenticated("person@example.com", null, List.of());
+    org.mockito.Mockito.when(
+            authenticationManager.authenticate(
+                org.mockito.ArgumentMatchers.any(Authentication.class)))
+        .thenReturn(authentication);
+
+    mockMvc
+        .perform(
+            post("/api/auth/google/link")
+                .session(session)
+                .contentType(APPLICATION_JSON)
+                .content("{\"password\":\"StrongPassword123!\"}"))
+        .andExpect(status().isNoContent());
+
+    org.mockito.Mockito.verify(googleIdentityService)
+        .linkToPasswordAccount("google-subject", "person@example.com");
+    org.mockito.Mockito.verify(sessionAuthenticationStrategy)
+        .onAuthentication(
+            org.mockito.ArgumentMatchers.eq(authentication),
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any());
+  }
+
+  @Test
+  void googleReauthenticationRejectsUntrustedReturnTargets() throws Exception {
+    org.mockito.Mockito.when(authFeatures.googleEnabled()).thenReturn(true);
+
+    mockMvc
+        .perform(
+            org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
+                    "/api/auth/google/reauthenticate")
+                .param("returnTo", "https://attacker.example"))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void googleReauthenticationRedirectsOnlyToTheFixedProviderRoute() throws Exception {
+    org.mockito.Mockito.when(authFeatures.googleEnabled()).thenReturn(true);
+    Authentication authentication =
+        UsernamePasswordAuthenticationToken.authenticated("person@example.com", null, List.of());
+
+    mockMvc
+        .perform(
+            org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
+                    "/api/auth/google/reauthenticate")
+                .principal(authentication)
+                .param("returnTo", "household-settings"))
+        .andExpect(status().isFound())
+        .andExpect(
+            org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                .string("Location", "/api/auth/oauth2/authorization/google"));
+  }
+
+  private MockHttpSession pendingGoogleLinkSession(long createdAt) {
+    MockHttpSession session = new MockHttpSession();
+    session.setAttribute(GoogleIdentityService.PENDING_SUBJECT, "google-subject");
+    session.setAttribute(GoogleIdentityService.PENDING_EMAIL, "person@example.com");
+    session.setAttribute(GoogleIdentityService.PENDING_CREATED, createdAt);
+    return session;
   }
 
   private String validRequest(String email) {

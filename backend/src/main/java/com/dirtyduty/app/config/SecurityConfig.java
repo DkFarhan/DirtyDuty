@@ -1,6 +1,10 @@
 package com.dirtyduty.app.config;
 
 import com.dirtyduty.app.security.CustomUserDetailsService;
+import com.dirtyduty.app.security.GoogleAuthenticationFailureHandler;
+import com.dirtyduty.app.security.GoogleAuthenticationSuccessHandler;
+import com.dirtyduty.app.security.GoogleLoginPromptResolver;
+import com.dirtyduty.app.security.NoStoreAuthorizedClientRepository;
 import java.util.HashMap;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
@@ -19,6 +23,8 @@ import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.DelegatingPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.session.ChangeSessionIdAuthenticationStrategy;
@@ -43,7 +49,10 @@ public class SecurityConfig {
       HttpSecurity http,
       SecurityContextRepository securityContextRepository,
       CsrfTokenRepository csrfTokenRepository,
-      AuthenticationEntryPoint authenticationEntryPoint)
+      AuthenticationEntryPoint authenticationEntryPoint,
+      ClientRegistrationRepository clientRegistrationRepository,
+      GoogleAuthenticationSuccessHandler googleSuccessHandler,
+      GoogleAuthenticationFailureHandler googleFailureHandler)
       throws Exception {
     http.csrf(csrf -> csrf.csrfTokenRepository(csrfTokenRepository))
         .cors(cors -> {})
@@ -59,7 +68,17 @@ public class SecurityConfig {
                     .permitAll()
                     .requestMatchers("/actuator/health")
                     .permitAll()
+                    .requestMatchers("/api/auth/oauth2/**")
+                    .permitAll()
+                    .requestMatchers(HttpMethod.GET, "/api/auth/providers")
+                    .permitAll()
                     .requestMatchers(HttpMethod.GET, "/api/auth/csrf")
+                    .permitAll()
+                    .requestMatchers(HttpMethod.POST, "/api/auth/password-reset/request")
+                    .permitAll()
+                    .requestMatchers(HttpMethod.POST, "/api/auth/password-reset/confirm")
+                    .permitAll()
+                    .requestMatchers(HttpMethod.POST, "/api/auth/google/link")
                     .permitAll()
                     .requestMatchers(HttpMethod.POST, "/api/auth/register")
                     .permitAll()
@@ -79,6 +98,22 @@ public class SecurityConfig {
             exceptions -> exceptions.authenticationEntryPoint(authenticationEntryPoint))
         .formLogin(AbstractHttpConfigurer::disable)
         .httpBasic(AbstractHttpConfigurer::disable)
+        .oauth2Login(
+            oauth ->
+                oauth
+                    .authorizationEndpoint(
+                        endpoint ->
+                            endpoint
+                                .baseUri("/api/auth/oauth2/authorization")
+                                .authorizationRequestResolver(
+                                    new GoogleLoginPromptResolver(
+                                        clientRegistrationRepository,
+                                        "/api/auth/oauth2/authorization")))
+                    .redirectionEndpoint(
+                        endpoint -> endpoint.baseUri("/api/auth/oauth2/callback/*"))
+                    .authorizedClientRepository(new NoStoreAuthorizedClientRepository())
+                    .successHandler(googleSuccessHandler)
+                    .failureHandler(googleFailureHandler))
         .logout(
             logout ->
                 logout
@@ -103,6 +138,11 @@ public class SecurityConfig {
   @Bean
   public SecurityContextRepository securityContextRepository() {
     return new HttpSessionSecurityContextRepository();
+  }
+
+  @Bean
+  public OAuth2AuthorizedClientRepository oauth2AuthorizedClientRepository() {
+    return new NoStoreAuthorizedClientRepository();
   }
 
   @Bean

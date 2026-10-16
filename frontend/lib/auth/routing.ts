@@ -10,6 +10,8 @@ const protectedScreens = new Set<Screen>([
   "admin",
   "create-chore",
   "profile",
+  "household-settings",
+  "privacy-security",
 ])
 
 export function getAuthRedirect(

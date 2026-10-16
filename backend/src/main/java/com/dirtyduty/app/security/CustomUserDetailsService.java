@@ -26,11 +26,15 @@ public class CustomUserDetailsService implements UserDetailsService {
 
     boolean enabled = user.getAccountStatus() == AccountStatus.ACTIVE;
 
+    boolean hasPassword = user.getPasswordHash() != null;
     return org.springframework.security.core.userdetails.User.withUsername(user.getEmail())
-        .password(user.getPasswordHash())
+        .password(
+            hasPassword
+                ? user.getPasswordHash()
+                : "{noop}disabled-because-no-local-password-is-set")
         .authorities("ROLE_USER")
         .accountLocked(!enabled)
-        .disabled(!enabled)
+        .disabled(!enabled || !hasPassword)
         .build();
   }
 }

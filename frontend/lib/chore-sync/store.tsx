@@ -37,9 +37,15 @@ interface ChoreSyncContextValue {
 
 const ChoreSyncContext = createContext<ChoreSyncContextValue | null>(null)
 
-export function ChoreSyncProvider({ children }: { children: React.ReactNode }) {
+export function ChoreSyncProvider({
+  children,
+  initialScreen = "login",
+}: {
+  children: React.ReactNode
+  initialScreen?: Screen
+}) {
   const [state, setState] = useState<AppState>(initialState)
-  const [screen, setScreen] = useState<Screen>("login")
+  const [screen, setScreen] = useState<Screen>(initialScreen)
   const [adminTab, setAdminTab] = useState<"members" | "chores">("chores")
   const [editingChoreId, setEditingChoreId] = useState<string | null>(null)
   const [notificationReturnScreen, setNotificationReturnScreen] = useState<Screen | null>(null)
