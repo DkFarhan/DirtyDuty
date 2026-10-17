@@ -44,6 +44,9 @@ describe("help and support screen", () => {
   it("renders collapsed categories and exposes only the selected category and FAQ answer", () => {
     renderScreen()
 
+    expect(screen.getByRole("searchbox", { name: "Search help articles" }).className).toContain(
+      "dark:bg-slate-800",
+    )
     expect(faqCategories).toHaveLength(6)
     expect(faqCategories.reduce((total, category) => total + category.items.length, 0)).toBe(30)
     const gettingStarted = screen.getByRole("button", { name: /^Getting Started/ })
@@ -63,6 +66,7 @@ describe("help and support screen", () => {
     for (const categoryButton of categoryButtons) {
       expect(categoryButton.getAttribute("aria-expanded")).toBe("false")
       expect(categoryButton.getAttribute("aria-controls")).toBeTruthy()
+      expect(categoryButton.className).toContain("dark:bg-slate-800")
     }
     expect(
       screen.queryByRole("button", { name: "How do I join an existing household?" }),

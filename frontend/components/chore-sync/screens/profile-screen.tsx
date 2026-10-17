@@ -9,6 +9,7 @@ import { profileApi, type Profile } from "@/lib/profile/api"
 import { BottomNav } from "../bottom-nav"
 import { BellIcon, ChevronRightIcon } from "../icons"
 import { Avatar } from "../primitives"
+import { ThemeSelector } from "@/components/theme/theme-selector"
 
 const accountItems = [
   { icon: "👤", label: "Edit Profile", screen: "edit-profile" as const },
@@ -145,6 +146,8 @@ export function ProfileScreen() {
             </div>
           ))}
         </div>
+
+        <ThemeSelector />
 
         <section className="rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 p-5 text-white">
           <div className="mb-3 flex items-center justify-between">

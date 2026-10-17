@@ -13,7 +13,7 @@ export function ProductLogo({
 }: ProductLogoProps) {
   const isHorizontal = variant === "horizontal"
 
-  return (
+  const image = (
     <Image
       alt={decorative ? "" : "DirtyDuty"}
       aria-hidden={decorative || undefined}
@@ -24,4 +24,6 @@ export function ProductLogo({
       width={isHorizontal ? 542 : 320}
     />
   )
+
+  return isHorizontal ? <span className="auth-logo-surface">{image}</span> : image
 }

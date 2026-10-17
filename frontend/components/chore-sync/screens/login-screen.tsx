@@ -163,7 +163,7 @@ export function LoginScreen() {
       <button
         onClick={handleSubmit}
         disabled={isSubmitting}
-        className="w-full bg-teal-600 text-white font-bold text-[15px] py-4 rounded-xl shadow-lg shadow-teal-200 hover:bg-teal-700 active:scale-[0.98] transition-all disabled:cursor-not-allowed disabled:opacity-60"
+        className="auth-primary-button w-full bg-teal-600 text-white font-bold text-[15px] py-4 rounded-xl shadow-lg shadow-teal-200 hover:bg-teal-700 active:scale-[0.98] transition-all disabled:cursor-not-allowed disabled:opacity-60"
       >
         {isSubmitting ? "Signing In..." : "Sign In"}
       </button>

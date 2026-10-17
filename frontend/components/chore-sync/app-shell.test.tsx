@@ -27,6 +27,8 @@ async function openLogin() {
   render(<AppShell />)
   await screen.findByRole("button", { name: "Sign In" })
   expect(screen.getByRole("img", { name: "DirtyDuty" })).toBeTruthy()
+  expect(screen.getByRole("button", { name: "Sign In" }).className).toContain("auth-primary-button")
+  expect(document.querySelector(".auth-logo-surface")).toBeTruthy()
 }
 
 async function fillAndSubmitRegistration() {
