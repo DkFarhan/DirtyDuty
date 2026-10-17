@@ -8,6 +8,7 @@ import { useHouseholds } from "@/lib/household/household-context"
 import type { Household } from "@/lib/household/api"
 import { removeBrowserPushSubscription } from "@/lib/notifications/push"
 import { PasswordInput } from "@/components/ui/password-input"
+import { getLegalDocumentUrl } from "@/lib/chore-sync/legal-navigation"
 import { SubpageHeader } from "./subpage-header"
 
 type OwnedHousehold = Pick<Household, "id" | "name">
@@ -238,6 +239,29 @@ export function PrivacySecurityScreen() {
               Reauthenticate with Google
             </button>
           )}
+        </section>
+
+        <section
+          aria-labelledby="legal-documents-heading"
+          className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+        >
+          <h2 className="font-bold text-slate-900 dark:text-slate-100" id="legal-documents-heading">
+            Legal documents
+          </h2>
+          <div className="mt-2 flex flex-col divide-y divide-slate-100 dark:divide-slate-800">
+            <a
+              className="flex min-h-11 items-center text-sm font-semibold text-teal-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 dark:text-teal-300"
+              href={getLegalDocumentUrl("/terms", "privacy-security")}
+            >
+              Terms of Service
+            </a>
+            <a
+              className="flex min-h-11 items-center text-sm font-semibold text-teal-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 dark:text-teal-300"
+              href={getLegalDocumentUrl("/privacy", "privacy-security")}
+            >
+              Privacy Policy
+            </a>
+          </div>
         </section>
 
         <form

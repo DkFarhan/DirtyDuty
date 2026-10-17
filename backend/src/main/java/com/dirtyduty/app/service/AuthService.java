@@ -29,18 +29,21 @@ public class AuthService {
   private final JdbcTemplate jdbcTemplate;
   private final HouseholdMembershipRepository membershipRepository;
   private final HouseholdSettingsService householdSettingsService;
+  private final LegalAcceptanceService legalAcceptanceService;
 
   public AuthService(
       UserRepository userRepository,
       PasswordEncoder passwordEncoder,
       JdbcTemplate jdbcTemplate,
       HouseholdMembershipRepository membershipRepository,
-      HouseholdSettingsService householdSettingsService) {
+      HouseholdSettingsService householdSettingsService,
+      LegalAcceptanceService legalAcceptanceService) {
     this.userRepository = userRepository;
     this.passwordEncoder = passwordEncoder;
     this.jdbcTemplate = jdbcTemplate;
     this.membershipRepository = membershipRepository;
     this.householdSettingsService = householdSettingsService;
+    this.legalAcceptanceService = legalAcceptanceService;
   }
 
   @Transactional
@@ -59,6 +62,7 @@ public class AuthService {
     user.setTimezone("UTC");
     user.setAccountStatus(AccountStatus.ACTIVE);
     user.setEmailVerifiedAt(null);
+    legalAcceptanceService.acceptForRegistration(user);
 
     try {
       User savedUser = userRepository.saveAndFlush(user);

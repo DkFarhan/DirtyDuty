@@ -14,6 +14,7 @@ const user = {
   emailVerified: false,
   hasPassword: true,
   authProviders: ["PASSWORD"],
+  legalAcceptanceRequired: false,
 }
 
 function jsonResponse(payload: unknown, status = 200) {
@@ -55,6 +56,54 @@ describe("authentication screens", () => {
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
     clearCsrfToken()
+    window.history.replaceState({}, "", "/")
+  })
+
+  it("restores the legal-acceptance return screen after auth restoration and consumes its URL", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ ...user, legalAcceptanceRequired: true }))
+      .mockResolvedValueOnce(jsonResponse({ google: false, passwordReset: false }))
+      .mockResolvedValueOnce(jsonResponse({ message: "Legal acceptance required" }, 403))
+    window.history.replaceState({}, "", "/?screen=legal-acceptance")
+
+    render(<AppShell />)
+
+    expect(await screen.findByRole("heading", { name: "Review our policies" })).toBeTruthy()
+    expect(screen.getByRole("link", { name: /Terms of Service/ }).getAttribute("href")).toBe(
+      "/terms?returnTo=legal-acceptance",
+    )
+    expect(screen.getByRole("link", { name: /Privacy Policy/ }).getAttribute("href")).toBe(
+      "/privacy?returnTo=legal-acceptance",
+    )
+    expect(screen.queryByText("Unable to load your households. Please try again.")).toBeNull()
+    expect(window.location.search).toBe("")
+  })
+
+  it("restores Privacy & Security only after auth is ready and removes the consumed screen parameter", async () => {
+    let resolveMe!: (response: Response) => void
+    fetchMock.mockReturnValueOnce(new Promise((resolve) => (resolveMe = resolve)))
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        {
+          id: "home-1",
+          name: "Apartment 305",
+          timezone: "America/Sao_Paulo",
+          currentUserRole: "OWNER",
+          createdAt: "2026-09-25T12:00:00Z",
+        },
+      ]),
+    )
+    window.history.replaceState({}, "", "/?screen=privacy-security")
+
+    render(<AppShell />)
+    expect(screen.getByText("Loading...")).toBeTruthy()
+    expect(screen.queryByRole("heading", { name: "Privacy & Security" })).toBeNull()
+
+    resolveMe(jsonResponse(user))
+
+    expect(await screen.findByRole("heading", { name: "Privacy & Security" })).toBeTruthy()
+    expect(screen.queryByText("Welcome!")).toBeNull()
+    expect(window.location.search).toBe("")
   })
 
   it("shows a loading state until /me restores the session", async () => {
@@ -136,12 +185,17 @@ describe("authentication screens", () => {
     expect(termsLink.getAttribute("target")).toBe("_blank")
     expect(termsLink.getAttribute("rel")).toContain("noopener")
     expect(termsLink.getAttribute("rel")).toContain("noreferrer")
+    const privacyLink = screen.getByRole("link", { name: "Privacy Policy" })
+    expect(privacyLink.getAttribute("href")).toBe("/privacy")
+    expect(privacyLink.getAttribute("target")).toBe("_blank")
+    expect(privacyLink.getAttribute("rel")).toContain("noopener")
+    expect(privacyLink.getAttribute("rel")).toContain("noreferrer")
 
     fireEvent.click(screen.getByRole("button", { name: "Create Account" }))
 
     expect(await screen.findByRole("alert")).toHaveProperty(
       "textContent",
-      "Please agree to the Terms of Service to create an account.",
+      "Please agree to the Terms of Service and acknowledge the Privacy Policy to create an account.",
     )
     expect((screen.getByLabelText("Full name") as HTMLInputElement).value).toBe("Browser User")
     expect(
@@ -192,6 +246,8 @@ describe("authentication screens", () => {
         displayName: user.displayName,
         email: user.email,
         password: "StrongPassword123!",
+        termsAccepted: true,
+        privacyPolicyAcknowledged: true,
       }),
     )
     expect(new Headers(fetchMock.mock.calls[2][1]?.headers).get("X-CSRF-TOKEN")).toBe(

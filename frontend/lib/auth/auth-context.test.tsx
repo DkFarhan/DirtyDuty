@@ -73,6 +73,8 @@ function Probe() {
               displayName: "Browser User",
               email: "user@example.com",
               password: "password",
+              termsAccepted: true,
+              privacyPolicyAcknowledged: true,
             })
             .then(
               () => setOperation("success"),
@@ -91,6 +93,16 @@ function Probe() {
         }
       >
         Logout
+      </button>
+      <button
+        onClick={() =>
+          void auth.completeLegalAcceptance().then(
+            () => setOperation("success"),
+            () => setOperation("error"),
+          )
+        }
+      >
+        Complete legal acceptance
       </button>
       <button
         onClick={() =>
@@ -231,8 +243,29 @@ describe("AuthProvider", () => {
       displayName: "Browser User",
       email: "user@example.com",
       password: "password",
+      termsAccepted: true,
+      privacyPolicyAcknowledged: true,
     })
     expect(screen.getByTestId("authenticated").textContent).toBe("false")
+  })
+
+  it("submits affirmative legal acknowledgements without client-supplied versions", async () => {
+    vi.mocked(api.get)
+      .mockResolvedValueOnce(user)
+      .mockResolvedValueOnce({ google: false, passwordReset: false })
+      .mockResolvedValueOnce(user)
+    vi.mocked(api.post).mockResolvedValueOnce(undefined)
+
+    renderAuth()
+    await waitFor(() => expect(screen.getByTestId("authenticated").textContent).toBe("true"))
+    fireEvent.click(screen.getByRole("button", { name: "Complete legal acceptance" }))
+
+    await waitFor(() => expect(screen.getByTestId("operation").textContent).toBe("success"))
+    expect(api.post).toHaveBeenCalledWith("/api/auth/legal-acceptance", {
+      termsAccepted: true,
+      privacyPolicyAcknowledged: true,
+    })
+    expect(api.get).toHaveBeenCalledWith("/api/auth/me")
   })
 
   it("clears authenticated state only after the backend confirms logout", async () => {

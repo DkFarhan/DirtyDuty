@@ -12,6 +12,7 @@ export type AuthUser = {
   emailVerified: boolean
   hasPassword: boolean
   authProviders: string[]
+  legalAcceptanceRequired: boolean
 }
 
 export type AuthFeatures = {
@@ -23,6 +24,8 @@ type RegisterInput = {
   displayName: string
   email: string
   password: string
+  termsAccepted: true
+  privacyPolicyAcknowledged: true
 }
 
 type AuthContextValue = {
@@ -34,6 +37,7 @@ type AuthContextValue = {
   features: AuthFeatures
   dismissAuthNotice: () => void
   register: (input: RegisterInput) => Promise<void>
+  completeLegalAcceptance: () => Promise<void>
   login: (email: string, password: string) => Promise<AuthUser>
   logout: () => Promise<void>
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>
@@ -93,6 +97,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const register = async (input: RegisterInput) => {
     await api.post("/api/auth/register", input)
+  }
+
+  const completeLegalAcceptance = async () => {
+    await api.post("/api/auth/legal-acceptance", {
+      termsAccepted: true,
+      privacyPolicyAcknowledged: true,
+    })
+    await refreshUser()
   }
 
   const login = async (email: string, password: string) => {
@@ -168,6 +180,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       features,
       dismissAuthNotice,
       register,
+      completeLegalAcceptance,
       login,
       logout,
       changePassword,

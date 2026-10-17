@@ -42,6 +42,15 @@ public class User {
   @Column(name = "email_verified_at")
   private OffsetDateTime emailVerifiedAt;
 
+  @Column(name = "terms_accepted_version", length = 32)
+  private String termsAcceptedVersion;
+
+  @Column(name = "privacy_policy_accepted_version", length = 32)
+  private String privacyPolicyAcceptedVersion;
+
+  @Column(name = "legal_accepted_at")
+  private OffsetDateTime legalAcceptedAt;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private OffsetDateTime createdAt;
 

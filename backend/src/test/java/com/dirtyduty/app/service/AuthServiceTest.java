@@ -35,7 +35,8 @@ class AuthServiceTest {
             passwordEncoder,
             jdbcTemplate,
             membershipRepository,
-            householdSettingsService);
+            householdSettingsService,
+            new LegalAcceptanceService(userRepository));
 
     assertThatThrownBy(
             () ->

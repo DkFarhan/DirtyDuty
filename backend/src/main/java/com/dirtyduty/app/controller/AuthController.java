@@ -6,6 +6,8 @@ import com.dirtyduty.app.dto.auth.ChangePasswordRequest;
 import com.dirtyduty.app.dto.auth.CsrfResponse;
 import com.dirtyduty.app.dto.auth.DeleteAccountRequest;
 import com.dirtyduty.app.dto.auth.GoogleLinkRequest;
+import com.dirtyduty.app.dto.auth.LegalAcceptanceRequest;
+import com.dirtyduty.app.dto.auth.LegalAcceptanceResponse;
 import com.dirtyduty.app.dto.auth.LoginRequest;
 import com.dirtyduty.app.dto.auth.LoginResponse;
 import com.dirtyduty.app.dto.auth.PasswordResetConfirmRequest;
@@ -16,6 +18,7 @@ import com.dirtyduty.app.entity.User;
 import com.dirtyduty.app.repository.UserRepository;
 import com.dirtyduty.app.service.AuthService;
 import com.dirtyduty.app.service.GoogleIdentityService;
+import com.dirtyduty.app.service.LegalAcceptanceService;
 import com.dirtyduty.app.service.PasswordResetService;
 import com.dirtyduty.app.service.RecentReauthenticationService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -58,6 +61,7 @@ public class AuthController {
   private final PasswordResetService passwordResetService;
   private final AuthFeatureConfiguration authFeatures;
   private final RecentReauthenticationService recentReauthenticationService;
+  private final LegalAcceptanceService legalAcceptanceService;
 
   public AuthController(
       AuthService authService,
@@ -68,7 +72,8 @@ public class AuthController {
       GoogleIdentityService googleIdentityService,
       PasswordResetService passwordResetService,
       AuthFeatureConfiguration authFeatures,
-      RecentReauthenticationService recentReauthenticationService) {
+      RecentReauthenticationService recentReauthenticationService,
+      LegalAcceptanceService legalAcceptanceService) {
     this.authService = authService;
     this.authenticationManager = authenticationManager;
     this.securityContextRepository = securityContextRepository;
@@ -78,6 +83,7 @@ public class AuthController {
     this.passwordResetService = passwordResetService;
     this.authFeatures = authFeatures;
     this.recentReauthenticationService = recentReauthenticationService;
+    this.legalAcceptanceService = legalAcceptanceService;
   }
 
   @PostMapping("/register")
@@ -89,6 +95,12 @@ public class AuthController {
   @GetMapping("/csrf")
   public CsrfResponse csrf(CsrfToken csrfToken) {
     return new CsrfResponse(csrfToken.getToken(), csrfToken.getHeaderName());
+  }
+
+  @PostMapping("/legal-acceptance")
+  public LegalAcceptanceResponse acceptLegalDocuments(
+      @Valid @RequestBody LegalAcceptanceRequest request, Authentication authentication) {
+    return legalAcceptanceService.acceptCurrentVersions(authentication.getName());
   }
 
   @GetMapping("/providers")
@@ -221,7 +233,8 @@ public class AuthController {
         user.getEmail(),
         user.getEmailVerifiedAt() != null,
         user.getPasswordHash() != null,
-        List.copyOf(providers));
+        List.copyOf(providers),
+        legalAcceptanceService.isAcceptanceRequired(user));
   }
 
   private void clearPendingLink(jakarta.servlet.http.HttpSession session) {

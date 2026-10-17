@@ -26,6 +26,7 @@ import { PrivacySecurityScreen } from "./screens/privacy-security-screen"
 import { HelpSupportScreen } from "./screens/help-support-screen"
 import { ForgotPasswordScreen } from "./screens/forgot-password-screen"
 import { ResetPasswordScreen } from "./screens/reset-password-screen"
+import { LegalAcceptanceScreen } from "./screens/legal-acceptance-screen"
 
 function ScreenRouter() {
   const { screen, adminTab, navigate, setCurrentUser } = useChoreSync()
@@ -38,6 +39,8 @@ function ScreenRouter() {
   } = useHouseholds()
 
   useEffect(() => {
+    if (isLoading) return
+
     const target = new URLSearchParams(window.location.search).get("screen")
     const screenTargets = new Map<string, Screen>([
       ["dashboard", "dashboard"],
@@ -48,12 +51,22 @@ function ScreenRouter() {
       ["household-settings", "household-settings"],
       ["admin", "admin"],
       ["privacy-security", "privacy-security"],
+      ["legal-acceptance", "legal-acceptance"],
     ])
     const screenTarget = target ? screenTargets.get(target) : undefined
     if (screenTarget) {
       navigate(screenTarget)
+      const params = new URLSearchParams(window.location.search)
+      params.delete("screen")
+      params.delete("returnTo")
+      const query = params.toString()
+      window.history.replaceState(
+        {},
+        "",
+        query ? `${window.location.pathname}?${query}` : window.location.pathname,
+      )
     }
-  }, [navigate])
+  }, [isLoading, navigate])
 
   useEffect(() => {
     if (user) {
@@ -73,12 +86,22 @@ function ScreenRouter() {
     if (redirect) navigate(redirect)
   }, [householdStatus, households.length, isAuthenticated, isLoading, navigate, screen])
 
+  useEffect(() => {
+    if (isAuthenticated && screen === "legal-acceptance" && !user?.legalAcceptanceRequired) {
+      navigate("welcome")
+    }
+  }, [isAuthenticated, navigate, screen, user?.legalAcceptanceRequired])
+
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-white text-sm text-slate-400">
         Loading...
       </div>
     )
+  }
+
+  if (isAuthenticated && user?.legalAcceptanceRequired) {
+    return <LegalAcceptanceScreen />
   }
 
   if (authError) {
@@ -158,6 +181,8 @@ function ScreenRouter() {
       return <PrivacySecurityScreen />
     case "help-support":
       return <HelpSupportScreen />
+    case "legal-acceptance":
+      return <LegalAcceptanceScreen />
     default:
       return <LoginScreen />
   }

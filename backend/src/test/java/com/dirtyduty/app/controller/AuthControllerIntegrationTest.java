@@ -9,6 +9,7 @@ import com.dirtyduty.app.entity.enums.AccountStatus;
 import com.dirtyduty.app.exception.DuplicateResourceException;
 import com.dirtyduty.app.repository.UserRepository;
 import com.dirtyduty.app.service.AuthService;
+import com.dirtyduty.app.service.LegalDocumentVersions;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -49,6 +50,10 @@ class AuthControllerIntegrationTest {
     assertThat(savedUser.getEmail()).isEqualTo(email.toLowerCase(Locale.ROOT));
     assertThat(savedUser.getAccountStatus()).isEqualTo(AccountStatus.ACTIVE);
     assertThat(savedUser.getEmailVerifiedAt()).isNull();
+    assertThat(savedUser.getTermsAcceptedVersion()).isEqualTo(LegalDocumentVersions.TERMS);
+    assertThat(savedUser.getPrivacyPolicyAcceptedVersion())
+        .isEqualTo(LegalDocumentVersions.PRIVACY_POLICY);
+    assertThat(savedUser.getLegalAcceptedAt()).isNotNull();
     assertThat(savedUser.getPasswordHash()).doesNotContain(rawPassword);
     assertThat(savedUser.getPasswordHash()).startsWith("{argon2}");
     assertThat(passwordEncoder.matches(rawPassword, savedUser.getPasswordHash())).isTrue();

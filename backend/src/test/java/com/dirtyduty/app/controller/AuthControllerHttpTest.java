@@ -16,6 +16,7 @@ import com.dirtyduty.app.exception.GlobalExceptionHandler;
 import com.dirtyduty.app.repository.UserRepository;
 import com.dirtyduty.app.service.AuthService;
 import com.dirtyduty.app.service.GoogleIdentityService;
+import com.dirtyduty.app.service.LegalAcceptanceService;
 import com.dirtyduty.app.service.PasswordResetService;
 import com.dirtyduty.app.service.RecentReauthenticationService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -71,7 +72,8 @@ class AuthControllerHttpTest {
             googleIdentityService,
             org.mockito.Mockito.mock(PasswordResetService.class),
             authFeatures,
-            org.mockito.Mockito.mock(RecentReauthenticationService.class));
+            org.mockito.Mockito.mock(RecentReauthenticationService.class),
+            org.mockito.Mockito.mock(LegalAcceptanceService.class));
     LocalValidatorFactoryBean validator = new LocalValidatorFactoryBean();
     validator.afterPropertiesSet();
     mockMvc =
@@ -116,7 +118,9 @@ class AuthControllerHttpTest {
                         {
                           "displayName": "  Alice Smith  ",
                           "email": "Alice@Example.com",
-                          "password": "StrongPassword123!"
+                          "password": "StrongPassword123!",
+                          "termsAccepted": true,
+                          "privacyPolicyAcknowledged": true
                         }
                         """))
         .andExpect(status().isCreated())
@@ -175,6 +179,43 @@ class AuthControllerHttpTest {
             post("/api/auth/register")
                 .contentType(APPLICATION_JSON)
                 .content(validRequestWithPassword("short@example.com", "short")))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void register_requiresExplicitAffirmativeLegalAcceptance() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/auth/register")
+                .contentType(APPLICATION_JSON)
+                .content(
+                    """
+                        {
+                          "displayName": "Valid User",
+                          "email": "valid@example.com",
+                          "password": "StrongPassword123!",
+                          "termsAccepted": true,
+                          "privacyPolicyAcknowledged": false
+                        }
+                        """))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void register_requiresPrivacyAcknowledgementField() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/auth/register")
+                .contentType(APPLICATION_JSON)
+                .content(
+                    """
+                        {
+                          "displayName": "Valid User",
+                          "email": "valid@example.com",
+                          "password": "StrongPassword123!",
+                          "termsAccepted": true
+                        }
+                        """))
         .andExpect(status().isBadRequest());
   }
 
@@ -289,7 +330,9 @@ class AuthControllerHttpTest {
                 {
                   "displayName": "Valid User",
                   "email": "%s",
-                  "password": "%s"
+                  "password": "%s",
+                  "termsAccepted": true,
+                  "privacyPolicyAcknowledged": true
                 }
                 """
         .formatted(email, password);

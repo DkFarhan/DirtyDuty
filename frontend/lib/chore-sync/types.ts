@@ -18,6 +18,7 @@ export type Screen =
   | "edit-profile"
   | "privacy-security"
   | "help-support"
+  | "legal-acceptance"
 
 export type ChoreStatus = "pending" | "completed"
 export type Priority = "low" | "medium" | "high"

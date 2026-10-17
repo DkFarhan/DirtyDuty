@@ -2,6 +2,7 @@ package com.dirtyduty.app.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -16,6 +17,8 @@ import com.dirtyduty.app.entity.User;
 import com.dirtyduty.app.entity.enums.AccountStatus;
 import com.dirtyduty.app.repository.UserRepository;
 import com.dirtyduty.app.service.AuthService;
+import com.dirtyduty.app.service.GoogleIdentityService;
+import com.dirtyduty.app.service.LegalDocumentVersions;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.Cookie;
 import java.util.ArrayList;
@@ -42,6 +45,8 @@ class AuthSessionIntegrationTest {
   @Autowired private MockMvc mockMvc;
 
   @Autowired private AuthService authService;
+
+  @Autowired private GoogleIdentityService googleIdentityService;
 
   @Autowired private UserRepository userRepository;
 
@@ -110,12 +115,150 @@ class AuthSessionIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.email").value(email))
         .andExpect(jsonPath("$.emailVerified").value(false))
-        .andExpect(jsonPath("$.passwordHash").doesNotExist());
+        .andExpect(jsonPath("$.passwordHash").doesNotExist())
+        .andExpect(jsonPath("$.legalAcceptanceRequired").value(false));
 
     Integer persistedSessions =
         jdbcTemplate.queryForObject(
             "SELECT COUNT(*) FROM spring_session WHERE principal_name = ?", Integer.class, email);
     assertThat(persistedSessions).isGreaterThanOrEqualTo(1);
+  }
+
+  @Test
+  void legacyUserMustAcceptCurrentDocumentsBeforeUsingBusinessApis() throws Exception {
+    String email = uniqueEmail("legacy-legal");
+    register(email, AccountStatus.ACTIVE);
+    User legacyUser = userRepository.findByEmailIgnoreCase(email).orElseThrow();
+    legacyUser.setTermsAcceptedVersion(null);
+    legacyUser.setPrivacyPolicyAcceptedVersion(null);
+    legacyUser.setLegalAcceptedAt(null);
+    userRepository.saveAndFlush(legacyUser);
+
+    MvcResult login = performLogin(email, "StrongPassword123!", csrf());
+    Cookie session = login.getResponse().getCookie("SESSION");
+    mockMvc
+        .perform(get("/api/auth/me").cookie(session))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.legalAcceptanceRequired").value(true));
+    mockMvc.perform(get("/api/auth/csrf").cookie(session)).andExpect(status().isOk());
+    mockMvc
+        .perform(get("/api/households").cookie(session))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("LEGAL_ACCEPTANCE_REQUIRED"));
+    mockMvc
+        .perform(post("/api/auth/legal-acceptance").cookie(session))
+        .andExpect(status().isForbidden());
+
+    CsrfResponse token = readCsrf(csrfWithCookie(session));
+    mockMvc
+        .perform(
+            post("/api/auth/legal-acceptance")
+                .cookie(session)
+                .header(token.headerName(), token.token())
+                .contentType(APPLICATION_JSON)
+                .content(
+                    """
+                        {"termsAccepted":true}
+                        """))
+        .andExpect(status().isBadRequest());
+    mockMvc
+        .perform(
+            post("/api/auth/legal-acceptance")
+                .cookie(session)
+                .header(token.headerName(), token.token())
+                .contentType(APPLICATION_JSON)
+                .content(
+                    """
+                        {"termsAccepted":true,"privacyPolicyAcknowledged":false}
+                        """))
+        .andExpect(status().isBadRequest());
+
+    mockMvc
+        .perform(
+            post("/api/auth/legal-acceptance")
+                .cookie(session)
+                .header(token.headerName(), token.token())
+                .contentType(APPLICATION_JSON)
+                .content(
+                    """
+                        {"termsAccepted":true,"privacyPolicyAcknowledged":true}
+                        """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.termsVersion").value(LegalDocumentVersions.TERMS))
+        .andExpect(jsonPath("$.privacyPolicyVersion").value(LegalDocumentVersions.PRIVACY_POLICY))
+        .andExpect(jsonPath("$.acceptedAt").isString());
+
+    User acceptedUser = userRepository.findByEmailIgnoreCase(email).orElseThrow();
+    assertThat(acceptedUser.getLegalAcceptedAt()).isNotNull();
+    assertThat(acceptedUser.getTermsAcceptedVersion()).isEqualTo(LegalDocumentVersions.TERMS);
+    assertThat(acceptedUser.getPrivacyPolicyAcceptedVersion())
+        .isEqualTo(LegalDocumentVersions.PRIVACY_POLICY);
+    mockMvc.perform(get("/api/households").cookie(session)).andExpect(status().isOk());
+  }
+
+  @Test
+  void googleCreatedUserHasToAcceptDocumentsAndMeReportsRequirement() throws Exception {
+    String email = uniqueEmail("google-legal");
+    User user =
+        googleIdentityService
+            .authenticateVerifiedIdentity(
+                "google-subject-" + UUID.randomUUID(), email, "Google User", true)
+            .user();
+    testUserIds.add(user.getId());
+
+    assertThat(user.getLegalAcceptedAt()).isNull();
+    mockMvc
+        .perform(get("/api/auth/me").with(user(email)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.legalAcceptanceRequired").value(true));
+    mockMvc
+        .perform(get("/api/households").with(user(email)))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("LEGAL_ACCEPTANCE_REQUIRED"));
+  }
+
+  @Test
+  void existingGoogleLinkedUserCannotSkipAcceptance() throws Exception {
+    String email = uniqueEmail("google-existing");
+    register(email, AccountStatus.ACTIVE);
+    User existingUser = userRepository.findByEmailIgnoreCase(email).orElseThrow();
+    existingUser.setTermsAcceptedVersion(null);
+    existingUser.setPrivacyPolicyAcceptedVersion(null);
+    existingUser.setLegalAcceptedAt(null);
+    userRepository.saveAndFlush(existingUser);
+
+    googleIdentityService.linkToPasswordAccount("google-existing-subject", email);
+    GoogleIdentityService.Result googleLogin =
+        googleIdentityService.authenticateVerifiedIdentity(
+            "google-existing-subject", email, "Test User", true);
+    assertThat(googleLogin.type()).isEqualTo(GoogleIdentityService.ResultType.AUTHENTICATED);
+    mockMvc
+        .perform(get("/api/auth/me").with(user(email)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.legalAcceptanceRequired").value(true));
+    mockMvc
+        .perform(get("/api/households").with(user(email)))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("LEGAL_ACCEPTANCE_REQUIRED"));
+  }
+
+  @Test
+  void v11AddsNullableLegalAcceptanceFieldsToUsers() {
+    Integer nullableColumns =
+        jdbcTemplate.queryForObject(
+            """
+            SELECT COUNT(*) FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'users'
+              AND is_nullable = 'YES'
+              AND column_name IN (
+                'terms_accepted_version',
+                'privacy_policy_accepted_version',
+                'legal_accepted_at'
+              )
+            """,
+            Integer.class);
+    assertThat(nullableColumns).isEqualTo(3);
   }
 
   @Test
