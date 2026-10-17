@@ -1,7 +1,9 @@
 package com.dirtyduty.app.dto.auth;
 
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 public record RegisterRequest(
@@ -14,4 +16,11 @@ public record RegisterRequest(
         String email,
     @NotBlank(message = "Password is required")
         @Size(min = 12, max = 128, message = "Password must be between 12 and 128 characters")
-        String password) {}
+        String password,
+    @NotNull @AssertTrue Boolean termsAccepted,
+    @NotNull @AssertTrue Boolean privacyPolicyAcknowledged) {
+
+  public RegisterRequest(String displayName, String email, String password) {
+    this(displayName, email, password, true, true);
+  }
+}

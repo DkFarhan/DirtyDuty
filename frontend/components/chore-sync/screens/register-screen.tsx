@@ -33,7 +33,9 @@ export function RegisterScreen() {
     setError("")
 
     if (!termsAccepted) {
-      setTermsError("Please agree to the Terms of Service to create an account.")
+      setTermsError(
+        "Please agree to the Terms of Service and acknowledge the Privacy Policy to create an account.",
+      )
       return
     }
     setTermsError("")
@@ -45,7 +47,13 @@ export function RegisterScreen() {
 
     setIsSubmitting(true)
     try {
-      await register({ displayName: form.name, email: form.email, password: form.password })
+      await register({
+        displayName: form.name,
+        email: form.email,
+        password: form.password,
+        termsAccepted: true,
+        privacyPolicyAcknowledged: true,
+      })
       navigate("login")
     } catch (error) {
       if (error instanceof ApiError) setError(error.message)
@@ -140,6 +148,15 @@ export function RegisterScreen() {
               target="_blank"
             >
               Terms of Service
+            </a>{" "}
+            and acknowledge the{" "}
+            <a
+              className="font-semibold text-teal-700 underline underline-offset-2 hover:text-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 dark:text-teal-300 dark:hover:text-teal-200"
+              href="/privacy"
+              rel="noopener noreferrer"
+              target="_blank"
+            >
+              Privacy Policy
             </a>
           </span>
         </label>
@@ -153,7 +170,6 @@ export function RegisterScreen() {
           </p>
         )}
       </div>
-
       <button
         onClick={handleSubmit}
         disabled={isSubmitting}

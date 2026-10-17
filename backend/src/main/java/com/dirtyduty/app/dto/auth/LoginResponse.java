@@ -9,4 +9,5 @@ public record LoginResponse(
     String email,
     boolean emailVerified,
     boolean hasPassword,
-    List<String> authProviders) {}
+    List<String> authProviders,
+    boolean legalAcceptanceRequired) {}

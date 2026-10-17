@@ -1,7 +1,8 @@
 import type { Metadata } from "next"
-import Link from "next/link"
 import { ProductLogo } from "@/components/brand/product-logo"
 import { getSupportEmail } from "@/components/chore-sync/support-message"
+import { LegalDocumentBackLink } from "@/components/chore-sync/legal-document-back-link"
+import { LegalDocumentLink } from "@/components/chore-sync/legal-document-link"
 
 export const metadata: Metadata = {
   title: "Terms of Service | DirtyDuty",
@@ -29,16 +30,7 @@ export default function TermsPage() {
     <div className="min-h-screen bg-slate-50 text-slate-800">
       <header className="border-b border-slate-100 bg-white">
         <div className="mx-auto flex min-h-16 max-w-4xl items-center justify-between gap-4 px-5 py-3">
-          <Link
-            aria-label="Back to DirtyDuty"
-            className="flex min-h-10 items-center rounded-lg text-sm font-semibold text-slate-600 transition-colors hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-            href="/"
-          >
-            <span aria-hidden="true" className="mr-1 text-lg">
-              ‹
-            </span>
-            Back
-          </Link>
+          <LegalDocumentBackLink />
           <ProductLogo className="h-auto w-32 max-w-[45vw]" />
         </div>
       </header>
@@ -203,8 +195,14 @@ export default function TermsPage() {
                 information.
               </p>
               <p>
-                Our Privacy Policy describes how personal information is collected, used, protected
-                and retained.
+                Our{" "}
+                <LegalDocumentLink
+                  className="font-semibold text-teal-700 underline dark:text-teal-300"
+                  path="/privacy"
+                >
+                  Privacy Policy
+                </LegalDocumentLink>{" "}
+                describes how personal information is collected, used, protected and retained.
               </p>
               <p>
                 The Privacy Policy forms part of your relationship with DirtyDuty but does not

@@ -4,7 +4,9 @@ import com.dirtyduty.app.security.CustomUserDetailsService;
 import com.dirtyduty.app.security.GoogleAuthenticationFailureHandler;
 import com.dirtyduty.app.security.GoogleAuthenticationSuccessHandler;
 import com.dirtyduty.app.security.GoogleLoginPromptResolver;
+import com.dirtyduty.app.security.LegalAcceptanceFilter;
 import com.dirtyduty.app.security.NoStoreAuthorizedClientRepository;
+import com.dirtyduty.app.service.LegalAcceptanceService;
 import java.util.HashMap;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
@@ -45,6 +47,12 @@ import tools.jackson.databind.json.JsonMapper;
 public class SecurityConfig {
 
   @Bean
+  public LegalAcceptanceFilter legalAcceptanceFilter(
+      LegalAcceptanceService legalAcceptanceService, JsonMapper jsonMapper) {
+    return new LegalAcceptanceFilter(legalAcceptanceService, jsonMapper);
+  }
+
+  @Bean
   public SecurityFilterChain securityFilterChain(
       HttpSecurity http,
       SecurityContextRepository securityContextRepository,
@@ -52,9 +60,13 @@ public class SecurityConfig {
       AuthenticationEntryPoint authenticationEntryPoint,
       ClientRegistrationRepository clientRegistrationRepository,
       GoogleAuthenticationSuccessHandler googleSuccessHandler,
-      GoogleAuthenticationFailureHandler googleFailureHandler)
+      GoogleAuthenticationFailureHandler googleFailureHandler,
+      LegalAcceptanceFilter legalAcceptanceFilter)
       throws Exception {
     http.csrf(csrf -> csrf.csrfTokenRepository(csrfTokenRepository))
+        .addFilterBefore(
+            legalAcceptanceFilter,
+            org.springframework.security.web.access.intercept.AuthorizationFilter.class)
         .cors(cors -> {})
         .securityContext(context -> context.securityContextRepository(securityContextRepository))
         .sessionManagement(

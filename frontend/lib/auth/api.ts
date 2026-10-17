@@ -59,6 +59,9 @@ function messageFor(status: number, path: string): string {
   if (status === 400 && path === "/api/auth/delete-account") {
     return "We couldn't delete this account. Check your password and email confirmation."
   }
+  if (status === 400 && path === "/api/auth/legal-acceptance") {
+    return "Please accept the Terms of Service and acknowledge the Privacy Policy."
+  }
   if (status === 401) return "Your session could not be verified. Please sign in again."
   if (status === 400 && path === "/api/households/join") {
     return "Invite code is invalid or no longer available."

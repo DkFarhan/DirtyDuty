@@ -86,6 +86,17 @@ describe("PrivacySecurityScreen", () => {
     expect(mocks.changePassword).not.toHaveBeenCalled()
   })
 
+  it("provides accessible links to both public legal documents", () => {
+    render(<PrivacySecurityScreen />)
+
+    expect(screen.getByRole("link", { name: "Terms of Service" }).getAttribute("href")).toBe(
+      "/terms?returnTo=privacy-security",
+    )
+    expect(screen.getByRole("link", { name: "Privacy Policy" }).getAttribute("href")).toBe(
+      "/privacy?returnTo=privacy-security",
+    )
+  })
+
   it("validates password length, same-password changes, and confirmation", async () => {
     render(<PrivacySecurityScreen />)
     fireEvent.change(screen.getByLabelText("Current password"), {
