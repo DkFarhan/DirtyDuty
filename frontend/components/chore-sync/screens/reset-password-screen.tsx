@@ -43,11 +43,7 @@ export function ResetPasswordScreen() {
     setToken(resetToken)
     setError("")
 
-    window.history.replaceState(
-      {},
-      "",
-      `${window.location.pathname}${window.location.search}`,
-    )
+    window.history.replaceState({}, "", `${window.location.pathname}${window.location.search}`)
   }, [])
 
   const submit = async () => {
@@ -123,9 +119,7 @@ export function ResetPasswordScreen() {
         </>
       ) : (
         <>
-          <p className="mb-6 text-sm text-slate-500">
-            Choose a new password for your account.
-          </p>
+          <p className="mb-6 text-sm text-slate-500">Choose a new password for your account.</p>
 
           <label
             htmlFor="reset-new-password"
