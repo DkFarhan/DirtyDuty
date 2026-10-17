@@ -207,7 +207,7 @@ export function ProfileScreen() {
         </section>
 
         <button
-          className="w-full rounded-xl border border-slate-200 bg-white py-3.5 font-bold text-slate-700 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 disabled:cursor-not-allowed disabled:opacity-60"
+          className="w-full rounded-xl border border-rose-300 bg-transparent py-3.5 font-bold text-rose-700 transition-colors hover:border-rose-600 hover:bg-rose-600 hover:text-white active:border-rose-700 active:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-500 dark:text-rose-300 dark:hover:border-rose-700 dark:hover:bg-rose-700 dark:hover:text-white dark:active:border-rose-800 dark:active:bg-rose-800"
           disabled={isSubmitting}
           onClick={() => void handleLogout()}
           type="button"

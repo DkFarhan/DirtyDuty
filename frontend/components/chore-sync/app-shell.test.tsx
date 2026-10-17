@@ -39,6 +39,7 @@ async function fillAndSubmitRegistration() {
   fireEvent.change(screen.getByLabelText("Confirm password"), {
     target: { value: "StrongPassword123!" },
   })
+  fireEvent.click(screen.getByRole("checkbox", { name: /I agree to the Terms of Service/ }))
   fireEvent.click(screen.getByRole("button", { name: "Create Account" }))
 }
 
@@ -124,6 +125,50 @@ describe("authentication screens", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
+  it("requires Terms acceptance and keeps signup state with a safe new-tab link", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({}, 401))
+    await openLogin()
+    fireEvent.click(screen.getByRole("button", { name: "Sign up" }))
+    fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "Browser User" } })
+
+    const termsLink = screen.getByRole("link", { name: "Terms of Service" })
+    expect(termsLink.getAttribute("href")).toBe("/terms")
+    expect(termsLink.getAttribute("target")).toBe("_blank")
+    expect(termsLink.getAttribute("rel")).toContain("noopener")
+    expect(termsLink.getAttribute("rel")).toContain("noreferrer")
+
+    fireEvent.click(screen.getByRole("button", { name: "Create Account" }))
+
+    expect(await screen.findByRole("alert")).toHaveProperty(
+      "textContent",
+      "Please agree to the Terms of Service to create an account.",
+    )
+    expect((screen.getByLabelText("Full name") as HTMLInputElement).value).toBe("Browser User")
+    expect(
+      fetchMock.mock.calls.some(([url]) => url === "http://localhost:8080/api/auth/register"),
+    ).toBe(false)
+  })
+
+  it("preserves password confirmation validation after Terms are accepted", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({}, 401))
+    await openLogin()
+    fireEvent.click(screen.getByRole("button", { name: "Sign up" }))
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "StrongPassword123!" } })
+    fireEvent.change(screen.getByLabelText("Confirm password"), {
+      target: { value: "DifferentPassword123!" },
+    })
+    fireEvent.click(screen.getByRole("checkbox", { name: /I agree to the Terms of Service/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Create Account" }))
+
+    expect(await screen.findByRole("alert")).toHaveProperty(
+      "textContent",
+      "Passwords do not match.",
+    )
+    expect(
+      fetchMock.mock.calls.some(([url]) => url === "http://localhost:8080/api/auth/register"),
+    ).toBe(false)
+  })
+
   it("registers with CSRF and returns to login without authenticating", async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ message: "Authentication required" }, 401))
@@ -142,6 +187,13 @@ describe("authentication screens", () => {
     expect(fetchMock.mock.calls[2][0]).toBe("http://localhost:8080/api/auth/register")
     expect(fetchMock.mock.calls[2][1]).toMatchObject({ credentials: "include", method: "POST" })
     expect(fetchMock.mock.calls[2][1]?.headers).toBeInstanceOf(Headers)
+    expect(fetchMock.mock.calls[2][1]?.body).toBe(
+      JSON.stringify({
+        displayName: user.displayName,
+        email: user.email,
+        password: "StrongPassword123!",
+      }),
+    )
     expect(new Headers(fetchMock.mock.calls[2][1]?.headers).get("X-CSRF-TOKEN")).toBe(
       "registration-csrf",
     )
