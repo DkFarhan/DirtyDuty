@@ -11,12 +11,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -119,6 +121,19 @@ public class GlobalExceptionHandler {
         "Bad Request",
         "Request validation failed.",
         request.getRequestURI());
+  }
+
+  @ExceptionHandler(ResponseStatusException.class)
+  public ResponseEntity<ApiErrorResponse> handleResponseStatus(
+      ResponseStatusException ex, HttpServletRequest request) {
+    HttpStatusCode status = ex.getStatusCode();
+    String error = status.is4xxClientError() ? "Request Failed" : "Request Error";
+    String message =
+        ex.getReason() == null ? "The request could not be completed." : ex.getReason();
+    return ResponseEntity.status(status)
+        .body(
+            new ApiErrorResponse(
+                status.value(), error, message, request.getRequestURI(), OffsetDateTime.now()));
   }
 
   @ExceptionHandler(Exception.class)

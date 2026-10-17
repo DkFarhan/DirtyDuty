@@ -1,7 +1,7 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { ApiError } from "@/lib/auth/api"
+import { useEffect, useMemo, useState } from "react"
+import { ApiError, apiUrl } from "@/lib/auth/api"
 import { useAuth } from "@/lib/auth/auth-context"
 import { useChoreSync } from "@/lib/chore-sync/store"
 import { useHouseholds } from "@/lib/household/household-context"
@@ -30,12 +30,13 @@ function ownedHouseholdsFromError(error: ApiError): OwnedHousehold[] {
 
 export function PrivacySecurityScreen() {
   const { navigate, resetUserData } = useChoreSync()
-  const { user, logout, changePassword, deleteAccount } = useAuth()
+  const { user, logout, changePassword, deleteAccount, features } = useAuth()
   const { households, refresh, selectHousehold } = useHouseholds()
   const [signOutBusy, setSignOutBusy] = useState(false)
   const [passwordBusy, setPasswordBusy] = useState(false)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [error, setError] = useState("")
+  const [reauthMessage, setReauthMessage] = useState("")
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: "",
     newPassword: "",
@@ -51,6 +52,31 @@ export function PrivacySecurityScreen() {
   )
   const ownedHouseholds =
     serverOwnedHouseholds.length > 0 ? serverOwnedHouseholds : activeOwnedHouseholds
+  const hasPassword = user?.hasPassword ?? true
+  const hasGoogle = user?.authProviders?.includes("GOOGLE") ?? false
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const authResult = params.get("auth")
+    if (authResult === "google-error") {
+      setReauthMessage("Google verification was not completed. Please try again.")
+    } else if (authResult === "google-reauthenticated") {
+      setReauthMessage("Google verification succeeded. Retry the action you were performing.")
+    }
+    if (authResult) {
+      params.delete("auth")
+      const query = params.toString()
+      window.history.replaceState(
+        {},
+        "",
+        query ? `${window.location.pathname}?${query}` : window.location.pathname,
+      )
+    }
+  }, [])
+
+  const reauthenticateWithGoogle = () => {
+    window.location.assign(apiUrl("/api/auth/google/reauthenticate?returnTo=privacy-security"))
+  }
 
   const signOut = async () => {
     if (signOutBusy) return
@@ -131,6 +157,10 @@ export function PrivacySecurityScreen() {
       setError("Enter the exact email address for this account.")
       return
     }
+    if (hasPassword && !deleteForm.password) {
+      setError("Enter your current password.")
+      return
+    }
     if (ownedHouseholds.length > 0) {
       setError("You still own households.")
       return
@@ -180,6 +210,11 @@ export function PrivacySecurityScreen() {
     <div className="min-h-screen bg-slate-50 pb-8">
       <SubpageHeader title="Privacy & Security" back={() => navigate("profile")} />
       <main className="flex flex-col gap-4 px-4 pt-4">
+        {reauthMessage && (
+          <p role="status" className="rounded-xl bg-teal-50 p-3 text-sm text-teal-800">
+            {reauthMessage}
+          </p>
+        )}
         <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
           <h2 className="font-bold text-slate-900">Account Security</h2>
           <p className="mt-1 text-sm text-slate-500">Signed in as</p>
@@ -194,6 +229,15 @@ export function PrivacySecurityScreen() {
           >
             {signOutBusy ? "Signing out…" : "Sign out"}
           </button>
+          {!hasPassword && hasGoogle && features.google && (
+            <button
+              className="mt-3 w-full rounded-xl border border-teal-200 py-3 text-sm font-bold text-teal-700 hover:bg-teal-50"
+              onClick={reauthenticateWithGoogle}
+              type="button"
+            >
+              Reauthenticate with Google
+            </button>
+          )}
         </section>
 
         <form
@@ -201,76 +245,107 @@ export function PrivacySecurityScreen() {
           onSubmit={(event) => void handlePasswordChange(event)}
         >
           <h2 className="font-bold text-slate-900">Password & Sign-In</h2>
-          <p className="mt-1 text-xs leading-relaxed text-slate-500">
-            Use your current password to set a new one. Changing it signs you out everywhere,
-            including this session.
-          </p>
+          {hasPassword ? (
+            <>
+              <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                Use your current password to set a new one. Changing it signs you out everywhere,
+                including this session.
+              </p>
 
-          <div className="mt-3 space-y-3">
-            <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
-              Current password
-              <PasswordInput
-                autoComplete="current-password"
-                className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-teal-500 focus:bg-white"
-                id="change-current-password"
-                name="currentPassword"
-                onChange={(event) =>
-                  setPasswordForm((current) => ({
-                    ...current,
-                    currentPassword: event.target.value,
-                  }))
-                }
-                required
-                value={passwordForm.currentPassword}
-              />
-            </label>
-            <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
-              New password
-              <PasswordInput
-                autoComplete="new-password"
-                className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-teal-500 focus:bg-white"
-                id="change-new-password"
-                maxLength={128}
-                name="newPassword"
-                onChange={(event) =>
-                  setPasswordForm((current) => ({ ...current, newPassword: event.target.value }))
-                }
-                required
-                value={passwordForm.newPassword}
-              />
-            </label>
-            <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
-              Confirm new password
-              <PasswordInput
-                autoComplete="new-password"
-                className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-teal-500 focus:bg-white"
-                id="change-confirm-password"
-                maxLength={128}
-                name="confirmPassword"
-                onChange={(event) =>
-                  setPasswordForm((current) => ({
-                    ...current,
-                    confirmPassword: event.target.value,
-                  }))
-                }
-                required
-                value={passwordForm.confirmPassword}
-              />
-            </label>
-          </div>
+              <div className="mt-3 space-y-3">
+                <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+                  Current password
+                  <PasswordInput
+                    autoComplete="current-password"
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-teal-500 focus:bg-white"
+                    id="change-current-password"
+                    name="currentPassword"
+                    onChange={(event) =>
+                      setPasswordForm((current) => ({
+                        ...current,
+                        currentPassword: event.target.value,
+                      }))
+                    }
+                    required
+                    value={passwordForm.currentPassword}
+                  />
+                </label>
+                <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+                  New password
+                  <PasswordInput
+                    autoComplete="new-password"
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-teal-500 focus:bg-white"
+                    id="change-new-password"
+                    maxLength={128}
+                    name="newPassword"
+                    onChange={(event) =>
+                      setPasswordForm((current) => ({
+                        ...current,
+                        newPassword: event.target.value,
+                      }))
+                    }
+                    required
+                    value={passwordForm.newPassword}
+                  />
+                </label>
+                <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+                  Confirm new password
+                  <PasswordInput
+                    autoComplete="new-password"
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-teal-500 focus:bg-white"
+                    id="change-confirm-password"
+                    maxLength={128}
+                    name="confirmPassword"
+                    onChange={(event) =>
+                      setPasswordForm((current) => ({
+                        ...current,
+                        confirmPassword: event.target.value,
+                      }))
+                    }
+                    required
+                    value={passwordForm.confirmPassword}
+                  />
+                </label>
+              </div>
 
-          {error && deleteStage === null && (
-            <p role="alert" className="mt-3 text-sm text-rose-600">
-              {error}
-            </p>
+              {error && deleteStage === null && (
+                <p role="alert" className="mt-3 text-sm text-rose-600">
+                  {error}
+                </p>
+              )}
+              <button
+                className="mt-4 w-full rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-teal-700 disabled:opacity-50"
+                disabled={passwordBusy}
+                type="submit"
+              >
+                {passwordBusy ? "Updating…" : "Change password"}
+              </button>
+            </>
+          ) : (
+            <div className="mt-3">
+              <p className="text-sm text-slate-600">
+                This account uses Google to sign in and doesn&apos;t have a local password yet.
+              </p>
+              {features.passwordReset && (
+                <button
+                  className="mt-3 rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-bold text-white"
+                  onClick={() => navigate("forgot-password")}
+                  type="button"
+                >
+                  Set a password by email
+                </button>
+              )}
+              {hasGoogle && features.google && (
+                <button
+                  className="mt-3 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-700"
+                  onClick={reauthenticateWithGoogle}
+                  type="button"
+                >
+                  Reauthenticate with Google
+                </button>
+              )}
+            </div>
           )}
-          <button
-            className="mt-4 w-full rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-teal-700 disabled:opacity-50"
-            disabled={passwordBusy}
-            type="submit"
-          >
-            {passwordBusy ? "Updating…" : "Change password"}
-          </button>
         </form>
 
         <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
@@ -378,7 +453,8 @@ export function PrivacySecurityScreen() {
             >
               <h3 className="font-bold text-slate-900">Confirm account deletion</h3>
               <p className="mt-1 text-sm leading-relaxed text-slate-600">
-                Enter your account email and current password to permanently delete the account.
+                Enter your account email
+                {hasPassword ? " and current password" : ""} to permanently delete the account.
               </p>
               <label className="mt-3 block text-xs font-bold uppercase tracking-wide text-slate-500">
                 Account email
@@ -393,20 +469,31 @@ export function PrivacySecurityScreen() {
                   value={deleteForm.email}
                 />
               </label>
-              <label className="mt-3 block text-xs font-bold uppercase tracking-wide text-slate-500">
-                Current password
-                <PasswordInput
-                  autoComplete="current-password"
-                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-rose-400"
-                  id="delete-account-password"
-                  name="password"
-                  onChange={(event) =>
-                    setDeleteForm((current) => ({ ...current, password: event.target.value }))
-                  }
-                  required
-                  value={deleteForm.password}
-                />
-              </label>
+              {!user?.hasPassword && hasGoogle && features.google && (
+                <button
+                  className="mt-3 w-full rounded-xl border border-teal-200 bg-white py-3 text-sm font-bold text-teal-700"
+                  onClick={reauthenticateWithGoogle}
+                  type="button"
+                >
+                  Reauthenticate with Google, then retry
+                </button>
+              )}
+              {hasPassword && (
+                <label className="mt-3 block text-xs font-bold uppercase tracking-wide text-slate-500">
+                  Current password
+                  <PasswordInput
+                    autoComplete="current-password"
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-rose-400"
+                    id="delete-account-password"
+                    name="password"
+                    onChange={(event) =>
+                      setDeleteForm((current) => ({ ...current, password: event.target.value }))
+                    }
+                    required
+                    value={deleteForm.password}
+                  />
+                </label>
+              )}
               {error && (
                 <p role="alert" className="mt-3 text-sm text-rose-600">
                   {error}
@@ -426,7 +513,7 @@ export function PrivacySecurityScreen() {
                   disabled={
                     deleteBusy ||
                     deleteForm.email !== user?.email ||
-                    !deleteForm.password ||
+                    (hasPassword && !deleteForm.password) ||
                     ownedHouseholds.length > 0
                   }
                   type="submit"

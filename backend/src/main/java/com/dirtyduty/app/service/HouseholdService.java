@@ -255,7 +255,10 @@ public class HouseholdService {
 
   @Transactional
   public void deleteHousehold(
-      UUID householdId, DeleteHouseholdRequest request, Authentication authentication) {
+      UUID householdId,
+      DeleteHouseholdRequest request,
+      Authentication authentication,
+      boolean recentlyReauthenticated) {
     if (request == null) {
       throw new InvalidHouseholdException("Household name and password are required.");
     }
@@ -281,7 +284,12 @@ public class HouseholdService {
     if (!Objects.equals(household.getName(), request.householdName())) {
       throw new InvalidHouseholdException("Household name does not match.");
     }
-    if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+    if (user.getPasswordHash() == null) {
+      if (!recentlyReauthenticated) {
+        throw new HouseholdAccessDeniedException("Recent Google reauthentication is required.");
+      }
+    } else if (request.password() == null
+        || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
       throw new HouseholdAccessDeniedException("Current password is incorrect.");
     }
 
@@ -302,6 +310,12 @@ public class HouseholdService {
     jdbc.update("DELETE FROM household_invitations WHERE household_id = ?", householdId);
     jdbc.update("DELETE FROM household_memberships WHERE household_id = ?", householdId);
     householdRepository.delete(household);
+  }
+
+  @Transactional
+  public void deleteHousehold(
+      UUID householdId, DeleteHouseholdRequest request, Authentication authentication) {
+    deleteHousehold(householdId, request, authentication, false);
   }
 
   @Transactional

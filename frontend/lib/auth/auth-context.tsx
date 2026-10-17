@@ -10,6 +10,13 @@ export type AuthUser = {
   displayName: string
   email: string
   emailVerified: boolean
+  hasPassword: boolean
+  authProviders: string[]
+}
+
+export type AuthFeatures = {
+  google: boolean
+  passwordReset: boolean
 }
 
 type RegisterInput = {
@@ -24,12 +31,16 @@ type AuthContextValue = {
   isLoading: boolean
   authError: string | null
   authNotice: string | null
+  features: AuthFeatures
   dismissAuthNotice: () => void
   register: (input: RegisterInput) => Promise<void>
   login: (email: string, password: string) => Promise<AuthUser>
   logout: () => Promise<void>
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>
   deleteAccount: (password: string, confirmation: string) => Promise<void>
+  requestPasswordReset: (email: string) => Promise<void>
+  confirmPasswordReset: (token: string, newPassword: string) => Promise<void>
+  completeGoogleLink: (password: string) => Promise<void>
   refreshUser: () => Promise<AuthUser | null>
 }
 
@@ -40,6 +51,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
   const [authError, setAuthError] = useState<string | null>(null)
   const [authNotice, setAuthNotice] = useState<string | null>(null)
+  const [features, setFeatures] = useState<AuthFeatures>({
+    google: false,
+    passwordReset: false,
+  })
 
   const refreshUser = async () => {
     try {
@@ -61,7 +76,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     refreshUser()
       .catch(() => undefined)
-      .finally(() => setIsLoading(false))
+      .finally(() => {
+        setIsLoading(false)
+        api
+          .get<AuthFeatures>("/api/auth/providers")
+          .then(setFeatures)
+          .catch((cause: unknown) => {
+            console.warn(
+              "Unable to load optional authentication features; password sign-in remains available.",
+              cause,
+            )
+            setFeatures({ google: false, passwordReset: false })
+          })
+      })
   }, [])
 
   const register = async (input: RegisterInput) => {
@@ -113,6 +140,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAuthNotice("Your account has been permanently deleted.")
   }
 
+  const requestPasswordReset = async (email: string) => {
+    await api.post<void>("/api/auth/password-reset/request", { email })
+  }
+
+  const confirmPasswordReset = async (token: string, newPassword: string) => {
+    await api.post<void>("/api/auth/password-reset/confirm", { token, newPassword })
+  }
+
+  const completeGoogleLink = async (password: string) => {
+    await api.post<void>("/api/auth/google/link", { password })
+    clearCsrfToken()
+    await getCsrfToken()
+    const authenticatedUser = await refreshUser()
+    if (!authenticatedUser) throw new Error("Unable to verify your session. Please try again.")
+  }
+
   const dismissAuthNotice = () => setAuthNotice(null)
 
   const value = useMemo(
@@ -122,15 +165,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isLoading,
       authError,
       authNotice,
+      features,
       dismissAuthNotice,
       register,
       login,
       logout,
       changePassword,
       deleteAccount,
+      requestPasswordReset,
+      confirmPasswordReset,
+      completeGoogleLink,
       refreshUser,
     }),
-    [authError, authNotice, isLoading, user],
+    [authError, authNotice, features, isLoading, user],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

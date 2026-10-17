@@ -41,6 +41,8 @@ const user = {
   displayName: "Browser User",
   email: "user@example.com",
   emailVerified: false,
+  hasPassword: true,
+  authProviders: ["PASSWORD"],
 }
 
 function Probe() {
@@ -125,6 +127,12 @@ function renderAuth() {
 describe("AuthProvider", () => {
   beforeEach(() => {
     vi.resetAllMocks()
+    vi.mocked(api.get).mockImplementation(async <T,>(path: string) => {
+      if (path === "/api/auth/providers") {
+        return { google: false, passwordReset: false } as T
+      }
+      throw new ApiError("offline", null, "network")
+    })
     vi.mocked(removeBrowserPushSubscription).mockReset()
     vi.mocked(notificationApi.unsubscribePush).mockReset()
     clearCsrfToken()
@@ -186,6 +194,7 @@ describe("AuthProvider", () => {
   it("sets the user and fetches fresh CSRF after successful login", async () => {
     vi.mocked(api.get)
       .mockRejectedValueOnce(new ApiError("anonymous", 401, "unauthenticated"))
+      .mockResolvedValueOnce({ google: false, passwordReset: false })
       .mockResolvedValueOnce(user)
     vi.mocked(api.post).mockResolvedValueOnce(undefined)
     vi.mocked(getCsrfToken).mockResolvedValueOnce({
@@ -206,7 +215,7 @@ describe("AuthProvider", () => {
       email: "user@example.com",
       password: "password",
     })
-    expect(api.get).toHaveBeenNthCalledWith(2, "/api/auth/me")
+    expect(api.get).toHaveBeenNthCalledWith(3, "/api/auth/me")
   })
 
   it("registers without authenticating the new account", async () => {

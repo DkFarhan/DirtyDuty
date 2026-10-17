@@ -42,6 +42,66 @@ The file includes:
 - `NEXT_PUBLIC_SUPPORT_EMAIL`
 
 `NEXT_PUBLIC_*` values are browser-visible; keep only safe public data in them.
+Set `POSTGRES_PASSWORD` to a unique randomly generated value before running any
+Compose command. The production Compose configuration intentionally fails when
+it is empty instead of falling back to a known development password.
+
+## Optional authentication providers
+
+Email/password sign-in remains available independently of the optional Google and
+password-reset features. Set these values in the untracked `.env.production` file;
+never put credentials in frontend build arguments or `NEXT_PUBLIC_*` variables.
+
+### Google OpenID Connect
+
+Create a Google OAuth web client with the `openid`, `profile`, and `email` scopes.
+Register this exact authorized redirect URI:
+
+```text
+https://YOUR_DOMAIN/api/auth/oauth2/callback/google
+```
+
+Then set `GOOGLE_AUTH_ENABLED=true`, `GOOGLE_CLIENT_ID`, and
+`GOOGLE_CLIENT_SECRET`. DirtyDuty validates the provider's OIDC signature and
+issuer and only accepts a verified email. A Google email that matches an existing
+password account is not linked automatically: the user must enter that account's
+password in the sign-in screen to link it. Google access/refresh tokens are not
+stored; the application uses the provider only for identity.
+
+### Password reset email
+
+Configure an SMTP provider that supports STARTTLS, set `MAIL_HOST`, `MAIL_PORT`,
+`MAIL_USERNAME`, `MAIL_PASSWORD`, and a verified `MAIL_FROM_ADDRESS`, then set:
+
+- `MAIL_STARTTLS_ENABLED=true`
+- `MAIL_STARTTLS_REQUIRED=true`
+- `MAIL_TLS_VERIFY_SERVER_IDENTITY=true`
+- `PASSWORD_RESET_ENABLED=true`
+- `APP_BASE_URL=https://YOUR_DOMAIN`
+- `AUTH_RATE_LIMIT_HMAC_SECRET` to a private, randomly generated value of at
+  least 32 characters
+- optionally `PASSWORD_RESET_TTL` (default 30 minutes; maximum two hours)
+
+Reset requests have the same response whether an account exists or not. Tokens
+are random, single-use, stored only as SHA-256 hashes, and placed in the URL
+fragment so they are not sent to the server in HTTP requests or referrers.
+Email delivery runs only after the reset-token transaction commits, avoiding
+SMTP-dependent response delays; delivery failures revoke the token.
+Request and confirmation limits are persisted in PostgreSQL; the HMAC key used
+for pseudonymous rate-limit identifiers must remain private and stable.
+
+### Manual verification after enabling
+
+1. Use a new Google account to sign up, confirm the verified email account is
+   created without a local password, and sign out/in again.
+2. Try Google with an existing password account's email, confirm no account is
+   silently linked, then link only after signing in with that account's password.
+3. Verify a wrong password, a different Google email, or an expired pending link
+   does not link accounts.
+4. Request a reset for both a registered and unregistered email and confirm the
+   same browser response; verify a valid link works once, then test expiry/reuse.
+5. Confirm password reset invalidates existing sessions and then verify signing
+   in with the new password.
 
 ## Local validation
 
@@ -84,7 +144,7 @@ Use the Docker Compose setup in `backend/docker-compose.yml` if you need a local
 Build and validate locally from the repository root:
 
 ```bash
-docker compose config
+docker compose --env-file .env.production config
 docker build -t dirtyduty-frontend ./frontend
 docker build -t dirtyduty-backend ./backend
 ```
@@ -98,15 +158,15 @@ docker compose --env-file .env.production up --build -d
 Inspect logs:
 
 ```bash
-docker compose logs -f caddy frontend backend postgres
-docker compose ps
+docker compose --env-file .env.production logs -f caddy frontend backend postgres
+docker compose --env-file .env.production ps
 ```
 
 Stop/restart services:
 
 ```bash
-docker compose down
-docker compose up -d
+docker compose --env-file .env.production down
+docker compose --env-file .env.production up -d
 ```
 
 ## Deployment notes

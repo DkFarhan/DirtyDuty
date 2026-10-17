@@ -9,6 +9,8 @@ import com.dirtyduty.app.dto.household.JoinHouseholdRequest;
 import com.dirtyduty.app.dto.household.RemoveMemberResponse;
 import com.dirtyduty.app.dto.household.UpdateMemberRoleRequest;
 import com.dirtyduty.app.service.HouseholdService;
+import com.dirtyduty.app.service.RecentReauthenticationService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
@@ -30,9 +32,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class HouseholdController {
 
   private final HouseholdService householdService;
+  private final RecentReauthenticationService recentReauthenticationService;
 
-  public HouseholdController(HouseholdService householdService) {
+  public HouseholdController(
+      HouseholdService householdService,
+      RecentReauthenticationService recentReauthenticationService) {
     this.householdService = householdService;
+    this.recentReauthenticationService = recentReauthenticationService;
   }
 
   @GetMapping
@@ -74,8 +80,10 @@ public class HouseholdController {
   public void deleteHousehold(
       @PathVariable UUID householdId,
       @Valid @RequestBody DeleteHouseholdRequest request,
-      Authentication authentication) {
-    householdService.deleteHousehold(householdId, request, authentication);
+      Authentication authentication,
+      HttpServletRequest httpRequest) {
+    boolean recent = recentReauthenticationService.consume(httpRequest);
+    householdService.deleteHousehold(householdId, request, authentication, recent);
   }
 
   @PutMapping("/{householdId}/members/{userId}/role")

@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { AppShell } from "./app-shell"
 import { clearCsrfToken } from "../../lib/auth/api"
+import { stubAuthFeatures } from "../../test/stub-auth-features"
 
 const fetchMock = vi.fn<typeof fetch>()
 const user = {
@@ -11,6 +12,8 @@ const user = {
   displayName: "Browser User",
   email: "user@example.com",
   emailVerified: false,
+  hasPassword: true,
+  authProviders: ["PASSWORD"],
 }
 
 function jsonResponse(payload: unknown, status = 200) {
@@ -40,7 +43,7 @@ async function fillAndSubmitRegistration() {
 describe("authentication screens", () => {
   beforeEach(() => {
     fetchMock.mockReset()
-    vi.stubGlobal("fetch", fetchMock)
+    stubAuthFeatures(fetchMock)
     clearCsrfToken()
   })
 
@@ -241,5 +244,125 @@ describe("authentication screens", () => {
       "Unable to connect to DirtyDuty. Please try again.",
     )
     expect(screen.queryByText("Invalid email or password")).toBeNull()
+  })
+
+  it("shows only enabled provider and password-reset options", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({}, 401))
+    stubAuthFeatures(fetchMock, { google: true, passwordReset: true })
+    await openLogin()
+
+    expect(screen.getByRole("button", { name: "Continue with Google" })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Forgot password?" }))
+    expect(await screen.findByRole("button", { name: "Send reset instructions" })).toBeTruthy()
+  })
+
+  it("shows Google sign-in on registration when the provider is enabled", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({}, 401))
+    stubAuthFeatures(fetchMock, { google: true, passwordReset: false })
+    await openLogin()
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign up" }))
+    expect(await screen.findByRole("button", { name: "Continue with Google" })).toBeTruthy()
+  })
+
+  it("requires the existing password before linking a Google email collision", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({}, 401))
+      .mockResolvedValueOnce(jsonResponse({ token: "link-csrf", headerName: "X-CSRF-TOKEN" }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(jsonResponse({ token: "fresh-csrf", headerName: "X-CSRF-TOKEN" }))
+      .mockResolvedValueOnce(jsonResponse(user))
+      .mockResolvedValueOnce(jsonResponse([]))
+    window.history.replaceState({}, "", "/?auth=google-link-required")
+    stubAuthFeatures(fetchMock, { google: true, passwordReset: false })
+
+    render(<AppShell />)
+    expect(await screen.findByText(/already exists for this Google email/i)).toBeTruthy()
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "StrongPassword123!" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Sign in and link Google" }))
+
+    expect(await screen.findByText("Welcome!")).toBeTruthy()
+    const linkRequest = fetchMock.mock.calls.find(
+      ([url]) => url === "http://localhost:8080/api/auth/google/link",
+    )
+    expect(linkRequest?.[1]).toMatchObject({
+      method: "POST",
+      body: JSON.stringify({ password: "StrongPassword123!" }),
+    })
+    window.history.replaceState({}, "", "/")
+  })
+
+  it("confirms password reset with the fragment token and removes it from browser history", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({}, 401))
+      .mockResolvedValueOnce(jsonResponse({ token: "reset-csrf", headerName: "X-CSRF-TOKEN" }))
+      .mockResolvedValueOnce(jsonResponse({ message: "Password changed successfully." }))
+    window.history.replaceState({}, "", "/reset-password#token=secret-reset-token")
+    stubAuthFeatures(fetchMock)
+
+    render(<AppShell initialScreen="reset-password" />)
+    expect(await screen.findByRole("button", { name: "Update password" })).toBeTruthy()
+    await waitFor(() => expect(window.location.hash).toBe(""))
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "NewStrongPassword123!" },
+    })
+    fireEvent.change(screen.getByLabelText("Confirm new password"), {
+      target: { value: "NewStrongPassword123!" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Update password" }))
+
+    expect(await screen.findByText("Password updated")).toBeTruthy()
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(fetchMock.mock.calls[2][0]).toBe("http://localhost:8080/api/auth/password-reset/confirm")
+    expect(fetchMock.mock.calls[2][1]).toMatchObject({
+      method: "POST",
+      body: JSON.stringify({ token: "secret-reset-token", newPassword: "NewStrongPassword123!" }),
+    })
+    window.history.replaceState({}, "", "/")
+  })
+
+  it("validates reset password length before sending the token", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({}, 401))
+    window.history.replaceState({}, "", "/reset-password#token=short-password-reset-token")
+    stubAuthFeatures(fetchMock)
+
+    render(<AppShell initialScreen="reset-password" />)
+    await screen.findByRole("button", { name: "Update password" })
+    fireEvent.change(screen.getByLabelText("New password"), { target: { value: "short" } })
+    fireEvent.change(screen.getByLabelText("Confirm new password"), {
+      target: { value: "short" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Update password" }))
+
+    expect((await screen.findByRole("alert")).textContent).toContain("between 12 and 128")
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    window.history.replaceState({}, "", "/")
+  })
+
+  it("explains when a password reset token is invalid or expired", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({}, 401))
+      .mockResolvedValueOnce(jsonResponse({ token: "reset-csrf", headerName: "X-CSRF-TOKEN" }))
+      .mockResolvedValueOnce(jsonResponse({ message: "invalid" }, 400))
+    window.history.replaceState({}, "", "/reset-password#token=expired-reset-token")
+    stubAuthFeatures(fetchMock)
+
+    render(<AppShell initialScreen="reset-password" />)
+    await screen.findByRole("button", { name: "Update password" })
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "NewStrongPassword123!" },
+    })
+    fireEvent.change(screen.getByLabelText("Confirm new password"), {
+      target: { value: "NewStrongPassword123!" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Update password" }))
+
+    expect(await screen.findByRole("alert")).toHaveProperty(
+      "textContent",
+      "This reset link is invalid or expired. Request a new one.",
+    )
+    window.history.replaceState({}, "", "/")
   })
 })

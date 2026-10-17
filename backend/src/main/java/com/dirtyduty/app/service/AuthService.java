@@ -73,18 +73,21 @@ public class AuthService {
   public void changePassword(String email, String currentPassword, String newPassword) {
     User user =
         userRepository
-            .findByEmailIgnoreCase(email)
+            .findByEmailIgnoreCaseForUpdate(email)
             .orElseThrow(() -> new InvalidCredentialsException("Your account could not be found."));
 
     requireActive(user);
-    if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+    if (user.getPasswordHash() == null
+        || currentPassword == null
+        || !passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
       throw new InvalidCredentialsException("Current password is incorrect.");
     }
 
     if (newPassword == null || newPassword.length() < 12 || newPassword.length() > 128) {
       throw new InvalidCredentialsException("Password must be between 12 and 128 characters.");
     }
-    if (passwordEncoder.matches(newPassword, user.getPasswordHash())) {
+    if (user.getPasswordHash() != null
+        && passwordEncoder.matches(newPassword, user.getPasswordHash())) {
       throw new InvalidCredentialsException(
           "New password must be different from your current password.");
     }
@@ -95,14 +98,19 @@ public class AuthService {
   }
 
   @Transactional
-  public void deleteAccount(String email, String password, String emailConfirmation) {
+  public void deleteAccount(
+      String email, String password, String emailConfirmation, boolean recentlyReauthenticated) {
     User user =
         userRepository
-            .findByEmailIgnoreCase(email)
+            .findByEmailIgnoreCaseForUpdate(email)
             .orElseThrow(() -> new InvalidCredentialsException("Your account could not be found."));
 
     requireActive(user);
-    if (!passwordEncoder.matches(password, user.getPasswordHash())) {
+    if (user.getPasswordHash() == null) {
+      if (!recentlyReauthenticated) {
+        throw new InvalidCredentialsException("Recent Google reauthentication is required.");
+      }
+    } else if (password == null || !passwordEncoder.matches(password, user.getPasswordHash())) {
       throw new InvalidCredentialsException("Password is incorrect.");
     }
 
@@ -140,6 +148,11 @@ public class AuthService {
     userRepository.saveAndFlush(user);
   }
 
+  @Transactional
+  public void deleteAccount(String email, String password, String emailConfirmation) {
+    deleteAccount(email, password, emailConfirmation, false);
+  }
+
   private void requireActive(User user) {
     if (user.getAccountStatus() != AccountStatus.ACTIVE) {
       throw new InvalidCredentialsException("Your account is not active.");
@@ -147,6 +160,8 @@ public class AuthService {
   }
 
   private void invalidatePersonalData(UUID userId, String email) {
+    jdbcTemplate.update("DELETE FROM password_reset_token WHERE user_id = ?", userId);
+    jdbcTemplate.update("DELETE FROM external_auth_identity WHERE user_id = ?", userId);
     jdbcTemplate.update("DELETE FROM push_subscriptions WHERE user_id = ?", userId);
     jdbcTemplate.update("DELETE FROM notification_preferences WHERE user_id = ?", userId);
     jdbcTemplate.update(

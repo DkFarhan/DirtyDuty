@@ -7,6 +7,7 @@ import { useChoreSync } from "@/lib/chore-sync/store"
 import { ProductLogo } from "@/components/brand/product-logo"
 import { PasswordInput } from "@/components/ui/password-input"
 import { ChevronLeftIcon } from "../icons"
+import { GoogleSignInButton } from "../google-sign-in-button"
 
 const inputClass =
   "w-full px-4 py-3.5 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent text-[15px] transition-all"
@@ -20,7 +21,7 @@ const fields = [
 
 export function RegisterScreen() {
   const { navigate } = useChoreSync()
-  const { register } = useAuth()
+  const { register, features } = useAuth()
   const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "" })
   const [error, setError] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -59,6 +60,17 @@ export function RegisterScreen() {
       <ProductLogo className="mb-6 h-auto w-44 max-w-full" />
       <h1 className="text-3xl font-black text-slate-900 mb-1 font-display">Create account</h1>
       <p className="text-slate-500 text-sm mb-8">Set up your account to get started</p>
+
+      {features.google && (
+        <>
+          <GoogleSignInButton />
+          <div className="my-5 flex items-center gap-3">
+            <div className="h-px flex-1 bg-slate-100" />
+            <span className="text-xs font-medium text-slate-400">or sign up with email</span>
+            <div className="h-px flex-1 bg-slate-100" />
+          </div>
+        </>
+      )}
 
       <div className="flex flex-col gap-4 mb-6">
         {fields.map(({ key, label, placeholder, type }) => (

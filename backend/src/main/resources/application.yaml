@@ -20,8 +20,38 @@ spring:
     timeout: ${SESSION_TIMEOUT:24h}
     jdbc:
       initialize-schema: never
+  mail:
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${MAIL_SMTP_AUTH:true}
+          starttls:
+            enable: ${MAIL_STARTTLS_ENABLED:true}
+            required: ${MAIL_STARTTLS_REQUIRED:true}
+          ssl:
+            checkserveridentity: ${MAIL_TLS_VERIFY_SERVER_IDENTITY:true}
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
 
 app:
+  base-url: ${APP_BASE_URL:http://localhost:3000}
+  auth:
+    google:
+      enabled: ${GOOGLE_AUTH_ENABLED:false}
+      client-id: ${GOOGLE_CLIENT_ID:}
+      client-secret: ${GOOGLE_CLIENT_SECRET:}
+    password-reset:
+      enabled: ${PASSWORD_RESET_ENABLED:false}
+      token-ttl: ${PASSWORD_RESET_TTL:30m}
+      rate-limit-hmac-secret: ${AUTH_RATE_LIMIT_HMAC_SECRET:}
+      request-email-limit: ${PASSWORD_RESET_EMAIL_LIMIT:3}
+      request-ip-limit: ${PASSWORD_RESET_IP_LIMIT:5}
+      confirm-ip-limit: ${PASSWORD_RESET_CONFIRM_IP_LIMIT:10}
   frontend:
     origins: ${FRONTEND_ORIGINS:http://localhost:3000}
   households:
@@ -37,6 +67,8 @@ app:
 
 server:
   port: 8080
+  forward-headers:
+    strategy: framework
   servlet:
     session:
       cookie:

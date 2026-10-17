@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from "react"
 import { ApiError } from "@/lib/auth/api"
 import { useChoreSync } from "@/lib/chore-sync/store"
+import { apiUrl } from "@/lib/auth/api"
+import { useAuth } from "@/lib/auth/auth-context"
 import {
   householdApi,
   type HouseholdInvitationSummary,
@@ -34,6 +36,7 @@ function dateLabel(value: string) {
 
 export function HouseholdSettingsScreen() {
   const { navigate } = useChoreSync()
+  const { user, features } = useAuth()
   const { households, activeHousehold, refresh } = useHouseholds()
   const household = activeHousehold ?? households[0]
   const [settings, setSettings] = useState<HouseholdSettings | null>(null)
@@ -41,6 +44,7 @@ export function HouseholdSettingsScreen() {
   const [description, setDescription] = useState("")
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading")
   const [error, setError] = useState("")
+  const [reauthMessage, setReauthMessage] = useState("")
   const [saved, setSaved] = useState(false)
   const [busy, setBusy] = useState(false)
   const [notificationStyle, setNotificationStyle] = useState<NotificationStyle>("NORMAL")
@@ -59,6 +63,27 @@ export function HouseholdSettingsScreen() {
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteError, setDeleteError] = useState("")
   const [revokeTargetId, setRevokeTargetId] = useState<string | null>(null)
+  const hasPassword = user?.hasPassword ?? true
+  const hasGoogle = user?.authProviders?.includes("GOOGLE") ?? false
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const authResult = params.get("auth")
+    if (authResult === "google-error") {
+      setReauthMessage("Google verification was not completed. Please try again.")
+    } else if (authResult === "google-reauthenticated") {
+      setReauthMessage("Google verification succeeded. Retry the action you were performing.")
+    }
+    if (authResult) {
+      params.delete("auth")
+      const query = params.toString()
+      window.history.replaceState(
+        {},
+        "",
+        query ? `${window.location.pathname}?${query}` : window.location.pathname,
+      )
+    }
+  }, [])
 
   const canEdit = settings?.currentUserRole === "OWNER"
   const canEditNotificationStyle =
@@ -188,8 +213,15 @@ export function HouseholdSettingsScreen() {
 
   const submitDeleteHousehold = async () => {
     if (!household || !settings) return
-    if (deleteName.trim() !== household.name || deletePassword.trim().length === 0) {
-      setDeleteError("Use the exact household name and your current password to continue.")
+    if (
+      deleteName.trim() !== household.name ||
+      (hasPassword && deletePassword.trim().length === 0)
+    ) {
+      setDeleteError(
+        hasPassword
+          ? "Use the exact household name and your current password to continue."
+          : "Use the exact household name to continue.",
+      )
       return
     }
     setDeleteBusy(true)
@@ -214,7 +246,7 @@ export function HouseholdSettingsScreen() {
     deleteConsent.two &&
     deleteConsent.three &&
     deleteName.trim() === (household?.name ?? "") &&
-    deletePassword.trim().length > 0
+    (!hasPassword || deletePassword.trim().length > 0)
   const revokeTarget = invitations.find((invitation) => invitation.id === revokeTargetId) ?? null
 
   return (
@@ -225,6 +257,11 @@ export function HouseholdSettingsScreen() {
         back={() => navigate("household")}
       />
       <main className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 pt-4">
+        {reauthMessage && (
+          <p role="status" className="rounded-xl bg-teal-50 p-3 text-sm text-teal-800">
+            {reauthMessage}
+          </p>
+        )}
         {status === "loading" && (
           <div
             aria-label="Loading household settings"
@@ -652,18 +689,39 @@ export function HouseholdSettingsScreen() {
                       value={deleteName}
                     />
                   </label>
-                  <label className="block text-sm font-medium text-slate-700">
-                    Password
-                    <PasswordInput
-                      autoComplete="current-password"
-                      className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-teal-400 focus:bg-white"
-                      id="delete-household-password"
-                      name="password"
-                      onChange={(event) => setDeletePassword(event.target.value)}
-                      placeholder="Current password"
-                      value={deletePassword}
-                    />
-                  </label>
+                  {hasPassword ? (
+                    <label className="block text-sm font-medium text-slate-700">
+                      Password
+                      <PasswordInput
+                        autoComplete="current-password"
+                        className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-teal-400 focus:bg-white"
+                        id="delete-household-password"
+                        name="password"
+                        onChange={(event) => setDeletePassword(event.target.value)}
+                        placeholder="Current password"
+                        value={deletePassword}
+                      />
+                    </label>
+                  ) : (
+                    <div>
+                      <p className="text-sm text-slate-600">
+                        This Google-only account needs recent verification before deletion.
+                      </p>
+                      {hasGoogle && features.google && (
+                        <button
+                          className="mt-3 min-h-11 w-full rounded-xl border border-teal-200 bg-white px-3 py-2 text-sm font-bold text-teal-700"
+                          onClick={() =>
+                            window.location.assign(
+                              apiUrl("/api/auth/google/reauthenticate?returnTo=household-settings"),
+                            )
+                          }
+                          type="button"
+                        >
+                          Reauthenticate with Google, then retry
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
                 {deleteError && (
                   <p role="alert" className="mt-3 text-sm text-rose-600">
