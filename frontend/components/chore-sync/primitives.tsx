@@ -4,12 +4,32 @@ import { cn } from "@/lib/utils"
 
 export function SectionHeader({ title, action }: { title: string; action?: ReactNode }) {
   return (
-    <div className="flex items-center justify-between mb-3">
-      <h2 className="text-xs font-black text-slate-500 uppercase tracking-wider font-display">
+    <div className="mb-3 flex items-end justify-between gap-3">
+      <h2 className="font-display text-[13px] font-extrabold uppercase tracking-[0.12em] text-slate-600">
         {title}
       </h2>
       {action}
     </div>
+  )
+}
+
+export function SettingsRow({
+  label,
+  description,
+  children,
+}: {
+  label: string
+  description: string
+  children: ReactNode
+}) {
+  return (
+    <label className="flex min-h-14 items-center justify-between gap-4 border-b border-slate-100 py-3 last:border-b-0">
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold text-slate-800">{label}</span>
+        <span className="mt-0.5 block text-xs leading-relaxed text-slate-500">{description}</span>
+      </span>
+      {children}
+    </label>
   )
 }
 

@@ -126,7 +126,7 @@ export function ProfileScreen() {
         </div>
       </header>
 
-      <main className="flex flex-col gap-4 px-4 pt-4">
+      <main className="flex flex-col gap-5 px-4 pt-4">
         {error && (
           <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">
             <p role="alert">{error}</p>
@@ -142,7 +142,9 @@ export function ProfileScreen() {
               key={stat.label}
             >
               <p className="font-display text-2xl font-black text-slate-900">{stat.value}</p>
-              <p className="mt-0.5 text-xs text-slate-400">{stat.label}</p>
+              <p className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                {stat.label}
+              </p>
             </div>
           ))}
         </div>
@@ -167,13 +169,16 @@ export function ProfileScreen() {
         </section>
 
         <section className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
-          <p className="px-4 pb-2 pt-4 font-display text-xs font-black uppercase tracking-wider text-slate-500">
-            Account
-          </p>
+          <div className="px-4 pb-3 pt-4">
+            <h2 className="font-display text-xs font-black uppercase tracking-wider text-slate-500">
+              Account
+            </h2>
+            <p className="mt-1 text-xs text-slate-500">Profile, notifications, and support</p>
+          </div>
           {accountItems.map((item) => (
             <button
               key={item.label}
-              className="flex w-full items-center gap-4 border-t border-slate-50 px-4 py-3.5 transition-colors hover:bg-slate-50"
+              className="flex min-h-12 w-full items-center gap-4 border-t border-slate-50 px-4 py-3.5 transition-colors hover:bg-slate-50"
               onClick={() => {
                 if (item.screen === "notifications") {
                   openNotifications("profile")

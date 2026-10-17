@@ -590,7 +590,12 @@ export function ChoreFormScreen() {
                       return (
                         <button
                           aria-pressed={checked}
-                          className="flex min-h-11 w-full items-center gap-3 rounded-xl border border-slate-100 px-3 text-left transition hover:bg-slate-50"
+                          className={cn(
+                            "flex min-h-12 w-full items-center gap-3 rounded-xl border px-3 text-left transition",
+                            checked
+                              ? "border-teal-200 bg-teal-50"
+                              : "border-slate-100 hover:bg-slate-50",
+                          )}
                           key={member.userId}
                           onClick={() => toggleMember(member.userId)}
                           type="button"
@@ -624,7 +629,12 @@ export function ChoreFormScreen() {
                     return (
                       <button
                         aria-pressed={checked}
-                        className="flex min-h-11 w-full items-center gap-3 rounded-xl border border-slate-100 px-3 text-left transition hover:bg-slate-50"
+                        className={cn(
+                          "flex min-h-12 w-full items-center gap-3 rounded-xl border px-3 text-left transition",
+                          checked
+                            ? "border-teal-200 bg-teal-50"
+                            : "border-slate-100 hover:bg-slate-50",
+                        )}
                         key={member.userId}
                         onClick={() => toggleMember(member.userId)}
                         type="button"
@@ -684,8 +694,9 @@ export function ChoreFormScreen() {
                       ] as const
                     ).map(([frequency, label]) => (
                       <button
+                        aria-pressed={values.frequency === frequency}
                         className={cn(
-                          "rounded-xl py-2.5 text-sm font-semibold transition",
+                          "min-h-11 rounded-xl py-2.5 text-sm font-semibold transition",
                           values.frequency === frequency
                             ? "bg-teal-600 text-white"
                             : "bg-slate-100 text-slate-600 hover:bg-slate-200",
@@ -830,6 +841,7 @@ export function ChoreFormScreen() {
                 <div className="grid grid-cols-4 gap-1.5">
                   {priorities.map((priority) => (
                     <button
+                      aria-pressed={values.priority === priority.value}
                       className={cn(
                         "rounded-lg px-1 py-2 text-xs font-bold transition",
                         values.priority === priority.value

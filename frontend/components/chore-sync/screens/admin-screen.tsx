@@ -110,7 +110,7 @@ export function AdminScreen({ initialTab = "chores" }: { initialTab?: "members" 
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 pb-20">
-      <header className="bg-white px-5 pt-12 pb-4">
+      <header className="border-b border-slate-100 bg-white px-5 pb-4 pt-12">
         <div className="flex items-center gap-3 mb-1">
           <button
             onClick={() => navigate("household")}
@@ -125,8 +125,8 @@ export function AdminScreen({ initialTab = "chores" }: { initialTab?: "members" 
           </div>
         </div>
 
-        <div className="flex gap-2 mt-4 bg-slate-100 p-1 rounded-xl">
-          <div className="flex-1 rounded-lg bg-white py-2 text-center text-sm font-bold text-teal-600 shadow-sm">
+        <div className="mt-4 flex gap-2 rounded-xl bg-slate-100 p-1">
+          <div className="flex-1 rounded-lg bg-white py-2.5 text-center text-sm font-bold text-teal-700 shadow-sm">
             📋 Chores
           </div>
         </div>
