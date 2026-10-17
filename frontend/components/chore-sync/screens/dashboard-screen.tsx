@@ -211,8 +211,8 @@ export function DashboardScreen() {
                 }
               />
               {today.length === 0 ? (
-                <div className="rounded-2xl border border-slate-100 bg-white px-5 py-5 text-center">
-                  <div className="text-4xl mb-2">🎉</div>
+                <div className="rounded-2xl border border-slate-100 bg-white px-5 py-4 text-center">
+                  <div className="mb-1.5 text-3xl">🎉</div>
                   <p className="font-bold text-slate-900">No chores due today!</p>
                   <p className="text-slate-400 text-sm mt-1">Enjoy your free time</p>
                 </div>

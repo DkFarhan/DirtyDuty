@@ -283,7 +283,7 @@ export function NotificationsScreen() {
               return (
                 <article
                   key={item.id}
-                  className={`rounded-2xl border p-4 shadow-sm ${read ? "border-slate-100 bg-white dark:border-slate-700 dark:bg-slate-800/70" : "border-teal-100 bg-teal-50 shadow-teal-100/40 dark:border-teal-800 dark:bg-teal-950/40 dark:shadow-none"}`}
+                  className={`rounded-2xl border p-4 ${read ? "border-slate-100 bg-white dark:border-slate-700 dark:bg-slate-800/70" : "border-teal-100 bg-teal-50 dark:border-teal-800 dark:bg-teal-950/40"}`}
                   data-read={read ? "true" : "false"}
                 >
                   <div className="flex items-start gap-3">
@@ -305,7 +305,7 @@ export function NotificationsScreen() {
                         )}
                       </div>
                       <p className="mt-1 text-sm leading-relaxed text-slate-600">{item.message}</p>
-                      <p className="mt-2 text-[10px] text-slate-400 dark:text-slate-300">
+                      <p className="mt-2 text-xs leading-relaxed text-slate-500 dark:text-slate-300">
                         {dateLabel(item.deliveredAt ?? item.sentAt ?? item.createdAt)} ·{" "}
                         {item.category.toLowerCase()}
                       </p>

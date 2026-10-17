@@ -69,7 +69,7 @@ export function ServerAssignmentCard({
       className={cn(
         "rounded-2xl border bg-white p-4 shadow-sm transition-shadow",
         completed
-          ? "border-emerald-100"
+          ? "border-slate-100"
           : assignment.overdue
             ? "border-rose-200"
             : "border-slate-100",
@@ -91,7 +91,7 @@ export function ServerAssignmentCard({
               <h3
                 className={cn(
                   "break-words font-display text-base font-extrabold leading-snug",
-                  completed ? "text-slate-500" : "text-slate-900",
+                  completed ? "text-slate-700" : "text-slate-900",
                 )}
               >
                 {assignment.title}
@@ -103,7 +103,7 @@ export function ServerAssignmentCard({
               </span>
             )}
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-relaxed">
             {assignment.categoryName && (
               <span className="font-semibold text-teal-700">{assignment.categoryName}</span>
             )}
@@ -112,7 +112,7 @@ export function ServerAssignmentCard({
               <span className="text-slate-500">About {assignment.estimatedMinutes} min</span>
             )}
           </div>
-          <p className="mt-1.5 text-xs font-medium text-slate-600">
+          <p className="mt-1.5 text-xs font-medium text-slate-700">
             {assigneeLabel(assignment, currentUserId)}
           </p>
           {completed && assignment.completedByDisplayName && (
@@ -125,7 +125,8 @@ export function ServerAssignmentCard({
       {!completed && assignment.canComplete && onComplete && (
         <button
           aria-label={`Mark ${assignment.title} complete`}
-          className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-teal-200 py-2.5 text-sm font-bold text-teal-700 transition hover:bg-teal-50 disabled:opacity-60"
+          aria-busy={completing}
+          className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-teal-200 bg-white py-2.5 text-sm font-bold text-teal-700 transition hover:bg-teal-50 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={completing}
           onClick={() => onComplete(assignment.id)}
           type="button"

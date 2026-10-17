@@ -135,19 +135,21 @@ export function ProfileScreen() {
             </button>
           </div>
         )}
-        <div className="grid grid-cols-3 gap-3">
+        <section
+          aria-label="Chore statistics"
+          className="grid grid-cols-3 divide-x divide-slate-100 rounded-2xl border border-slate-100 bg-white py-4 shadow-sm"
+        >
           {statTiles.map((stat) => (
-            <div
-              className="rounded-2xl border border-slate-100 bg-white p-4 text-center shadow-sm"
-              key={stat.label}
-            >
-              <p className="font-display text-2xl font-black text-slate-900">{stat.value}</p>
-              <p className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <div className="min-w-0 px-2 text-center" key={stat.label}>
+              <p className="font-display text-2xl font-black leading-none text-slate-900">
+                {stat.value}
+              </p>
+              <p className="mt-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
                 {stat.label}
               </p>
             </div>
           ))}
-        </div>
+        </section>
 
         <ThemeSelector />
 
@@ -205,7 +207,7 @@ export function ProfileScreen() {
         </section>
 
         <button
-          className="w-full rounded-xl border border-rose-200 py-3.5 font-bold text-rose-500 transition-colors hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+          className="w-full rounded-xl border border-slate-200 bg-white py-3.5 font-bold text-slate-700 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={isSubmitting}
           onClick={() => void handleLogout()}
           type="button"
