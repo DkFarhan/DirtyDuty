@@ -14,6 +14,7 @@ import {
 } from "@/lib/notifications/push"
 import { useChoreSync } from "@/lib/chore-sync/store"
 import { SubpageHeader } from "./subpage-header"
+import { SettingsRow } from "../primitives"
 
 function dateLabel(value: string) {
   const date = new Date(value)
@@ -227,7 +228,7 @@ export function NotificationsScreen() {
         action={
           unreadCount > 0 ? (
             <button
-              className="text-xs font-bold text-teal-700 disabled:opacity-50"
+              className="rounded-lg px-2 py-1 text-xs font-bold text-teal-700 transition-colors hover:bg-teal-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 disabled:opacity-50 dark:text-teal-300 dark:hover:bg-slate-700"
               disabled={busyId !== null}
               onClick={() => void markAllRead()}
               type="button"
@@ -282,7 +283,7 @@ export function NotificationsScreen() {
               return (
                 <article
                   key={item.id}
-                  className={`rounded-2xl border p-4 shadow-sm ${read ? "border-slate-100 bg-white" : "border-teal-100 bg-teal-50"}`}
+                  className={`rounded-2xl border p-4 ${read ? "border-slate-100 bg-white dark:border-slate-700 dark:bg-slate-800/70" : "border-teal-100 bg-teal-50 dark:border-teal-800 dark:bg-teal-950/40"}`}
                   data-read={read ? "true" : "false"}
                 >
                   <div className="flex items-start gap-3">
@@ -293,24 +294,24 @@ export function NotificationsScreen() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <h2
-                          className={`text-sm ${read ? "font-semibold text-slate-700" : "font-bold text-slate-900"}`}
+                          className={`text-sm ${read ? "font-semibold text-slate-700 dark:text-slate-200" : "font-bold text-slate-900 dark:text-white"}`}
                         >
                           {item.title}
                         </h2>
                         {!read && (
-                          <span className="rounded-full bg-teal-100 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-teal-700">
+                          <span className="rounded-full bg-teal-100 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-teal-700 dark:bg-teal-900/70 dark:text-teal-200">
                             Unread
                           </span>
                         )}
                       </div>
                       <p className="mt-1 text-sm leading-relaxed text-slate-600">{item.message}</p>
-                      <p className="mt-2 text-[10px] text-slate-400">
+                      <p className="mt-2 text-xs leading-relaxed text-slate-500 dark:text-slate-300">
                         {dateLabel(item.deliveredAt ?? item.sentAt ?? item.createdAt)} ·{" "}
                         {item.category.toLowerCase()}
                       </p>
                       {!read && (
                         <button
-                          className="mt-2 text-xs font-bold text-teal-700 underline-offset-2 hover:underline disabled:opacity-50"
+                          className="mt-2 text-xs font-bold text-teal-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 disabled:opacity-50 dark:text-teal-300"
                           disabled={busyId !== null}
                           onClick={() => void markRead(item)}
                           type="button"
@@ -319,7 +320,7 @@ export function NotificationsScreen() {
                         </button>
                       )}
                     </div>
-                    <span className="rounded-full bg-white/80 px-2 py-1 text-[9px] font-bold uppercase text-slate-500">
+                    <span className="rounded-full bg-white/80 px-2 py-1 text-[9px] font-bold uppercase text-slate-500 dark:bg-slate-700 dark:text-slate-200">
                       {item.priority.toLowerCase()}
                     </span>
                   </div>
@@ -330,7 +331,9 @@ export function NotificationsScreen() {
         )}
 
         <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-          <h2 className="font-bold text-slate-900">Notification preferences</h2>
+          <h2 className="font-display text-base font-extrabold text-slate-900">
+            Notification preferences
+          </h2>
           <p className="mt-1 text-xs text-slate-500">
             Choose which household notifications you receive.
           </p>
@@ -355,12 +358,12 @@ export function NotificationsScreen() {
             </div>
           )}
           {preferences && (
-            <div className="mt-3 flex flex-col divide-y divide-slate-100">
-              <label className="flex flex-col gap-2 py-3 text-sm font-semibold text-slate-800">
-                Notification style
+            <div className="mt-4">
+              <label className="flex flex-col gap-2 border-b border-slate-100 pb-4 text-sm font-semibold text-slate-800">
+                <span>Notification style</span>
                 <select
                   aria-label="Notification style"
-                  className="w-full rounded-lg border border-slate-200 bg-white p-2 text-sm"
+                  className="w-full rounded-lg border border-slate-200 bg-white p-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
                   onChange={(event) =>
                     updatePreference(
                       "notificationStyleOverride",
@@ -380,44 +383,52 @@ export function NotificationsScreen() {
                   ))}
                 </select>
               </label>
-              {preferenceLabels.map(([key, label, detail]) => (
-                <label className="flex items-center justify-between gap-3 py-3" key={key}>
-                  <span>
-                    <span className="block text-sm font-semibold text-slate-800">{label}</span>
-                    <span className="block text-xs text-slate-400">{detail}</span>
-                  </span>
+              <p className="pb-1 pt-4 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                Household activity
+              </p>
+              {preferenceLabels.slice(0, 5).map(([key, label, detail]) => (
+                <SettingsRow description={detail} key={key} label={label}>
                   <input
                     aria-label={label}
                     checked={preferences[key]}
-                    className="h-4 w-4 accent-teal-600"
+                    className="h-5 w-5 shrink-0 accent-teal-600"
                     onChange={(event) => updatePreference(key, event.target.checked)}
                     type="checkbox"
                   />
-                </label>
+                </SettingsRow>
               ))}
-              <label className="flex items-center justify-between gap-3 py-3">
-                <span>
-                  <span className="block text-sm font-semibold text-slate-800">
-                    Push notifications
-                  </span>
-                  <span className="block text-xs text-slate-400">
-                    Enable push notifications for this browser.
-                  </span>
-                </span>
+              <p className="pb-1 pt-4 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                Message preferences
+              </p>
+              {preferenceLabels.slice(5).map(([key, label, detail]) => (
+                <SettingsRow description={detail} key={key} label={label}>
+                  <input
+                    aria-label={label}
+                    checked={preferences[key]}
+                    className="h-5 w-5 shrink-0 accent-teal-600"
+                    onChange={(event) => updatePreference(key, event.target.checked)}
+                    type="checkbox"
+                  />
+                </SettingsRow>
+              ))}
+              <SettingsRow
+                description="Enable push notifications for this browser."
+                label="Push notifications"
+              >
                 <input
                   aria-label="Push notifications"
                   checked={preferences.pushEnabled}
-                  className="h-4 w-4 accent-teal-600"
+                  className="h-5 w-5 shrink-0 accent-teal-600"
                   onChange={(event) => updatePreference("pushEnabled", event.target.checked)}
                   type="checkbox"
                 />
-              </label>
-              <div className="grid grid-cols-1 gap-3 py-3 min-[390px]:grid-cols-2">
+              </SettingsRow>
+              <div className="grid grid-cols-1 gap-3 py-4 min-[390px]:grid-cols-2">
                 <label className="text-xs font-semibold text-slate-500">
                   Quiet hours start
                   <input
                     aria-label="Quiet hours start"
-                    className="mt-1 w-full rounded-lg border border-slate-200 p-2 text-sm text-slate-800"
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white p-2 text-sm text-slate-800 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
                     onChange={(event) =>
                       updatePreference("quietHoursStart", event.target.value || null)
                     }
@@ -429,7 +440,7 @@ export function NotificationsScreen() {
                   Quiet hours end
                   <input
                     aria-label="Quiet hours end"
-                    className="mt-1 w-full rounded-lg border border-slate-200 p-2 text-sm text-slate-800"
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white p-2 text-sm text-slate-800 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
                     onChange={(event) =>
                       updatePreference("quietHoursEnd", event.target.value || null)
                     }

@@ -9,6 +9,7 @@ import { profileApi, type Profile } from "@/lib/profile/api"
 import { BottomNav } from "../bottom-nav"
 import { BellIcon, ChevronRightIcon } from "../icons"
 import { Avatar } from "../primitives"
+import { ThemeSelector } from "@/components/theme/theme-selector"
 
 const accountItems = [
   { icon: "👤", label: "Edit Profile", screen: "edit-profile" as const },
@@ -125,7 +126,7 @@ export function ProfileScreen() {
         </div>
       </header>
 
-      <main className="flex flex-col gap-4 px-4 pt-4">
+      <main className="flex flex-col gap-5 px-4 pt-4">
         {error && (
           <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">
             <p role="alert">{error}</p>
@@ -134,17 +135,23 @@ export function ProfileScreen() {
             </button>
           </div>
         )}
-        <div className="grid grid-cols-3 gap-3">
+        <section
+          aria-label="Chore statistics"
+          className="grid grid-cols-3 divide-x divide-slate-100 rounded-2xl border border-slate-100 bg-white py-4 shadow-sm"
+        >
           {statTiles.map((stat) => (
-            <div
-              className="rounded-2xl border border-slate-100 bg-white p-4 text-center shadow-sm"
-              key={stat.label}
-            >
-              <p className="font-display text-2xl font-black text-slate-900">{stat.value}</p>
-              <p className="mt-0.5 text-xs text-slate-400">{stat.label}</p>
+            <div className="min-w-0 px-2 text-center" key={stat.label}>
+              <p className="font-display text-2xl font-black leading-none text-slate-900">
+                {stat.value}
+              </p>
+              <p className="mt-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                {stat.label}
+              </p>
             </div>
           ))}
-        </div>
+        </section>
+
+        <ThemeSelector />
 
         <section className="rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 p-5 text-white">
           <div className="mb-3 flex items-center justify-between">
@@ -164,13 +171,16 @@ export function ProfileScreen() {
         </section>
 
         <section className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
-          <p className="px-4 pb-2 pt-4 font-display text-xs font-black uppercase tracking-wider text-slate-500">
-            Account
-          </p>
+          <div className="px-4 pb-3 pt-4">
+            <h2 className="font-display text-xs font-black uppercase tracking-wider text-slate-500">
+              Account
+            </h2>
+            <p className="mt-1 text-xs text-slate-500">Profile, notifications, and support</p>
+          </div>
           {accountItems.map((item) => (
             <button
               key={item.label}
-              className="flex w-full items-center gap-4 border-t border-slate-50 px-4 py-3.5 transition-colors hover:bg-slate-50"
+              className="flex min-h-12 w-full items-center gap-4 border-t border-slate-50 px-4 py-3.5 transition-colors hover:bg-slate-50"
               onClick={() => {
                 if (item.screen === "notifications") {
                   openNotifications("profile")
@@ -197,7 +207,7 @@ export function ProfileScreen() {
         </section>
 
         <button
-          className="w-full rounded-xl border border-rose-200 py-3.5 font-bold text-rose-500 transition-colors hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+          className="w-full rounded-xl border border-rose-300 bg-transparent py-3.5 font-bold text-rose-700 transition-colors hover:border-rose-600 hover:bg-rose-600 hover:text-white active:border-rose-700 active:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-500 dark:text-rose-300 dark:hover:border-rose-700 dark:hover:bg-rose-700 dark:hover:text-white dark:active:border-rose-800 dark:active:bg-rose-800"
           disabled={isSubmitting}
           onClick={() => void handleLogout()}
           type="button"

@@ -110,7 +110,7 @@ export function AdminScreen({ initialTab = "chores" }: { initialTab?: "members" 
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 pb-20">
-      <header className="bg-white px-5 pt-12 pb-4">
+      <header className="border-b border-slate-100 bg-white px-5 pb-4 pt-12">
         <div className="flex items-center gap-3 mb-1">
           <button
             onClick={() => navigate("household")}
@@ -125,10 +125,9 @@ export function AdminScreen({ initialTab = "chores" }: { initialTab?: "members" 
           </div>
         </div>
 
-        <div className="flex gap-2 mt-4 bg-slate-100 p-1 rounded-xl">
-          <div className="flex-1 rounded-lg bg-white py-2 text-center text-sm font-bold text-teal-600 shadow-sm">
-            📋 Chores
-          </div>
+        <div className="mt-4 flex items-center gap-2 border-t border-slate-100 pt-4 text-sm font-semibold text-slate-600">
+          <span aria-hidden="true">📋</span>
+          <span>Chores</span>
         </div>
       </header>
 
@@ -137,7 +136,7 @@ export function AdminScreen({ initialTab = "chores" }: { initialTab?: "members" 
           <Button
             aria-label="Create a chore"
             onClick={() => navigate("create-chore")}
-            className="h-12 w-full rounded-xl bg-teal-600 text-[15px] font-bold text-white shadow-lg shadow-teal-100 hover:bg-teal-700"
+            className="h-12 w-full rounded-xl bg-teal-600 text-[15px] font-bold text-white shadow-sm hover:bg-teal-700"
             type="button"
           >
             <span>+</span> Create Chore
@@ -220,9 +219,9 @@ export function AdminScreen({ initialTab = "chores" }: { initialTab?: "members" 
                     >
                       {categoryIcon(category?.iconKey)}
                     </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-start justify-between gap-2">
-                        <h3 className="min-w-0 break-words font-display text-sm font-bold text-slate-900">
+                    <div className="min-w-0 flex-1 pr-8">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <h3 className="min-w-0 break-words font-display text-base font-extrabold leading-snug text-slate-900">
                           {chore.title}
                         </h3>
                         <span
@@ -236,17 +235,17 @@ export function AdminScreen({ initialTab = "chores" }: { initialTab?: "members" 
                           {chore.active ? "Active" : "Paused"}
                         </span>
                       </div>
-                      <p className="mt-1 text-xs text-slate-500">
+                      <p className="mt-1.5 text-xs font-medium text-slate-600">
                         {categoryLabel ?? "Uncategorized"}
                       </p>
-                      <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                      <p className="mt-1 text-xs leading-relaxed text-slate-600">
                         {describeRecurrence(chore.schedule?.recurrenceRule)}
                         {formatTime(chore.schedule?.dueTime)
                           ? ` · ${formatTime(chore.schedule?.dueTime)}`
                           : ""}
                       </p>
                       {(assignment || chore.estimatedMinutes || chore.difficulty) && (
-                        <p className="mt-1 text-xs text-slate-400">
+                        <p className="mt-1 text-xs leading-relaxed text-slate-500">
                           {[
                             assignment,
                             `Effort ${chore.difficulty}/5`,
@@ -260,7 +259,7 @@ export function AdminScreen({ initialTab = "chores" }: { initialTab?: "members" 
                     <button
                       aria-expanded={openMenuId === chore.id}
                       aria-label={`Actions for ${chore.title}`}
-                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100"
+                      className="absolute right-3 top-3 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
                       onClick={() => setOpenMenuId(openMenuId === chore.id ? null : chore.id)}
                       type="button"
                     >

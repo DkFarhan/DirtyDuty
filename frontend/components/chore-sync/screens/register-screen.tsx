@@ -24,11 +24,19 @@ export function RegisterScreen() {
   const { register, features } = useAuth()
   const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "" })
   const [error, setError] = useState("")
+  const [termsAccepted, setTermsAccepted] = useState(false)
+  const [termsError, setTermsError] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const handleSubmit = async () => {
     if (isSubmitting) return
     setError("")
+
+    if (!termsAccepted) {
+      setTermsError("Please agree to the Terms of Service to create an account.")
+      return
+    }
+    setTermsError("")
 
     if (form.password !== form.confirm) {
       setError("Passwords do not match.")
@@ -111,6 +119,41 @@ export function RegisterScreen() {
         </p>
       )}
 
+      <div className="mb-4">
+        <label className="flex items-start gap-2.5 text-sm leading-relaxed text-slate-600">
+          <input
+            aria-describedby={termsError ? "register-terms-error" : undefined}
+            checked={termsAccepted}
+            className="mt-1 h-4 w-4 shrink-0 accent-teal-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
+            onChange={(event) => {
+              setTermsAccepted(event.target.checked)
+              if (event.target.checked) setTermsError("")
+            }}
+            type="checkbox"
+          />
+          <span>
+            I agree to the{" "}
+            <a
+              className="font-semibold text-teal-700 underline underline-offset-2 hover:text-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 dark:text-teal-300 dark:hover:text-teal-200"
+              href="/terms"
+              rel="noopener noreferrer"
+              target="_blank"
+            >
+              Terms of Service
+            </a>
+          </span>
+        </label>
+        {termsError && (
+          <p
+            className="mt-1.5 text-xs font-medium text-rose-600"
+            id="register-terms-error"
+            role="alert"
+          >
+            {termsError}
+          </p>
+        )}
+      </div>
+
       <button
         onClick={handleSubmit}
         disabled={isSubmitting}
@@ -118,11 +161,6 @@ export function RegisterScreen() {
       >
         {isSubmitting ? "Creating Account..." : "Create Account"}
       </button>
-
-      <p className="text-center text-xs text-slate-400 mt-4">
-        By signing up you agree to our{" "}
-        <span className="text-teal-600 font-medium">Terms of Service</span>
-      </p>
     </div>
   )
 }

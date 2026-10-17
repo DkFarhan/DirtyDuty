@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
+import { ThemeProvider } from "@/components/theme/theme-provider"
 import type { Screen } from "@/lib/chore-sync/types"
 import { AuthProvider, useAuth } from "@/lib/auth/auth-context"
 import { getAuthRedirect } from "@/lib/auth/routing"
@@ -164,16 +165,18 @@ function ScreenRouter() {
 
 export function AppShell({ initialScreen = "login" }: { initialScreen?: Screen }) {
   return (
-    <AuthProvider>
-      <HouseholdProvider>
-        <ChoreSyncProvider initialScreen={initialScreen}>
-          <div className="min-h-screen bg-slate-200 flex items-start justify-center">
-            <div className="w-full max-w-sm bg-white min-h-screen relative overflow-hidden shadow-2xl">
-              <ScreenRouter />
+    <ThemeProvider>
+      <AuthProvider>
+        <HouseholdProvider>
+          <ChoreSyncProvider initialScreen={initialScreen}>
+            <div className="min-h-screen bg-slate-200 flex items-start justify-center">
+              <div className="w-full max-w-sm bg-white min-h-screen relative overflow-hidden shadow-2xl">
+                <ScreenRouter />
+              </div>
             </div>
-          </div>
-        </ChoreSyncProvider>
-      </HouseholdProvider>
-    </AuthProvider>
+          </ChoreSyncProvider>
+        </HouseholdProvider>
+      </AuthProvider>
+    </ThemeProvider>
   )
 }

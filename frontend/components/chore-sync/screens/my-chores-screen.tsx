@@ -94,7 +94,7 @@ export function MyChoresScreen() {
   }, [displayed, status, targetAssignmentId])
 
   return (
-    <div className="flex flex-col min-h-screen bg-slate-50 pb-20">
+    <div className="flex min-h-screen flex-col bg-slate-50 pb-20">
       <header className="bg-white px-5 pt-12 pb-4">
         <h1 className="text-2xl font-black text-slate-900 font-display">My Chores</h1>
         <p className="text-slate-500 text-sm mt-0.5">
@@ -105,7 +105,7 @@ export function MyChoresScreen() {
               : "Chore counts unavailable"}
         </p>
 
-        <div className="flex gap-2 mt-4 bg-slate-100 p-1 rounded-xl">
+        <div className="mt-4 flex gap-1 rounded-xl bg-slate-100 p-1">
           {(["upcoming", "completed"] as const).map((value) => {
             const isActive = tab === value
             const count =
@@ -118,8 +118,9 @@ export function MyChoresScreen() {
               <button
                 key={value}
                 onClick={() => setTab(value)}
+                aria-pressed={isActive}
                 className={cn(
-                  "flex-1 py-2 rounded-lg text-sm font-bold capitalize transition-all",
+                  "min-h-10 flex-1 rounded-lg py-2 text-sm font-bold capitalize transition-colors",
                   isActive ? "bg-white text-teal-600 shadow-sm" : "text-slate-500",
                 )}
                 type="button"
@@ -128,7 +129,7 @@ export function MyChoresScreen() {
                 <span
                   className={cn(
                     "ml-1.5 text-xs px-1.5 py-0.5 rounded-full",
-                    isActive ? "bg-teal-50 text-teal-600" : "bg-slate-200 text-slate-500",
+                    isActive ? "bg-teal-50 text-teal-700" : "bg-slate-200 text-slate-600",
                   )}
                 >
                   {count}
@@ -139,7 +140,7 @@ export function MyChoresScreen() {
         </div>
       </header>
 
-      <div className="px-4 pt-4 flex flex-col gap-3">
+      <main className="flex flex-col gap-3 px-4 pb-4 pt-5">
         {status === "loading" && (
           <div aria-label="Loading my chores" className="space-y-3">
             {[0, 1, 2].map((item) => (
@@ -170,7 +171,7 @@ export function MyChoresScreen() {
           </p>
         )}
         {status === "loaded" && displayed.length === 0 && (
-          <div className="bg-white rounded-2xl p-10 text-center border border-slate-100">
+          <div className="rounded-2xl border border-slate-100 bg-white px-5 py-7 text-center">
             <div className="text-4xl mb-3">{tab === "upcoming" ? "🎉" : "📋"}</div>
             <p className="font-bold text-slate-900">
               {tab === "upcoming" ? "All caught up!" : "Nothing completed yet"}
@@ -194,7 +195,7 @@ export function MyChoresScreen() {
               />
             </div>
           ))}
-      </div>
+      </main>
 
       <BottomNav active="my-chores" navigate={navigate} />
     </div>

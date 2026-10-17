@@ -185,7 +185,7 @@ export function HouseholdScreen() {
         </div>
       </header>
 
-      <div className="px-4 pt-4 flex flex-col gap-4">
+      <div className="flex flex-col gap-5 px-4 pt-5">
         <section>
           <SectionHeader title="Members" />
           {memberStatus === "loading" && (
@@ -235,7 +235,7 @@ export function HouseholdScreen() {
         {canManage && (
           <section>
             <SectionHeader title="Admin Actions" />
-            <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm">
+            <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
               {adminActions.map((item) => (
                 <button
                   key={item.action}
@@ -245,12 +245,12 @@ export function HouseholdScreen() {
                     if (item.action === "settings") navigate("household-settings")
                   }}
                   type="button"
-                  className="w-full flex items-center gap-4 px-4 py-3.5 transition-colors border-b border-slate-50 last:border-0 hover:bg-slate-50"
+                  className="flex min-h-14 w-full items-center gap-4 border-b border-slate-50 px-4 py-3.5 text-left transition-colors last:border-0 hover:bg-slate-50"
                 >
                   <span className="text-xl w-8 text-center">{item.icon}</span>
                   <div className="flex-1 text-left">
-                    <p className="font-semibold text-slate-900 text-sm">{item.label}</p>
-                    <p className="text-slate-400 text-xs">{item.sub}</p>
+                    <p className="text-sm font-semibold text-slate-900">{item.label}</p>
+                    <p className="mt-0.5 text-xs text-slate-500">{item.sub}</p>
                   </div>
                   <ChevronRightIcon className="w-4 h-4 text-slate-300" />
                 </button>

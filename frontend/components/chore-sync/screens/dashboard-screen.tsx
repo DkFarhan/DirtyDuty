@@ -141,7 +141,7 @@ export function DashboardScreen() {
         />
       )}
 
-      <div className="px-4 pt-4 flex flex-col gap-4">
+      <main className="flex flex-col gap-5 px-4 pb-4 pt-5">
         {status === "loading" && (
           <div aria-label="Loading dashboard" className="space-y-4">
             {[0, 1, 2].map((item) => (
@@ -173,8 +173,8 @@ export function DashboardScreen() {
         )}
         {status === "loaded" && dashboard && (
           <>
-            <section className="bg-gradient-to-br from-teal-600 to-teal-500 rounded-2xl p-5 text-white">
-              <div className="flex items-center justify-between mb-3">
+            <section className="rounded-2xl bg-gradient-to-br from-teal-600 to-teal-500 p-5 text-white shadow-sm">
+              <div className="mb-3 flex items-center justify-between">
                 <div>
                   <p className="text-teal-100 text-xs font-medium uppercase tracking-wider">
                     This Week
@@ -196,7 +196,7 @@ export function DashboardScreen() {
                 barClass="bg-white"
                 className="h-2"
               />
-              <p className="text-teal-100 text-xs mt-2">Household completion rate</p>
+              <p className="mt-2 text-xs font-medium text-teal-100">Household completion rate</p>
             </section>
 
             <section>
@@ -204,15 +204,15 @@ export function DashboardScreen() {
                 title="Today"
                 action={
                   today.length > 0 ? (
-                    <span className="text-xs bg-rose-100 text-rose-600 font-semibold px-2 py-0.5 rounded-full">
+                    <span className="rounded-full bg-rose-100 px-2.5 py-1 text-[11px] font-bold text-rose-700">
                       {today.filter((item) => item.status === "PENDING").length} pending
                     </span>
                   ) : null
                 }
               />
               {today.length === 0 ? (
-                <div className="bg-white rounded-2xl p-6 text-center border border-slate-100">
-                  <div className="text-4xl mb-2">🎉</div>
+                <div className="rounded-2xl border border-slate-100 bg-white px-5 py-4 text-center">
+                  <div className="mb-1.5 text-3xl">🎉</div>
                   <p className="font-bold text-slate-900">No chores due today!</p>
                   <p className="text-slate-400 text-sm mt-1">Enjoy your free time</p>
                 </div>
@@ -235,7 +235,7 @@ export function DashboardScreen() {
             <section>
               <SectionHeader title="This Week" />
               {week.length === 0 ? (
-                <div className="rounded-2xl border border-slate-100 bg-white p-5 text-center text-sm text-slate-400">
+                <div className="rounded-2xl border border-slate-100 bg-white px-4 py-3.5 text-sm text-slate-500">
                   No chores scheduled this week.
                 </div>
               ) : (
@@ -253,7 +253,7 @@ export function DashboardScreen() {
             </section>
           </>
         )}
-      </div>
+      </main>
 
       <BottomNav active="dashboard" navigate={navigate} />
     </div>

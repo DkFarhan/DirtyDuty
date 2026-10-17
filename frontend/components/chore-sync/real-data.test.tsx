@@ -141,6 +141,52 @@ describe("server-backed chore data", () => {
     expect(new Headers(completeRequest?.[1]?.headers).get("X-CSRF-TOKEN")).toBe("complete-csrf")
   })
 
+  it("signs out from Profile using the existing account flow", async () => {
+    fetchMock.mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.endsWith("/api/auth/me")) return jsonResponse(user)
+      if (url.endsWith("/api/auth/providers"))
+        return jsonResponse({ google: false, passwordReset: false })
+      if (url.endsWith("/api/households")) return jsonResponse([household])
+      if (url.endsWith("/api/households/home-1/dashboard")) return jsonResponse(dashboard)
+      if (url.endsWith("/api/notifications/unread-count")) return jsonResponse({ count: 0 })
+      if (url.endsWith("/api/profile")) {
+        return jsonResponse({
+          id: user.userId,
+          displayName: user.displayName,
+          email: user.email,
+          avatarUrl: null,
+          householdName: household.name,
+          assigned: 5,
+          completed: 2,
+          completionRate: 40,
+        })
+      }
+      if (url.endsWith("/api/auth/csrf")) {
+        return jsonResponse({ token: "profile-logout-csrf", headerName: "X-CSRF-TOKEN" })
+      }
+      if (url.endsWith("/api/auth/logout")) return new Response(null, { status: 204 })
+      return jsonResponse({}, 404)
+    })
+
+    render(<AppShell />)
+    await screen.findByText("50% done")
+    fireEvent.click(screen.getByRole("button", { name: "Profile" }))
+    await screen.findByRole("heading", { name: user.displayName })
+
+    const signOutButton = screen.getByRole("button", { name: "Sign Out" })
+    expect(signOutButton.className).toContain("border-rose-300")
+    expect(signOutButton.className).toContain("text-rose-700")
+    expect(signOutButton.className).toContain("hover:bg-rose-600")
+    expect(signOutButton.className).toContain("dark:hover:bg-rose-700")
+    fireEvent.click(signOutButton)
+
+    expect(await screen.findByRole("button", { name: "Sign In" })).toBeTruthy()
+    expect(
+      fetchMock.mock.calls.some(([url]) => url === "http://localhost:8080/api/auth/logout"),
+    ).toBe(true)
+  })
+
   it("loads upcoming and completed chores, shows server counts and refreshes after completion", async () => {
     await startAtDashboard({
       weekSummary: { completedCount: 0, totalCount: 0, completionPercentage: 0 },
