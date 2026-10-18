@@ -60,9 +60,18 @@ describe("theme selection", () => {
 
     expect(screen.getByRole("radiogroup", { name: "Color theme" })).toBeTruthy()
     expect(screen.getByRole("radio", { name: "System" })).toBeTruthy()
+    expect(screen.getByText("Always use the light theme.")).toBeTruthy()
+    expect(screen.getByText("Always use the dark theme.")).toBeTruthy()
+    expect(screen.getByText("Match your device appearance automatically.")).toBeTruthy()
     await waitFor(() =>
       expect(screen.getByRole<HTMLInputElement>("radio", { name: "System" }).checked).toBe(true),
     )
+    expect(
+      screen.getByRole("radio", { name: "System" }).closest("label")?.getAttribute("data-selected"),
+    ).toBe("true")
+    expect(
+      screen.getByRole("radio", { name: "Light" }).closest("label")?.getAttribute("data-selected"),
+    ).toBe("false")
   })
 
   it("selects Light and persists the explicit preference", async () => {
@@ -84,9 +93,9 @@ describe("theme selection", () => {
       expect(screen.getByRole<HTMLInputElement>("radio", { name: "Dark" }).checked).toBe(true)
       expect(document.documentElement.classList.contains("dark")).toBe(true)
     })
-    expect(screen.getByRole("radio", { name: "Dark" }).closest("label")?.className).toContain(
-      "dark:data-[selected=true]:bg-teal-950/60",
-    )
+    expect(
+      screen.getByRole("radio", { name: "Dark" }).closest("label")?.getAttribute("data-selected"),
+    ).toBe("true")
     expect(localStorage.getItem(themeStorageKey)).toBe("dark")
   })
 

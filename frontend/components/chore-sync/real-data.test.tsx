@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { AppShell } from "./app-shell"
 import { clearCsrfToken } from "@/lib/auth/api"
@@ -63,7 +63,7 @@ async function startAtDashboard(data = dashboard, householdData = household) {
     .mockResolvedValueOnce(jsonResponse([householdData]))
     .mockResolvedValueOnce(jsonResponse(data))
   render(<AppShell />)
-  await screen.findByText(`${data.weekSummary.completionPercentage}% done`)
+  await screen.findByRole("heading", { name: "Today" }, { timeout: 3_000 })
 }
 
 describe("server-backed chore data", () => {
@@ -95,7 +95,7 @@ describe("server-backed chore data", () => {
     })
     expect(screen.getByText("1/2")).toBeTruthy()
     expect(screen.getAllByText("Assigned to You, Ahmed")).toHaveLength(2)
-    expect(screen.getAllByText("Overdue")).toHaveLength(2)
+    expect(screen.getAllByText("Overdue")).toHaveLength(3)
     const scheduledDay = new Intl.DateTimeFormat(undefined, {
       weekday: "short",
       month: "short",
@@ -141,6 +141,63 @@ describe("server-backed chore data", () => {
     expect(new Headers(completeRequest?.[1]?.headers).get("X-CSRF-TOKEN")).toBe("complete-csrf")
   })
 
+  it("shows personal weekly progress from only the current user's assignments", async () => {
+    const otherMemberAssignment = {
+      ...pendingAssignment,
+      id: "assignment-other",
+      status: "COMPLETED" as const,
+      assignees: [{ userId: "user-2", displayName: "Ahmed" }],
+    }
+    const personalAssignments = Array.from({ length: 9 }, (_, index) => ({
+      ...pendingAssignment,
+      id: `personal-assignment-${index}`,
+      status: index < 4 ? ("COMPLETED" as const) : ("PENDING" as const),
+      overdue: index === 5,
+    }))
+    await startAtDashboard({
+      weekSummary: { completedCount: 1, totalCount: 2, completionPercentage: 50 },
+      today: [personalAssignments[4], personalAssignments[5]],
+      thisWeek: [...personalAssignments, otherMemberAssignment],
+    })
+
+    expect(screen.getByText("4 of 9 completed")).toBeTruthy()
+    expect(
+      screen.getByRole("img", { name: "44% complete, 4 of 9 assigned chores completed" }),
+    ).toBeTruthy()
+    const yourWeek = screen.getByRole("region", { name: "Your Week" })
+    expect(within(yourWeek).getByText("Assigned").nextElementSibling?.textContent).toBe("9")
+    expect(within(yourWeek).getByText("Completed").nextElementSibling?.textContent).toBe("4")
+    expect(within(yourWeek).getByText("Due today").nextElementSibling?.textContent).toBe("1")
+    expect(within(yourWeek).getByText("Overdue").nextElementSibling?.textContent).toBe("1")
+  })
+
+  it("shows completed personal chores in the weekly progress ring", async () => {
+    await startAtDashboard({
+      weekSummary: { completedCount: 1, totalCount: 1, completionPercentage: 100 },
+      today: [],
+      thisWeek: [{ ...pendingAssignment, status: "COMPLETED", overdue: false }],
+    })
+
+    expect(screen.getByText("1 of 1 completed")).toBeTruthy()
+    expect(
+      screen.getByRole("img", { name: "100% complete, 1 of 1 assigned chores completed" }),
+    ).toBeTruthy()
+  })
+
+  it("shows zero personal progress without dividing by zero when no chores are assigned", async () => {
+    await startAtDashboard({
+      weekSummary: { completedCount: 0, totalCount: 0, completionPercentage: 0 },
+      today: [],
+      thisWeek: [],
+    })
+
+    expect(screen.getByText("0 of 0 completed")).toBeTruthy()
+    expect(screen.getByText("No chores assigned to you this week.")).toBeTruthy()
+    expect(
+      screen.getByRole("img", { name: "0% complete, 0 of 0 assigned chores completed" }),
+    ).toBeTruthy()
+  })
+
   it("signs out from Profile using the existing account flow", async () => {
     fetchMock.mockImplementation(async (input) => {
       const url = String(input)
@@ -170,9 +227,50 @@ describe("server-backed chore data", () => {
     })
 
     render(<AppShell />)
-    await screen.findByText("50% done")
+    await screen.findByRole("heading", { name: "Today" }, { timeout: 3_000 })
     fireEvent.click(screen.getByRole("button", { name: "Profile" }))
     await screen.findByRole("heading", { name: user.displayName })
+    expect(await screen.findByText(user.email)).toBeTruthy()
+    const profileHeader = screen.getByRole("heading", { name: user.displayName }).closest("header")
+    expect(profileHeader?.querySelector('button[aria-label^="Notifications"]')).toBeNull()
+    expect(screen.getByRole("button", { name: /^Edit$/ })).toBeTruthy()
+    expect(screen.queryByText("Assigned")).toBeNull()
+    expect(screen.queryByText("Completed")).toBeNull()
+    expect(screen.queryByText("Rate")).toBeNull()
+    expect(screen.getByText("Rewards & Streaks")).toBeTruthy()
+    expect(screen.getByText("Developed by Farhan Habib")).toBeTruthy()
+    expect(screen.getByText("© 2026 DirtyDuty")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Help & Support" })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("button", { name: /^Edit$/ }))
+    expect(await screen.findByRole("heading", { name: "Edit Profile" })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Back" }))
+    expect(await screen.findByRole("heading", { name: user.displayName })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("button", { name: "Appearance" }))
+    expect(await screen.findByRole("heading", { name: "Appearance" })).toBeTruthy()
+    expect(screen.getByRole("radio", { name: "Light" })).toBeTruthy()
+    expect(screen.getByRole("radio", { name: "Dark" })).toBeTruthy()
+    expect(screen.getByRole("radio", { name: "System" })).toBeTruthy()
+    expect(screen.getByText("Match your device appearance automatically.")).toBeTruthy()
+    expect(screen.getByRole("radio", { name: "Light" }).closest("label")?.className).toContain(
+      "min-h-[88px]",
+    )
+    expect(screen.getByRole("radio", { name: "Light" }).closest("label")?.className).toContain(
+      "border-b",
+    )
+    fireEvent.click(screen.getByRole("radio", { name: "Light" }))
+    await waitFor(() => expect(document.documentElement.classList.contains("light")).toBe(true))
+    fireEvent.click(screen.getByRole("radio", { name: "Dark" }))
+    await waitFor(() => expect(document.documentElement.classList.contains("dark")).toBe(true))
+    fireEvent.click(screen.getByRole("radio", { name: "System" }))
+    await waitFor(() => expect(document.documentElement.classList.contains("light")).toBe(true))
+    fireEvent.click(screen.getByRole("button", { name: "Back" }))
+    expect(await screen.findByRole("heading", { name: user.displayName })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Help & Support" }))
+    expect(await screen.findByRole("heading", { name: "Help & Support" })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Back" }))
+    expect(await screen.findByRole("heading", { name: user.displayName })).toBeTruthy()
 
     const signOutButton = screen.getByRole("button", { name: "Sign Out" })
     expect(signOutButton.className).toContain("border-rose-300")
@@ -466,7 +564,7 @@ describe("server-backed chore data", () => {
       .mockResolvedValueOnce(jsonResponse([household]))
       .mockRejectedValueOnce(new TypeError("offline"))
     render(<AppShell />)
-    expect(await screen.findByRole("alert")).toHaveProperty(
+    expect(await screen.findByRole("alert", {}, { timeout: 3_000 })).toHaveProperty(
       "textContent",
       "Unable to connect to DirtyDuty. Please try again.",
     )

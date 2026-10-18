@@ -16,6 +16,7 @@ export type Screen =
   | "household-settings"
   | "notifications"
   | "edit-profile"
+  | "appearance"
   | "privacy-security"
   | "help-support"
   | "legal-acceptance"

@@ -6,7 +6,7 @@ import { metadata } from "./metadata"
 
 const inter = Inter({
   subsets: ["latin"],
-  weight: ["300", "400", "500", "600"],
+  weight: ["300", "400", "500", "600", "800"],
   variable: "--font-inter",
 })
 
