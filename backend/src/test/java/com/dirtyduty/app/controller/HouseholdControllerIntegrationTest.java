@@ -1705,7 +1705,13 @@ class HouseholdControllerIntegrationTest {
             "SELECT user_id FROM chore_assignment_assignees WHERE assignment_id=? ORDER BY user_id",
             (rs, row) -> rs.getObject("user_id", UUID.class),
             randomAssignmentId);
-    assertThat(randomAssignees).hasSize(2);
+    List<UUID> randomParticipants =
+        List.of(
+            UUID.fromString(owner.userId()),
+            UUID.fromString(member.userId()),
+            UUID.fromString(nonAssignee.userId()));
+    assertThat(randomAssignees).hasSize(2).doesNotHaveDuplicates();
+    assertThat(randomParticipants).containsAll(randomAssignees);
     mockMvc.perform(get(base + "/dashboard").cookie(owner.cookie())).andExpect(status().isOk());
     mockMvc.perform(get(base + "/dashboard").cookie(owner.cookie())).andExpect(status().isOk());
     assertThat(
@@ -1735,12 +1741,42 @@ class HouseholdControllerIntegrationTest {
             .andExpect(jsonPath("$[0].completedThisWeek").isNumber())
             .andReturn();
     var stats = objectMapper.readTree(memberStats.getResponse().getContentAsString());
-    var ownerStats =
-        java.util.stream.StreamSupport.stream(stats.spliterator(), false)
-            .filter(item -> item.get("userId").asText().equals(owner.userId()))
-            .findFirst()
-            .orElseThrow();
-    assertThat(ownerStats.get("completedThisWeek").asLong()).isEqualTo(1);
+    LocalDate weekStart = today.with(java.time.DayOfWeek.MONDAY);
+    LocalDate nextWeekStart = weekStart.plusWeeks(1);
+    for (var memberStatsEntry : stats) {
+      UUID memberId = UUID.fromString(memberStatsEntry.get("userId").asText());
+      long expectedAssignedThisWeek =
+          jdbcTemplate.queryForObject(
+              """
+              SELECT COUNT(*) FROM chore_assignment_assignees aa
+              JOIN chore_assignments a ON a.id=aa.assignment_id
+              WHERE aa.household_id=? AND aa.user_id=? AND a.scheduled_for>=? AND a.scheduled_for<?
+                AND a.status<>'CANCELLED'
+              """,
+              Long.class,
+              householdId,
+              memberId,
+              weekStart,
+              nextWeekStart);
+      long expectedCompletedThisWeek =
+          jdbcTemplate.queryForObject(
+              """
+              SELECT COUNT(DISTINCT a.id) FROM chore_assignment_assignees aa
+              JOIN chore_assignments a ON a.id=aa.assignment_id
+              JOIN chore_completions cc ON cc.assignment_id=a.id
+              WHERE aa.household_id=? AND aa.user_id=? AND a.scheduled_for>=? AND a.scheduled_for<?
+                AND a.status='COMPLETED'
+              """,
+              Long.class,
+              householdId,
+              memberId,
+              weekStart,
+              nextWeekStart);
+      assertThat(memberStatsEntry.get("assignedThisWeek").asLong())
+          .isEqualTo(expectedAssignedThisWeek);
+      assertThat(memberStatsEntry.get("completedThisWeek").asLong())
+          .isEqualTo(expectedCompletedThisWeek);
+    }
   }
 
   @Test
