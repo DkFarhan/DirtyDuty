@@ -13,6 +13,7 @@ describe("auth route protection", () => {
       expect(getHouseholdRedirect("dashboard", true, "empty", 0)).toBe("welcome")
       expect(getHouseholdRedirect("login", true, "has-households", 1)).toBe("dashboard")
       expect(getHouseholdRedirect("welcome", true, "has-households", 1)).toBe("dashboard")
+      expect(getHouseholdRedirect("appearance", true, "has-households", 1)).toBeNull()
     })
 
     it("does not convert household loading or failure into an empty state", () => {
@@ -31,6 +32,7 @@ describe("auth route protection", () => {
   it("redirects unauthenticated users away from protected screens", () => {
     expect(getAuthRedirect("dashboard", false, false)).toBe("login")
     expect(getAuthRedirect("profile", false, false)).toBe("login")
+    expect(getAuthRedirect("appearance", false, false)).toBe("login")
   })
 
   it("redirects authenticated users away from login and registration", () => {

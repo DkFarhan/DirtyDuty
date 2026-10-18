@@ -83,7 +83,7 @@ async function openHousehold() {
     .mockResolvedValueOnce(jsonResponse([household]))
     .mockResolvedValueOnce(jsonResponse(dashboard))
   render(<AppShell />)
-  await screen.findByText("Today")
+  await screen.findByRole("heading", { name: "Today" }, { timeout: 3_000 })
   fireEvent.click(screen.getByRole("button", { name: "Household" }))
 }
 

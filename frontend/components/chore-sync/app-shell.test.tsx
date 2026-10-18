@@ -26,7 +26,7 @@ function jsonResponse(payload: unknown, status = 200) {
 
 async function openLogin() {
   render(<AppShell />)
-  await screen.findByRole("button", { name: "Sign In" })
+  await screen.findByRole("button", { name: "Sign In" }, { timeout: 3_000 })
   expect(screen.getByRole("img", { name: "DirtyDuty" })).toBeTruthy()
   expect(screen.getByRole("button", { name: "Sign In" }).className).toContain("auth-primary-button")
   expect(document.querySelector(".auth-logo-surface")).toBeTruthy()
@@ -60,15 +60,20 @@ describe("authentication screens", () => {
   })
 
   it("restores the legal-acceptance return screen after auth restoration and consumes its URL", async () => {
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse({ ...user, legalAcceptanceRequired: true }))
-      .mockResolvedValueOnce(jsonResponse({ google: false, passwordReset: false }))
-      .mockResolvedValueOnce(jsonResponse({ message: "Legal acceptance required" }, 403))
+    fetchMock.mockImplementation(async (input) => {
+      if (String(input).endsWith("/api/auth/me"))
+        return jsonResponse({ ...user, legalAcceptanceRequired: true })
+      if (String(input).endsWith("/api/households"))
+        return jsonResponse({ message: "Legal acceptance required" }, 403)
+      return jsonResponse({}, 404)
+    })
     window.history.replaceState({}, "", "/?screen=legal-acceptance")
 
     render(<AppShell />)
 
-    expect(await screen.findByRole("heading", { name: "Review our policies" })).toBeTruthy()
+    expect(
+      await screen.findByRole("heading", { name: "Review our policies" }, { timeout: 3_000 }),
+    ).toBeTruthy()
     expect(screen.getByRole("link", { name: /Terms of Service/ }).getAttribute("href")).toBe(
       "/terms?returnTo=legal-acceptance",
     )
@@ -96,17 +101,21 @@ describe("authentication screens", () => {
     window.history.replaceState({}, "", "/?screen=privacy-security")
 
     render(<AppShell />)
-    expect(screen.getByText("Loading...")).toBeTruthy()
+    expect(screen.getByRole("status", { name: "Starting DirtyDuty" })).toBeTruthy()
+    expect(screen.getByText("Loading...").closest('[aria-hidden="true"]')).toBeTruthy()
     expect(screen.queryByRole("heading", { name: "Privacy & Security" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Sign In" })).toBeNull()
 
     resolveMe(jsonResponse(user))
 
-    expect(await screen.findByRole("heading", { name: "Privacy & Security" })).toBeTruthy()
+    expect(
+      await screen.findByRole("heading", { name: "Privacy & Security" }, { timeout: 3_000 }),
+    ).toBeTruthy()
     expect(screen.queryByText("Welcome!")).toBeNull()
     expect(window.location.search).toBe("")
   })
 
-  it("shows a loading state until /me restores the session", async () => {
+  it("shows the splash and not Login until /me restores the session", async () => {
     let resolveMe!: (response: Response) => void
     fetchMock.mockReturnValueOnce(
       new Promise((resolve) => {
@@ -116,12 +125,16 @@ describe("authentication screens", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse([]))
 
     render(<AppShell />)
-    expect(screen.getByText("Loading...")).toBeTruthy()
+    expect(screen.getByRole("status", { name: "Starting DirtyDuty" })).toBeTruthy()
+    expect(screen.getByText("Loading...").closest('[aria-hidden="true"]')).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Sign In" })).toBeNull()
     expect(fetchMock).toHaveBeenCalledTimes(1)
 
     resolveMe(jsonResponse(user))
-    expect(await screen.findByText("Welcome!")).toBeTruthy()
+    expect(
+      await screen.findByRole("heading", { name: "Welcome!" }, { timeout: 3_000 }),
+    ).toBeTruthy()
+    expect(screen.queryByRole("status", { name: "Starting DirtyDuty" })).toBeNull()
     expect(screen.getByRole("img", { name: "DirtyDuty" })).toBeTruthy()
     expect(fetchMock).toHaveBeenCalledWith(
       "http://localhost:8080/api/auth/me",
@@ -130,6 +143,17 @@ describe("authentication screens", () => {
       }),
     )
     expect(fetchMock.mock.calls[1][0]).toBe("http://localhost:8080/api/households")
+  })
+
+  it("does not replay the splash during internal navigation after startup", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({}, 401))
+    await openLogin()
+    expect(screen.queryByRole("status", { name: "Starting DirtyDuty" })).toBeNull()
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign up" }))
+
+    expect(screen.getByRole("heading", { name: "Create account" })).toBeTruthy()
+    expect(screen.queryByRole("status", { name: "Starting DirtyDuty" })).toBeNull()
   })
 
   it("toggles login password visibility without changing the value or submitting", async () => {
@@ -387,7 +411,9 @@ describe("authentication screens", () => {
     stubAuthFeatures(fetchMock, { google: true, passwordReset: false })
 
     render(<AppShell />)
-    expect(await screen.findByText(/already exists for this Google email/i)).toBeTruthy()
+    expect(
+      await screen.findByRole("button", { name: "Sign in and link Google" }, { timeout: 3_000 }),
+    ).toBeTruthy()
     fireEvent.change(screen.getByLabelText("Password"), {
       target: { value: "StrongPassword123!" },
     })
@@ -413,7 +439,9 @@ describe("authentication screens", () => {
     stubAuthFeatures(fetchMock)
 
     render(<AppShell initialScreen="reset-password" />)
-    expect(await screen.findByRole("button", { name: "Update password" })).toBeTruthy()
+    expect(
+      await screen.findByRole("button", { name: "Update password" }, { timeout: 3_000 }),
+    ).toBeTruthy()
     await waitFor(() => expect(window.location.hash).toBe(""))
     fireEvent.change(screen.getByLabelText("New password"), {
       target: { value: "NewStrongPassword123!" },
@@ -439,7 +467,7 @@ describe("authentication screens", () => {
     stubAuthFeatures(fetchMock)
 
     render(<AppShell initialScreen="reset-password" />)
-    await screen.findByRole("button", { name: "Update password" })
+    await screen.findByRole("button", { name: "Update password" }, { timeout: 3_000 })
     fireEvent.change(screen.getByLabelText("New password"), { target: { value: "short" } })
     fireEvent.change(screen.getByLabelText("Confirm new password"), {
       target: { value: "short" },
@@ -460,7 +488,7 @@ describe("authentication screens", () => {
     stubAuthFeatures(fetchMock)
 
     render(<AppShell initialScreen="reset-password" />)
-    await screen.findByRole("button", { name: "Update password" })
+    await screen.findByRole("button", { name: "Update password" }, { timeout: 3_000 })
     fireEvent.change(screen.getByLabelText("New password"), {
       target: { value: "NewStrongPassword123!" },
     })

@@ -35,17 +35,23 @@ function jsonResponse(payload: unknown, status = 200) {
   })
 }
 
-function startAuthenticated(households: unknown[] = []) {
+async function startAuthenticated(households: unknown[] = []) {
   fetchMock
     .mockResolvedValueOnce(jsonResponse(user))
     .mockResolvedValueOnce(jsonResponse(households))
   if (households.length > 0) fetchMock.mockResolvedValueOnce(jsonResponse(dashboard))
   render(<AppShell />)
+  await screen.findByRole(
+    "heading",
+    { name: households.length > 0 ? "Today" : "Welcome!" },
+    {
+      timeout: 3_000,
+    },
+  )
 }
 
 async function openWelcome() {
-  startAuthenticated()
-  await screen.findByRole("button", { name: /Create a Household/ })
+  await startAuthenticated()
 }
 
 describe("household onboarding", () => {
@@ -65,7 +71,7 @@ describe("household onboarding", () => {
   })
 
   it("loads households only after auth restoration and routes existing members to the dashboard", async () => {
-    startAuthenticated([household])
+    await startAuthenticated([household])
 
     expect(await screen.findByText("Today")).toBeTruthy()
     expect(screen.queryByText("Welcome!")).toBeNull()
@@ -84,7 +90,7 @@ describe("household onboarding", () => {
       .mockResolvedValueOnce(jsonResponse([]))
     render(<AppShell />)
 
-    expect((await screen.findByRole("alert")).textContent).toContain(
+    expect((await screen.findByRole("alert", {}, { timeout: 3_000 })).textContent).toContain(
       "Unable to connect to DirtyDuty",
     )
     expect(screen.queryByText("Welcome!")).toBeNull()
@@ -129,7 +135,7 @@ describe("household onboarding", () => {
   })
 
   it("generates and displays a secure invite from Household Admin Actions", async () => {
-    startAuthenticated([household])
+    await startAuthenticated([household])
     expect(await screen.findByText("Today")).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "Household" }))
@@ -169,7 +175,7 @@ describe("household onboarding", () => {
   })
 
   it("does not show the invitation action to household members without invite permissions", async () => {
-    startAuthenticated([{ ...household, currentUserRole: "MEMBER" }])
+    await startAuthenticated([{ ...household, currentUserRole: "MEMBER" }])
 
     expect(await screen.findByText("Today")).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Invite housemate" })).toBeNull()
@@ -181,7 +187,7 @@ describe("household onboarding", () => {
   })
 
   it("restores owner admin actions and routes secure invitations and chore management", async () => {
-    startAuthenticated([household])
+    await startAuthenticated([household])
     expect(await screen.findByText("Today")).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "Household" }))
@@ -200,7 +206,7 @@ describe("household onboarding", () => {
   })
 
   it("shows household admin actions to admins", async () => {
-    startAuthenticated([{ ...household, currentUserRole: "ADMIN" }])
+    await startAuthenticated([{ ...household, currentUserRole: "ADMIN" }])
     expect(await screen.findByText("Today")).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "Household" }))
@@ -372,10 +378,12 @@ describe("household onboarding", () => {
       throw new Error(`Unexpected request: ${url}`)
     })
     render(<AppShell />)
-    expect(await screen.findByText("Today")).toBeTruthy()
+    expect(await screen.findByRole("heading", { name: "Today" }, { timeout: 3_000 })).toBeTruthy()
 
     fireEvent.click(screen.getAllByRole("button", { name: "Notifications" })[0])
-    expect(await screen.findByRole("heading", { name: "Notifications" })).toBeTruthy()
+    expect(
+      await screen.findByRole("heading", { name: "Notifications" }, { timeout: 3_000 }),
+    ).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "Back" }))
     expect(await screen.findByText("Today")).toBeTruthy()
 
@@ -419,7 +427,9 @@ describe("household onboarding", () => {
     })
     render(<AppShell />)
 
-    expect(await screen.findByRole("heading", { name: "Notifications" })).toBeTruthy()
+    expect(
+      await screen.findByRole("heading", { name: "Notifications" }, { timeout: 3_000 }),
+    ).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "Back" }))
     expect(await screen.findByText("Today")).toBeTruthy()
     expect(window.location.href).not.toContain("evil.example")

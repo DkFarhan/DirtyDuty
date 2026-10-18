@@ -1,0 +1,157 @@
+.concealedApp {
+  visibility: hidden;
+}
+
+.splash {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  overflow: hidden;
+  background-color: #f7f8f4;
+  background-image: url("/brand/dirtyduty-splash-background.svg");
+  background-position: center;
+  background-size: cover;
+  opacity: 1;
+  transition: opacity 180ms cubic-bezier(0, 0, 0.58, 1);
+}
+
+.exiting {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.referenceStage {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(390px, 100vw, 46.209svh);
+  aspect-ratio: 390 / 844;
+  container-type: inline-size;
+  transform: translate(-50%, -50%);
+}
+
+.logoContainer {
+  position: absolute;
+  top: 38.270142%;
+  left: 36.666667%;
+  width: 26.666667%;
+  height: 10.545024%;
+  animation: logo-enter 500ms cubic-bezier(0, 0, 0.58, 1) 80ms both;
+}
+
+.markLayer {
+  position: absolute;
+  display: block;
+  opacity: 0;
+}
+
+.darkMark {
+  top: 7.094703%;
+  left: 9.696969%;
+  width: 83.85637%;
+  height: 85.136439%;
+  animation: dark-mark-enter 340ms cubic-bezier(0, 0, 0.58, 1) 80ms both;
+}
+
+.greenMark {
+  top: 21.99358%;
+  left: 6.666666%;
+  width: 58.787878%;
+  height: 70.237561%;
+  animation: green-mark-enter 360ms cubic-bezier(0, 0, 0.58, 1) 160ms both;
+}
+
+.wordmark {
+  position: absolute;
+  top: 50.473934%;
+  left: 31.410256%;
+  display: block;
+  width: 37.179487%;
+  height: 4.265403%;
+  opacity: 0;
+  animation: wordmark-enter 340ms cubic-bezier(0, 0, 0.58, 1) 380ms both;
+}
+
+.tagline {
+  position: absolute;
+  top: 55.924171%;
+  left: 23.076923%;
+  display: block;
+  width: 53.846154%;
+  height: 1.895735%;
+  opacity: 0;
+  animation: tagline-enter 340ms cubic-bezier(0, 0, 0.58, 1) 520ms both;
+}
+
+@keyframes logo-enter {
+  from {
+    transform: translateY(4px) scale(0.985);
+  }
+  to {
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes dark-mark-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes green-mark-enter {
+  from {
+    opacity: 0;
+    transform: translateX(-14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes wordmark-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes tagline-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splash {
+    transition-duration: 150ms;
+  }
+
+  .logoContainer,
+  .markLayer,
+  .wordmark,
+  .tagline {
+    animation: none;
+    transform: none;
+  }
+
+  .markLayer,
+  .wordmark,
+  .tagline {
+    opacity: 1;
+  }
+}

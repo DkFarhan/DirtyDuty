@@ -10,6 +10,7 @@ const protectedScreens = new Set<Screen>([
   "admin",
   "create-chore",
   "profile",
+  "appearance",
   "household-settings",
   "privacy-security",
   "legal-acceptance",

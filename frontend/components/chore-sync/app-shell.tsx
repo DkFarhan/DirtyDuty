@@ -27,6 +27,8 @@ import { HelpSupportScreen } from "./screens/help-support-screen"
 import { ForgotPasswordScreen } from "./screens/forgot-password-screen"
 import { ResetPasswordScreen } from "./screens/reset-password-screen"
 import { LegalAcceptanceScreen } from "./screens/legal-acceptance-screen"
+import { AppearanceScreen } from "./screens/appearance-screen"
+import { AppLaunchGate } from "./launch-experience"
 
 function ScreenRouter() {
   const { screen, adminTab, navigate, setCurrentUser } = useChoreSync()
@@ -48,6 +50,7 @@ function ScreenRouter() {
       ["household", "household"],
       ["notifications", "notifications"],
       ["profile", "profile"],
+      ["appearance", "appearance"],
       ["household-settings", "household-settings"],
       ["admin", "admin"],
       ["privacy-security", "privacy-security"],
@@ -171,6 +174,8 @@ function ScreenRouter() {
       return <ChoreFormScreen />
     case "profile":
       return <ProfileScreen />
+    case "appearance":
+      return <AppearanceScreen />
     case "household-settings":
       return <HouseholdSettingsScreen />
     case "notifications":
@@ -196,7 +201,9 @@ export function AppShell({ initialScreen = "login" }: { initialScreen?: Screen }
           <ChoreSyncProvider initialScreen={initialScreen}>
             <div className="min-h-screen bg-slate-200 flex items-start justify-center">
               <div className="w-full max-w-sm bg-white min-h-screen relative overflow-hidden shadow-2xl">
-                <ScreenRouter />
+                <AppLaunchGate>
+                  <ScreenRouter />
+                </AppLaunchGate>
               </div>
             </div>
           </ChoreSyncProvider>

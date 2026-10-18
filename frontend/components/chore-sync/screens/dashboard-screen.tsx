@@ -92,6 +92,21 @@ export function DashboardScreen() {
   const summary = dashboard?.weekSummary
   const today = dashboard?.today ?? []
   const week = dashboard?.thisWeek ?? []
+  const personalWeek = week.filter((assignment) =>
+    assignment.assignees.some((assignee) => assignee.userId === state.currentUser.id),
+  )
+  const personalToday = today.filter((assignment) =>
+    assignment.assignees.some((assignee) => assignee.userId === state.currentUser.id),
+  )
+  const personalCompleted = personalWeek.filter(
+    (assignment) => assignment.status === "COMPLETED",
+  ).length
+  const personalRate =
+    personalWeek.length === 0 ? 0 : Math.round((personalCompleted / personalWeek.length) * 100)
+  const personalDueToday = personalToday.filter(
+    (assignment) => assignment.status === "PENDING" && !assignment.overdue,
+  ).length
+  const personalOverdue = personalWeek.filter((assignment) => assignment.overdue).length
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 pb-20">
@@ -197,6 +212,108 @@ export function DashboardScreen() {
                 className="h-2"
               />
               <p className="mt-2 text-xs font-medium text-teal-100">Household completion rate</p>
+            </section>
+
+            <section
+              aria-labelledby="personal-week-heading"
+              className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
+            >
+              <div className="p-5">
+                <h2
+                  className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400"
+                  id="personal-week-heading"
+                >
+                  Your Week
+                </h2>
+                <div className="mt-4 flex items-center gap-5">
+                  <div
+                    aria-label={`${personalRate}% complete, ${personalCompleted} of ${personalWeek.length} assigned chores completed`}
+                    className="relative h-24 w-24 shrink-0"
+                    role="img"
+                  >
+                    <svg
+                      aria-hidden="true"
+                      className="h-full w-full -rotate-90"
+                      viewBox="0 0 100 100"
+                    >
+                      <circle
+                        className="stroke-slate-100 dark:stroke-slate-700"
+                        cx="50"
+                        cy="50"
+                        fill="none"
+                        r="43"
+                        strokeWidth="7"
+                      />
+                      <circle
+                        className="stroke-teal-600 dark:stroke-teal-400"
+                        cx="50"
+                        cy="50"
+                        fill="none"
+                        pathLength="100"
+                        r="43"
+                        strokeDasharray={`${personalRate} 100`}
+                        strokeLinecap="round"
+                        strokeWidth="7"
+                      />
+                    </svg>
+                    <span
+                      aria-hidden="true"
+                      className="absolute inset-0 flex flex-col items-center justify-center"
+                    >
+                      <span className="font-display text-xl font-black leading-none text-slate-900 dark:text-slate-100">
+                        {personalRate}%
+                      </span>
+                      <span className="mt-1 text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                        complete
+                      </span>
+                    </span>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-display text-lg font-bold text-slate-900 dark:text-slate-100">
+                      {personalCompleted} of {personalWeek.length} completed
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                      {personalWeek.length === 0
+                        ? "No chores assigned to you this week."
+                        : "Your assigned chores this week"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <dl className="grid grid-cols-2 border-t border-slate-200 dark:border-slate-800">
+                <div className="border-b border-r border-slate-200 px-5 py-3.5 dark:border-slate-800">
+                  <dt className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                    Assigned
+                  </dt>
+                  <dd className="mt-1 font-display text-lg font-bold text-slate-800 dark:text-slate-200">
+                    {personalWeek.length}
+                  </dd>
+                </div>
+                <div className="border-b border-slate-200 px-5 py-3.5 dark:border-slate-800">
+                  <dt className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                    Completed
+                  </dt>
+                  <dd className="mt-1 font-display text-lg font-bold text-teal-700 dark:text-teal-300">
+                    {personalCompleted}
+                  </dd>
+                </div>
+                <div className="border-r border-slate-200 px-5 py-3.5 dark:border-slate-800">
+                  <dt className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                    Due today
+                  </dt>
+                  <dd className="mt-1 font-display text-lg font-bold text-amber-700 dark:text-amber-300">
+                    {personalDueToday}
+                  </dd>
+                </div>
+                <div className="px-5 py-3.5">
+                  <dt className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                    Overdue
+                  </dt>
+                  <dd className="mt-1 font-display text-lg font-bold text-rose-700 dark:text-rose-300">
+                    {personalOverdue}
+                  </dd>
+                </div>
+              </dl>
             </section>
 
             <section>

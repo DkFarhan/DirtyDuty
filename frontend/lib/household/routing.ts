@@ -15,6 +15,7 @@ const authenticatedScreens = new Set<Screen>([
   "household-settings",
   "notifications",
   "edit-profile",
+  "appearance",
   "privacy-security",
   "help-support",
 ])
