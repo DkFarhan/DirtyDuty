@@ -165,9 +165,7 @@ class AuthSessionIntegrationTest {
             email);
     Long refreshedExpiry =
         jdbcTemplate.queryForObject(
-            "SELECT expiry_time FROM spring_session WHERE principal_name=?",
-            Long.class,
-            email);
+            "SELECT expiry_time FROM spring_session WHERE principal_name=?", Long.class, email);
     assertThat(refreshedLastAccess).isGreaterThan(staleLastAccess);
     assertThat(refreshedExpiry).isGreaterThan(staleExpiry);
   }
