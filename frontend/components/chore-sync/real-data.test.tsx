@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { AppShell } from "./app-shell"
 import { clearCsrfToken } from "@/lib/auth/api"
 import { stubAuthFeatures } from "../../test/stub-auth-features"
+import { getLocalDateKey, WEEK_SUMMARY_TEMPLATES } from "./week-summary"
 
 const fetchMock = vi.fn<typeof fetch>()
 const user = {
@@ -94,8 +95,8 @@ describe("server-backed chore data", () => {
       thisWeek: [timezoneBoundaryAssignment],
     })
     expect(screen.getByText("1/2")).toBeTruthy()
-    expect(screen.getAllByText("Assigned to You, Ahmed")).toHaveLength(2)
-    expect(screen.getAllByText("Overdue")).toHaveLength(3)
+    expect(screen.getAllByText("Assigned to You, Ahmed")).toHaveLength(1)
+    expect(screen.getAllByText("Overdue")).toHaveLength(2)
     const scheduledDay = new Intl.DateTimeFormat(undefined, {
       weekday: "short",
       month: "short",
@@ -107,7 +108,7 @@ describe("server-backed chore data", () => {
       minute: "2-digit",
       timeZone: household.timezone,
     }).format(new Date(timezoneBoundaryAssignment.dueAt))
-    expect(screen.getAllByText(`${scheduledDay} · ${householdTime}`)).toHaveLength(2)
+    expect(screen.getAllByText(`${scheduledDay} · ${householdTime}`)).toHaveLength(1)
     expect(screen.queryByText("Bathroom Cleaning")).toBeNull()
 
     fetchMock
@@ -141,7 +142,7 @@ describe("server-backed chore data", () => {
     expect(new Headers(completeRequest?.[1]?.headers).get("X-CSRF-TOKEN")).toBe("complete-csrf")
   })
 
-  it("shows personal weekly progress from only the current user's assignments", async () => {
+  it("shows personal weekly progress and metrics from only the current user's assignments", async () => {
     const otherMemberAssignment = {
       ...pendingAssignment,
       id: "assignment-other",
@@ -161,17 +162,24 @@ describe("server-backed chore data", () => {
     })
 
     expect(screen.getByText("4 of 9 completed")).toBeTruthy()
-    expect(
-      screen.getByRole("img", { name: "44% complete, 4 of 9 assigned chores completed" }),
-    ).toBeTruthy()
     const yourWeek = screen.getByRole("region", { name: "Your Week" })
+    expect(
+      within(yourWeek).getByRole("img", { name: "4 of 9 assigned chores completed" }),
+    ).toBeTruthy()
+    expect(
+      WEEK_SUMMARY_TEMPLATES.OVERDUE.some(
+        ({ title, body }) =>
+          within(yourWeek).queryByText(title) !== null ||
+          within(yourWeek).queryByText(body) !== null,
+      ),
+    ).toBe(true)
     expect(within(yourWeek).getByText("Assigned").nextElementSibling?.textContent).toBe("9")
     expect(within(yourWeek).getByText("Completed").nextElementSibling?.textContent).toBe("4")
     expect(within(yourWeek).getByText("Due today").nextElementSibling?.textContent).toBe("1")
     expect(within(yourWeek).getByText("Overdue").nextElementSibling?.textContent).toBe("1")
   })
 
-  it("shows completed personal chores in the weekly progress ring", async () => {
+  it("shows completed personal chores in the subtle weekly progress bar", async () => {
     await startAtDashboard({
       weekSummary: { completedCount: 1, totalCount: 1, completionPercentage: 100 },
       today: [],
@@ -179,23 +187,104 @@ describe("server-backed chore data", () => {
     })
 
     expect(screen.getByText("1 of 1 completed")).toBeTruthy()
-    expect(
-      screen.getByRole("img", { name: "100% complete, 1 of 1 assigned chores completed" }),
-    ).toBeTruthy()
+    expect(screen.getByRole("img", { name: "1 of 1 assigned chores completed" })).toBeTruthy()
   })
 
-  it("shows zero personal progress without dividing by zero when no chores are assigned", async () => {
+  it("orders pending TODAY chores before completed chores", async () => {
+    const completed = {
+      ...pendingAssignment,
+      id: "completed-washroom",
+      title: "Clean Washroom",
+      status: "COMPLETED" as const,
+      canComplete: false,
+      overdue: false,
+      completedByDisplayName: "Jahid",
+    }
+    const overdue = {
+      ...pendingAssignment,
+      id: "overdue-laundry",
+      title: "Laundry",
+      status: "PENDING" as const,
+      overdue: true,
+    }
+    await startAtDashboard({
+      weekSummary: { completedCount: 1, totalCount: 2, completionPercentage: 50 },
+      today: [completed, overdue],
+      thisWeek: [completed, overdue],
+    })
+
+    const todayHeadings = within(screen.getByRole("region", { name: "Today" }))
+      .getAllByRole("heading", { level: 3 })
+      .map((heading) => heading.textContent)
+    expect(todayHeadings).toEqual(["Laundry", "Clean Washroom"])
+  })
+
+  it("shows a no-assignment message without rendering meaningless progress", async () => {
     await startAtDashboard({
       weekSummary: { completedCount: 0, totalCount: 0, completionPercentage: 0 },
       today: [],
       thisWeek: [],
     })
 
-    expect(screen.getByText("0 of 0 completed")).toBeTruthy()
-    expect(screen.getByText("No chores assigned to you this week.")).toBeTruthy()
+    const yourWeek = screen.getByRole("region", { name: "Your Week" })
+    expect(within(yourWeek).getByText("Assigned").nextElementSibling?.textContent).toBe("0")
+    const completed = within(yourWeek).getByText("Completed").nextElementSibling
+    const dueToday = within(yourWeek).getByText("Due today").nextElementSibling
+    const overdue = within(yourWeek).getByText("Overdue").nextElementSibling
+    expect(completed?.textContent).toBe("0")
+    expect(dueToday?.textContent).toBe("0")
+    expect(overdue?.textContent).toBe("0")
+    expect(completed?.className).toContain("text-slate-800")
+    expect(dueToday?.className).toContain("text-slate-800")
+    expect(overdue?.className).toContain("text-slate-800")
+    expect(completed?.className).not.toContain("text-teal-800")
+    expect(dueToday?.className).not.toContain("text-amber-800")
+    expect(overdue?.className).not.toContain("text-rose-800")
     expect(
-      screen.getByRole("img", { name: "0% complete, 0 of 0 assigned chores completed" }),
-    ).toBeTruthy()
+      WEEK_SUMMARY_TEMPLATES.NO_ASSIGNMENTS.some(({ title, body }) => {
+        return (
+          within(yourWeek).queryByText(title) !== null ||
+          within(yourWeek).queryByText(body) !== null
+        )
+      }),
+    ).toBe(true)
+    expect(within(yourWeek).queryByRole("img")).toBeNull()
+    expect(within(yourWeek).queryByText(/%/)).toBeNull()
+  })
+
+  it("keeps chores shown in TODAY out of the future-only UP NEXT list", async () => {
+    const todayKey = getLocalDateKey(new Date(), household.timezone)
+    const tomorrowDate = new Date(`${todayKey}T12:00:00Z`)
+    tomorrowDate.setUTCDate(tomorrowDate.getUTCDate() + 1)
+    const tomorrowKey = tomorrowDate.toISOString().slice(0, 10)
+    const todayAssignment = {
+      ...pendingAssignment,
+      id: "assignment-today",
+      title: "Take out recycling",
+      scheduledFor: `${todayKey}T18:00:00Z`,
+      dueAt: `${todayKey}T18:00:00Z`,
+      overdue: false,
+    }
+    const tomorrowAssignment = {
+      ...pendingAssignment,
+      id: "assignment-tomorrow",
+      title: "Clean the hallway",
+      scheduledFor: `${tomorrowKey}T18:00:00Z`,
+      dueAt: `${tomorrowKey}T18:00:00Z`,
+      overdue: false,
+    }
+    await startAtDashboard({
+      weekSummary: { completedCount: 0, totalCount: 2, completionPercentage: 0 },
+      today: [todayAssignment],
+      thisWeek: [todayAssignment, tomorrowAssignment],
+    })
+
+    const today = screen.getByRole("region", { name: "Today" })
+    const upNext = screen.getByRole("region", { name: "Up Next" })
+    expect(within(today).getByText("Take out recycling")).toBeTruthy()
+    expect(within(upNext).getByText("Clean the hallway")).toBeTruthy()
+    expect(within(upNext).queryByText("Take out recycling")).toBeNull()
+    expect(within(upNext).getByText("Tomorrow")).toBeTruthy()
   })
 
   it("signs out from Profile using the existing account flow", async () => {
@@ -252,9 +341,11 @@ describe("server-backed chore data", () => {
     expect(screen.getByRole("radio", { name: "Light" })).toBeTruthy()
     expect(screen.getByRole("radio", { name: "Dark" })).toBeTruthy()
     expect(screen.getByRole("radio", { name: "System" })).toBeTruthy()
-    expect(screen.getByText("Match your device appearance automatically.")).toBeTruthy()
+    expect(screen.getByText("Use your device appearance")).toBeTruthy()
+    expect(screen.queryByText("Always use the light theme.")).toBeNull()
+    expect(screen.queryByText("Always use the dark theme.")).toBeNull()
     expect(screen.getByRole("radio", { name: "Light" }).closest("label")?.className).toContain(
-      "min-h-[88px]",
+      "min-h-16",
     )
     expect(screen.getByRole("radio", { name: "Light" }).closest("label")?.className).toContain(
       "border-b",

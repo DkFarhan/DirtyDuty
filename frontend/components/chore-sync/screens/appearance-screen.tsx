@@ -8,7 +8,7 @@ export function AppearanceScreen() {
   const { navigate } = useChoreSync()
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+    <div className="min-h-screen bg-stone-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       <header className="flex items-center gap-3 border-b border-slate-100 bg-white px-5 pb-5 pt-12 dark:border-slate-800 dark:bg-slate-900">
         <button
           aria-label="Back"

@@ -8,11 +8,19 @@ import { useHouseholds } from "@/lib/household/household-context"
 import type { Household } from "@/lib/household/api"
 import { BottomNav } from "../bottom-nav"
 import { BellIcon } from "../icons"
-import { ServerAssignmentCard, ServerWeekAssignmentCard } from "../chore-card"
+import { ServerAssignmentCard, ServerUpcomingAssignmentRow } from "../chore-card"
 import { HouseGlyphIcon } from "../icons"
 import { InviteHousemateDialog } from "../invite-housemate-dialog"
-import { Avatar, ProgressBar, SectionHeader } from "../primitives"
+import { Avatar, ProgressBar } from "../primitives"
 import { notificationApi } from "@/lib/notifications/api"
+import {
+  formatUpcomingDateLabel,
+  getLocalDateKey,
+  getUpcomingAssignments,
+  getWeekSummaryMessage,
+  getWeekSummaryState,
+  groupAssignmentsByDate,
+} from "../week-summary"
 
 function greetingForNow() {
   const hour = new Date().getHours()
@@ -90,6 +98,8 @@ export function DashboardScreen() {
     if (!open) setInviteHousehold(null)
   }, [])
   const summary = dashboard?.weekSummary
+  const householdCompleted = summary?.completedCount ?? 0
+  const householdTotal = summary?.totalCount ?? 0
   const today = dashboard?.today ?? []
   const week = dashboard?.thisWeek ?? []
   const personalWeek = week.filter((assignment) =>
@@ -101,15 +111,56 @@ export function DashboardScreen() {
   const personalCompleted = personalWeek.filter(
     (assignment) => assignment.status === "COMPLETED",
   ).length
-  const personalRate =
-    personalWeek.length === 0 ? 0 : Math.round((personalCompleted / personalWeek.length) * 100)
   const personalDueToday = personalToday.filter(
     (assignment) => assignment.status === "PENDING" && !assignment.overdue,
   ).length
-  const personalOverdue = personalWeek.filter((assignment) => assignment.overdue).length
+  const personalOverdue = personalWeek.filter(
+    (assignment) => assignment.status === "PENDING" && assignment.overdue,
+  ).length
+  const personalCounts = {
+    assigned: personalWeek.length,
+    completed: personalCompleted,
+    dueToday: personalDueToday,
+    overdue: personalOverdue,
+  }
+  const personalState = getWeekSummaryState(personalCounts)
+  const dateKey = getLocalDateKey(new Date(), household?.timezone)
+  const personalMessage = getWeekSummaryMessage(
+    personalState,
+    personalCounts,
+    state.currentUser.id,
+    dateKey,
+  )
+  const todayForDisplay = [...today].sort((left, right) => {
+    const priority = (status: (typeof today)[number]["status"]) =>
+      status === "PENDING" ? 0 : status === "COMPLETED" ? 2 : 1
+    return priority(left.status) - priority(right.status)
+  })
+  const upcoming = getUpcomingAssignments(week, today, dateKey)
+  const upcomingGroups = groupAssignmentsByDate(upcoming)
+  const summaryAccent =
+    personalState === "OVERDUE"
+      ? {
+          border: "border-l-rose-400 dark:border-l-rose-500",
+          icon: "text-rose-800 dark:text-rose-300",
+        }
+      : personalState === "DUE_TODAY"
+        ? {
+            border: "border-l-amber-400 dark:border-l-amber-500",
+            icon: "text-amber-800 dark:text-amber-300",
+          }
+        : personalState === "ALL_COMPLETE"
+          ? {
+              border: "border-l-teal-500 dark:border-l-teal-400",
+              icon: "text-teal-800 dark:text-teal-300",
+            }
+          : {
+              border: "border-l-slate-300 dark:border-l-slate-600",
+              icon: "text-slate-700 dark:text-slate-300",
+            }
 
   return (
-    <div className="flex flex-col min-h-screen bg-slate-50 pb-20">
+    <div className="flex min-h-screen flex-col bg-stone-50 pb-20 dark:bg-slate-950">
       <header className="bg-white px-5 pt-12 pb-5">
         <div className="mb-1 flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -141,8 +192,8 @@ export function DashboardScreen() {
           </div>
         </div>
         <div className="mt-2 flex min-w-0 items-center gap-1.5">
-          <HouseGlyphIcon className="h-3.5 w-3.5 shrink-0 text-teal-600" />
-          <span className="truncate text-xs font-semibold text-teal-600">
+          <HouseGlyphIcon className="h-3.5 w-3.5 shrink-0 text-slate-500 dark:text-slate-400" />
+          <span className="truncate text-xs font-semibold text-slate-600 dark:text-slate-300">
             {household?.name ?? "Your household"}
           </span>
         </div>
@@ -188,19 +239,19 @@ export function DashboardScreen() {
         )}
         {status === "loaded" && dashboard && (
           <>
-            <section className="rounded-2xl bg-gradient-to-br from-teal-600 to-teal-500 p-5 text-white shadow-sm">
-              <div className="mb-3 flex items-center justify-between">
+            <section className="rounded-2xl bg-gradient-to-br from-teal-600 to-teal-500 p-4 text-white shadow-sm">
+              <div className="mb-2 flex items-center justify-between">
                 <div>
-                  <p className="text-teal-100 text-xs font-medium uppercase tracking-wider">
-                    This Week
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-100">
+                    Household · This Week
                   </p>
-                  <p className="text-2xl font-black mt-0.5 font-display">
+                  <p className="mt-1 font-display text-xl font-black">
                     {summary?.completionPercentage ?? 0}% done
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="text-teal-100 text-xs">Completed</p>
-                  <p className="text-xl font-black font-display">
+                  <p className="text-[10px] font-medium text-teal-100">Completed</p>
+                  <p className="font-display text-lg font-bold">
                     {summary?.completedCount ?? 0}/{summary?.totalCount ?? 0}
                   </p>
                 </div>
@@ -209,133 +260,137 @@ export function DashboardScreen() {
                 value={summary?.completionPercentage ?? 0}
                 trackClass="bg-teal-700/50"
                 barClass="bg-white"
-                className="h-2"
+                className="h-1.5"
               />
-              <p className="mt-2 text-xs font-medium text-teal-100">Household completion rate</p>
+              {householdTotal > 0 && (
+                <p className="mt-1.5 text-[11px] font-medium text-teal-100">
+                  {householdCompleted} down, {Math.max(0, householdTotal - householdCompleted)} to
+                  go.
+                </p>
+              )}
             </section>
 
             <section
               aria-labelledby="personal-week-heading"
-              className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
+              className={`overflow-hidden rounded-2xl border border-l-4 border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 ${summaryAccent.border}`}
             >
-              <div className="p-5">
+              <div className="p-4">
                 <h2
                   className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400"
                   id="personal-week-heading"
                 >
                   Your Week
                 </h2>
-                <div className="mt-4 flex items-center gap-5">
+                <div className="mt-3">
+                  <p className={`font-display text-base font-bold ${summaryAccent.icon}`}>
+                    {personalMessage.title}
+                  </p>
+                  <p className="mt-1 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+                    {personalMessage.body}
+                  </p>
+                </div>
+                {personalWeek.length > 0 && (
                   <div
-                    aria-label={`${personalRate}% complete, ${personalCompleted} of ${personalWeek.length} assigned chores completed`}
-                    className="relative h-24 w-24 shrink-0"
+                    aria-label={`${personalCompleted} of ${personalWeek.length} assigned chores completed`}
+                    className="mt-4"
                     role="img"
                   >
-                    <svg
-                      aria-hidden="true"
-                      className="h-full w-full -rotate-90"
-                      viewBox="0 0 100 100"
-                    >
-                      <circle
-                        className="stroke-slate-100 dark:stroke-slate-700"
-                        cx="50"
-                        cy="50"
-                        fill="none"
-                        r="43"
-                        strokeWidth="7"
-                      />
-                      <circle
-                        className="stroke-teal-600 dark:stroke-teal-400"
-                        cx="50"
-                        cy="50"
-                        fill="none"
-                        pathLength="100"
-                        r="43"
-                        strokeDasharray={`${personalRate} 100`}
-                        strokeLinecap="round"
-                        strokeWidth="7"
-                      />
-                    </svg>
-                    <span
-                      aria-hidden="true"
-                      className="absolute inset-0 flex flex-col items-center justify-center"
-                    >
-                      <span className="font-display text-xl font-black leading-none text-slate-900 dark:text-slate-100">
-                        {personalRate}%
+                    <div className="mb-1.5 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                      <span>
+                        {personalCompleted} of {personalWeek.length} completed
                       </span>
-                      <span className="mt-1 text-[10px] font-medium text-slate-500 dark:text-slate-400">
-                        complete
-                      </span>
-                    </span>
+                      <span>{Math.round((personalCompleted / personalWeek.length) * 100)}%</span>
+                    </div>
+                    <ProgressBar
+                      value={(personalCompleted / personalWeek.length) * 100}
+                      className="h-1"
+                      trackClass="bg-slate-100 dark:bg-slate-700"
+                      barClass="bg-teal-600 dark:bg-teal-400"
+                    />
                   </div>
-                  <div className="min-w-0">
-                    <p className="font-display text-lg font-bold text-slate-900 dark:text-slate-100">
-                      {personalCompleted} of {personalWeek.length} completed
-                    </p>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                      {personalWeek.length === 0
-                        ? "No chores assigned to you this week."
-                        : "Your assigned chores this week"}
-                    </p>
-                  </div>
-                </div>
+                )}
               </div>
-              <dl className="grid grid-cols-2 border-t border-slate-200 dark:border-slate-800">
-                <div className="border-b border-r border-slate-200 px-5 py-3.5 dark:border-slate-800">
-                  <dt className="text-xs font-medium text-slate-500 dark:text-slate-400">
+              <dl className="grid grid-cols-2 gap-x-5 gap-y-3 border-t border-slate-100 px-4 py-3 dark:border-slate-800">
+                <div>
+                  <dt className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
                     Assigned
                   </dt>
-                  <dd className="mt-1 font-display text-lg font-bold text-slate-800 dark:text-slate-200">
+                  <dd className="mt-0.5 font-display text-base font-bold text-slate-800 dark:text-slate-200">
                     {personalWeek.length}
                   </dd>
                 </div>
-                <div className="border-b border-slate-200 px-5 py-3.5 dark:border-slate-800">
-                  <dt className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                <div>
+                  <dt className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
                     Completed
                   </dt>
-                  <dd className="mt-1 font-display text-lg font-bold text-teal-700 dark:text-teal-300">
+                  <dd
+                    className={`mt-0.5 font-display text-base font-bold ${
+                      personalCompleted > 0
+                        ? "text-teal-800 dark:text-teal-300"
+                        : "text-slate-800 dark:text-slate-200"
+                    }`}
+                  >
                     {personalCompleted}
                   </dd>
                 </div>
-                <div className="border-r border-slate-200 px-5 py-3.5 dark:border-slate-800">
-                  <dt className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                <div>
+                  <dt className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
                     Due today
                   </dt>
-                  <dd className="mt-1 font-display text-lg font-bold text-amber-700 dark:text-amber-300">
+                  <dd
+                    className={`mt-0.5 font-display text-base font-bold ${
+                      personalDueToday > 0
+                        ? "text-amber-800 dark:text-amber-300"
+                        : "text-slate-800 dark:text-slate-200"
+                    }`}
+                  >
                     {personalDueToday}
                   </dd>
                 </div>
-                <div className="px-5 py-3.5">
-                  <dt className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                <div>
+                  <dt className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
                     Overdue
                   </dt>
-                  <dd className="mt-1 font-display text-lg font-bold text-rose-700 dark:text-rose-300">
+                  <dd
+                    className={`mt-0.5 font-display text-base font-bold ${
+                      personalOverdue > 0
+                        ? "text-rose-800 dark:text-rose-300"
+                        : "text-slate-800 dark:text-slate-200"
+                    }`}
+                  >
                     {personalOverdue}
                   </dd>
                 </div>
               </dl>
             </section>
 
-            <section>
-              <SectionHeader
-                title="Today"
-                action={
-                  today.length > 0 ? (
-                    <span className="rounded-full bg-rose-100 px-2.5 py-1 text-[11px] font-bold text-rose-700">
-                      {today.filter((item) => item.status === "PENDING").length} pending
-                    </span>
-                  ) : null
-                }
-              />
+            <section aria-labelledby="today-heading">
+              <div className="mb-2.5 flex items-center justify-between gap-3">
+                <h2
+                  className="font-display text-sm font-bold text-slate-700 dark:text-slate-200"
+                  id="today-heading"
+                >
+                  Today
+                </h2>
+                {today.length > 0 && (
+                  <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                    {today.filter((item) => item.status === "PENDING").length} pending
+                  </span>
+                )}
+              </div>
               {today.length === 0 ? (
-                <div className="rounded-2xl border border-slate-100 bg-white px-5 py-4 text-center">
+                <div className="rounded-2xl bg-white px-5 py-4 text-center dark:bg-slate-900">
                   <div className="mb-1.5 text-3xl">🎉</div>
-                  <p className="font-bold text-slate-900">No chores due today!</p>
-                  <p className="text-slate-400 text-sm mt-1">Enjoy your free time</p>
+                  <p className="font-bold text-slate-900 dark:text-slate-100">
+                    No chores due today!
+                  </p>
+                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                    Enjoy your free time
+                  </p>
                 </div>
               ) : (
                 <div className="flex flex-col gap-3">
-                  {today.map((assignment) => (
+                  {todayForDisplay.map((assignment) => (
                     <ServerAssignmentCard
                       assignment={assignment}
                       completing={completingId === assignment.id}
@@ -349,21 +404,33 @@ export function DashboardScreen() {
               )}
             </section>
 
-            <section>
-              <SectionHeader title="This Week" />
-              {week.length === 0 ? (
-                <div className="rounded-2xl border border-slate-100 bg-white px-4 py-3.5 text-sm text-slate-500">
-                  No chores scheduled this week.
-                </div>
+            <section aria-labelledby="up-next-heading">
+              <h2
+                className="mb-3 font-display text-[13px] font-bold uppercase tracking-[0.12em] text-slate-600 dark:text-slate-300"
+                id="up-next-heading"
+              >
+                Up Next
+              </h2>
+              {upcomingGroups.length === 0 ? (
+                <p className="rounded-xl bg-white px-4 py-3 text-sm text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+                  Nothing else coming up this week.
+                </p>
               ) : (
-                <div className="flex gap-3 overflow-x-auto pb-1">
-                  {week.slice(0, 10).map((assignment) => (
-                    <ServerWeekAssignmentCard
-                      assignment={assignment}
-                      currentUserId={state.currentUser.id}
-                      householdTimezone={household?.timezone ?? "UTC"}
-                      key={assignment.id}
-                    />
+                <div className="rounded-2xl bg-white px-4 dark:bg-slate-900">
+                  {upcomingGroups.map((group) => (
+                    <div key={group.dateKey}>
+                      <h3 className="pt-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                        {formatUpcomingDateLabel(group.dateKey, dateKey)}
+                      </h3>
+                      {group.assignments.map((assignment) => (
+                        <ServerUpcomingAssignmentRow
+                          assignment={assignment}
+                          currentUserId={state.currentUser.id}
+                          householdTimezone={household?.timezone ?? "UTC"}
+                          key={assignment.id}
+                        />
+                      ))}
+                    </div>
                   ))}
                 </div>
               )}

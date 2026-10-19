@@ -34,6 +34,17 @@ function assignmentDate(assignment: AssignmentDTO, householdTimezone: string) {
   return `${dateLabel} · ${timeLabel}`
 }
 
+function assignmentTime(assignment: AssignmentDTO, householdTimezone: string) {
+  if (!assignment.dueAt) return null
+  const dueDate = new Date(assignment.dueAt)
+  if (Number.isNaN(dueDate.getTime())) return null
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: householdTimezone,
+  }).format(dueDate)
+}
+
 function assigneeLabel(assignment: AssignmentDTO, currentUserId: string) {
   if (!assignment.assignees.length) return "No assignee"
   const names = assignment.assignees.map(({ userId, displayName }) =>
@@ -91,32 +102,40 @@ export function ServerAssignmentCard({
               <h3
                 className={cn(
                   "break-words font-display text-base font-extrabold leading-snug",
-                  completed ? "text-slate-700" : "text-slate-900",
+                  completed
+                    ? "text-slate-600 dark:text-slate-400"
+                    : "text-slate-900 dark:text-slate-100",
                 )}
               >
                 {assignment.title}
               </h3>
             </div>
             {assignment.overdue && !completed && (
-              <span className="shrink-0 rounded-full bg-rose-50 px-2 py-1 text-[10px] font-bold text-rose-600">
+              <span className="shrink-0 rounded-full bg-rose-50 px-2 py-1 text-[10px] font-bold text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
                 Overdue
               </span>
             )}
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-relaxed">
             {assignment.categoryName && (
-              <span className="font-semibold text-teal-700">{assignment.categoryName}</span>
+              <span className="font-semibold text-slate-600 dark:text-slate-300">
+                {assignment.categoryName}
+              </span>
             )}
-            <span className="text-slate-500">{assignmentDate(assignment, householdTimezone)}</span>
+            <span className="text-slate-600 dark:text-slate-400">
+              {assignmentDate(assignment, householdTimezone)}
+            </span>
             {assignment.estimatedMinutes && (
-              <span className="text-slate-500">About {assignment.estimatedMinutes} min</span>
+              <span className="text-slate-600 dark:text-slate-400">
+                About {assignment.estimatedMinutes} min
+              </span>
             )}
           </div>
-          <p className="mt-1.5 text-xs font-medium text-slate-700">
+          <p className="mt-1.5 text-xs font-medium text-slate-700 dark:text-slate-300">
             {assigneeLabel(assignment, currentUserId)}
           </p>
           {completed && assignment.completedByDisplayName && (
-            <p className="mt-2 inline-flex rounded-lg bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">
+            <p className="mt-2 inline-flex rounded-lg bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">
               Completed by {assignment.completedByDisplayName}
             </p>
           )}
@@ -126,7 +145,7 @@ export function ServerAssignmentCard({
         <button
           aria-label={`Mark ${assignment.title} complete`}
           aria-busy={completing}
-          className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-teal-200 bg-white py-2.5 text-sm font-bold text-teal-700 transition hover:bg-teal-50 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+          className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-teal-200 bg-white py-2.5 text-sm font-bold text-teal-800 transition hover:bg-teal-50 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:border-teal-800 dark:bg-slate-900 dark:text-teal-300 dark:hover:bg-teal-950/40"
           disabled={completing}
           onClick={() => onComplete(assignment.id)}
           type="button"
@@ -168,6 +187,38 @@ export function ServerWeekAssignmentCard({
       </p>
       {assignment.overdue && assignment.status !== "COMPLETED" && (
         <p className="mt-1 text-[10px] font-bold text-rose-600">Overdue</p>
+      )}
+    </article>
+  )
+}
+
+export function ServerUpcomingAssignmentRow({
+  assignment,
+  currentUserId,
+  householdTimezone,
+}: {
+  assignment: AssignmentDTO
+  currentUserId: string
+  householdTimezone: string
+}) {
+  const time = assignmentTime(assignment, householdTimezone)
+  return (
+    <article className="flex items-center gap-3 border-b border-slate-100 py-3 last:border-b-0 dark:border-slate-800">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-50 text-xl dark:bg-slate-800">
+        {categoryIcon(assignment.categoryIcon)}
+      </div>
+      <div className="min-w-0 flex-1">
+        <h3 className="truncate font-display text-sm font-bold text-slate-800 dark:text-slate-100">
+          {assignment.title}
+        </h3>
+        <p className="mt-0.5 truncate text-xs text-slate-600 dark:text-slate-400">
+          {assignment.categoryName ?? assigneeLabel(assignment, currentUserId)}
+        </p>
+      </div>
+      {time && (
+        <p className="shrink-0 text-right text-xs font-medium text-slate-600 dark:text-slate-400">
+          {time}
+        </p>
       )}
     </article>
   )
