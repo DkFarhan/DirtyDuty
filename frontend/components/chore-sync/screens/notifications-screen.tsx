@@ -10,7 +10,9 @@ import {
 } from "@/lib/notifications/api"
 import {
   createBrowserPushSubscription,
+  getBrowserPushSubscriptionStatus,
   removeBrowserPushSubscription,
+  type BrowserPushSubscriptionStatus,
 } from "@/lib/notifications/push"
 import { useChoreSync } from "@/lib/chore-sync/store"
 import { SubpageHeader } from "./subpage-header"
@@ -59,6 +61,9 @@ const notificationStyles: Array<[NotificationStyle, string]> = [
   ["MINIMAL", "Minimal"],
 ]
 
+type PushRecoveryStatus =
+  BrowserPushSubscriptionStatus | "checking" | "unavailable" | "sync-error" | "hidden"
+
 export function NotificationsScreen() {
   const { returnFromNotifications } = useChoreSync()
   const [items, setItems] = useState<Notification[]>([])
@@ -71,6 +76,11 @@ export function NotificationsScreen() {
   const [preferencesError, setPreferencesError] = useState("")
   const [preferencesBusy, setPreferencesBusy] = useState(false)
   const [preferencesSaved, setPreferencesSaved] = useState(false)
+  const [pushRecoveryStatus, setPushRecoveryStatus] = useState<PushRecoveryStatus>("hidden")
+  const [pushRecoveryError, setPushRecoveryError] = useState("")
+  const [pushRecoveryBusy, setPushRecoveryBusy] = useState(false)
+  const [pushPublicKey, setPushPublicKey] = useState<string | null>(null)
+  const [pushSubscriptionSynchronized, setPushSubscriptionSynchronized] = useState(false)
 
   const load = useCallback(async () => {
     setStatus("loading")
@@ -93,18 +103,54 @@ export function NotificationsScreen() {
     }
   }, [])
 
+  const inspectPushSubscription = useCallback(async () => {
+    setPushRecoveryStatus("checking")
+    setPushRecoveryError("")
+    try {
+      const subscriptionStatus = await getBrowserPushSubscriptionStatus()
+      setPushRecoveryStatus(subscriptionStatus)
+      setPushSubscriptionSynchronized(false)
+      if (
+        subscriptionStatus === "missing" ||
+        subscriptionStatus === "permission-required" ||
+        subscriptionStatus === "subscribed"
+      ) {
+        const configuration = await notificationApi.pushPublicKey()
+        if (!configuration.available || !configuration.publicKey) {
+          setPushRecoveryStatus("unavailable")
+          setPushRecoveryError("Push notifications are currently unavailable.")
+          return
+        }
+        setPushPublicKey(configuration.publicKey)
+      }
+    } catch (cause) {
+      setPushRecoveryStatus("unavailable")
+      setPushRecoveryError(
+        cause instanceof ApiError
+          ? cause.message
+          : "Unable to check this browser's push subscription. Please try again.",
+      )
+    }
+  }, [])
+
   const loadPreferences = useCallback(async () => {
     setPreferencesError("")
     try {
       const nextPreferences = await notificationApi.preferences()
       setPreferences(nextPreferences)
       setSavedPreferences(nextPreferences)
+      if (nextPreferences.pushEnabled) {
+        void inspectPushSubscription()
+      } else {
+        setPushRecoveryStatus("hidden")
+        setPushRecoveryError("")
+      }
     } catch (cause) {
       setPreferencesError(
         cause instanceof ApiError ? cause.message : "Unable to load notification preferences.",
       )
     }
-  }, [])
+  }, [inspectPushSubscription])
 
   useEffect(() => {
     void load()
@@ -190,6 +236,15 @@ export function NotificationsScreen() {
       setPreferences(updated)
       setSavedPreferences(updated)
       setPreferencesSaved(true)
+      if (updated.pushEnabled) {
+        setPushRecoveryStatus("subscribed")
+        setPushSubscriptionSynchronized(true)
+        setPushRecoveryError("")
+      } else {
+        setPushRecoveryStatus("hidden")
+        setPushSubscriptionSynchronized(false)
+        setPushRecoveryError("")
+      }
     } catch (cause) {
       setPreferences((current) =>
         current ? { ...current, pushEnabled: previousPushState } : current,
@@ -203,6 +258,53 @@ export function NotificationsScreen() {
       )
     } finally {
       setPreferencesBusy(false)
+    }
+  }
+
+  const restorePushSubscription = async () => {
+    if (
+      !pushPublicKey ||
+      pushRecoveryBusy ||
+      !preferences?.pushEnabled ||
+      !savedPreferences?.pushEnabled
+    ) {
+      return
+    }
+
+    setPushRecoveryBusy(true)
+    setPushRecoveryError("")
+    let subscription: PushSubscription | null = null
+    try {
+      subscription = await createBrowserPushSubscription(pushPublicKey)
+      const keys = subscription.toJSON().keys
+      if (!keys?.p256dh || !keys.auth) {
+        throw new Error("Push notifications could not be enabled. Please try again.")
+      }
+      await notificationApi.subscribePush({
+        endpoint: subscription.endpoint,
+        publicKey: keys.p256dh,
+        authSecret: keys.auth,
+      })
+      setPushRecoveryStatus("subscribed")
+      setPushSubscriptionSynchronized(true)
+      setPushRecoveryError("")
+      setPushPublicKey(null)
+    } catch (cause) {
+      if (subscription) {
+        setPushRecoveryStatus("sync-error")
+      } else {
+        const currentStatus = await getBrowserPushSubscriptionStatus().catch(() => null)
+        if (currentStatus) setPushRecoveryStatus(currentStatus)
+      }
+      setPushRecoveryError(
+        cause instanceof ApiError
+          ? cause.message
+          : cause instanceof Error
+            ? cause.message
+            : "Unable to restore push notifications. Please try again.",
+      )
+    } finally {
+      setPushRecoveryBusy(false)
     }
   }
 
@@ -423,6 +525,88 @@ export function NotificationsScreen() {
                   type="checkbox"
                 />
               </SettingsRow>
+              {preferences.pushEnabled && savedPreferences?.pushEnabled && (
+                <div className="border-b border-slate-100 px-1 py-3 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300">
+                  {pushRecoveryStatus === "checking" && <p>Checking this browser’s push setup…</p>}
+                  {(pushRecoveryStatus === "missing" ||
+                    pushRecoveryStatus === "permission-required" ||
+                    pushRecoveryStatus === "sync-error" ||
+                    (pushRecoveryStatus === "subscribed" && !pushSubscriptionSynchronized)) && (
+                    <>
+                      <p>
+                        {pushRecoveryStatus === "subscribed"
+                          ? "A push subscription exists in this browser. Sync it to this account so DirtyDuty can use it."
+                          : pushRecoveryStatus === "permission-required"
+                            ? "Push permission is not currently granted for this browser."
+                            : pushRecoveryStatus === "sync-error"
+                              ? "The browser subscription exists, but could not be synchronized."
+                              : "This browser has no active push subscription."}
+                      </p>
+                      <button
+                        className="mt-2 font-bold text-teal-700 underline-offset-2 hover:underline disabled:opacity-50 dark:text-teal-300"
+                        disabled={pushRecoveryBusy || !pushPublicKey}
+                        onClick={() => void restorePushSubscription()}
+                        type="button"
+                      >
+                        {pushRecoveryBusy
+                          ? pushRecoveryStatus === "subscribed" ||
+                            pushRecoveryStatus === "sync-error"
+                            ? "Syncing…"
+                            : "Restoring…"
+                          : pushRecoveryStatus === "sync-error"
+                            ? "Retry push setup"
+                            : pushRecoveryStatus === "subscribed"
+                              ? "Sync this browser"
+                              : pushRecoveryStatus === "permission-required"
+                                ? "Enable push on this device"
+                                : "Restore push notifications"}
+                      </button>
+                    </>
+                  )}
+                  {pushRecoveryStatus === "permission-denied" && (
+                    <>
+                      <p>
+                        Push permission is blocked. Allow notifications for DirtyDuty in this
+                        browser or device’s settings, then check again here.
+                      </p>
+                      <button
+                        className="mt-2 font-bold text-teal-700 underline-offset-2 hover:underline dark:text-teal-300"
+                        onClick={() => void inspectPushSubscription()}
+                        type="button"
+                      >
+                        Check permission again
+                      </button>
+                    </>
+                  )}
+                  {pushRecoveryStatus === "unsupported" && (
+                    <p>This browser does not support push notifications.</p>
+                  )}
+                  {pushRecoveryStatus === "unavailable" && pushRecoveryError && (
+                    <>
+                      <p role="alert" className="text-rose-600">
+                        {pushRecoveryError}
+                      </p>
+                      <button
+                        className="mt-2 font-bold text-teal-700 underline-offset-2 hover:underline dark:text-teal-300"
+                        onClick={() => void inspectPushSubscription()}
+                        type="button"
+                      >
+                        Retry push check
+                      </button>
+                    </>
+                  )}
+                  {pushRecoveryError && pushRecoveryStatus !== "unavailable" && (
+                    <p role="alert" className="mt-2 text-rose-600">
+                      {pushRecoveryError}
+                    </p>
+                  )}
+                  {pushRecoveryStatus === "subscribed" && pushSubscriptionSynchronized && (
+                    <p role="status" className="text-teal-700 dark:text-teal-300">
+                      This browser’s push subscription is synchronized.
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="grid grid-cols-1 gap-3 py-4 min-[390px]:grid-cols-2">
                 <label className="text-xs font-semibold text-slate-500">
                   Quiet hours start

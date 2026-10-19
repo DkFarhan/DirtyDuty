@@ -404,6 +404,14 @@ class HouseholdControllerIntegrationTest {
                 .contentType(APPLICATION_JSON)
                 .content(pushSubscriptionJson(secondEndpoint, key, auth)))
         .andExpect(status().isNoContent());
+    mockMvc
+        .perform(
+            put("/api/notifications/push-subscriptions")
+                .cookie(owner.cookie())
+                .header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content(pushSubscriptionJson(firstEndpoint, key, auth)))
+        .andExpect(status().isNoContent());
     assertThat(
             jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM push_subscriptions WHERE user_id=? AND active=TRUE",

@@ -1,3 +1,23 @@
+export type BrowserPushSubscriptionStatus =
+  "unsupported" | "permission-required" | "permission-denied" | "missing" | "subscribed"
+
+export async function getBrowserPushSubscriptionStatus(): Promise<BrowserPushSubscriptionStatus> {
+  if (
+    !("Notification" in window) ||
+    !("serviceWorker" in navigator) ||
+    !("PushManager" in window)
+  ) {
+    return "unsupported"
+  }
+
+  if (Notification.permission === "denied") return "permission-denied"
+  if (Notification.permission !== "granted") return "permission-required"
+
+  const registration = await navigator.serviceWorker.getRegistration("/")
+  const subscription = await registration?.pushManager.getSubscription()
+  return subscription ? "subscribed" : "missing"
+}
+
 export async function createBrowserPushSubscription(publicKey: string): Promise<PushSubscription> {
   if (
     !("Notification" in window) ||
@@ -7,7 +27,12 @@ export async function createBrowserPushSubscription(publicKey: string): Promise<
     throw new Error("Push notifications are not supported in this browser.")
   }
 
-  const permission = await Notification.requestPermission()
+  const permission =
+    Notification.permission === "granted"
+      ? "granted"
+      : Notification.permission === "denied"
+        ? "denied"
+        : await Notification.requestPermission()
   if (permission !== "granted") {
     throw new Error(
       permission === "denied"
@@ -16,7 +41,7 @@ export async function createBrowserPushSubscription(publicKey: string): Promise<
     )
   }
 
-  const registration = await navigator.serviceWorker.register("/service-worker.js")
+  const registration = await navigator.serviceWorker.register("/service-worker.js", { scope: "/" })
   const existing = await registration.pushManager.getSubscription()
   if (existing) return existing
 
@@ -28,7 +53,7 @@ export async function createBrowserPushSubscription(publicKey: string): Promise<
 
 export async function removeBrowserPushSubscription(): Promise<string | null> {
   if (!("serviceWorker" in navigator)) return null
-  const registration = await navigator.serviceWorker.getRegistration()
+  const registration = await navigator.serviceWorker.getRegistration("/")
   const subscription = await registration?.pushManager.getSubscription()
   if (!subscription) return null
 
