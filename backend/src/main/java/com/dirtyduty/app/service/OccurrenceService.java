@@ -262,6 +262,8 @@ public class OccurrenceService {
         assignmentList(householdId, actor.getUser().getId(), today, today.plusDays(1));
     List<AssignmentResponse> weekAssignments =
         assignmentList(householdId, actor.getUser().getId(), monday, nextMonday);
+    List<AssignmentResponse> overdueAssignments =
+        overdueAssignmentList(householdId, actor.getUser().getId());
     long total =
         jdbc.queryForObject(
             """
@@ -286,7 +288,8 @@ public class OccurrenceService {
     return new DashboardResponse(
         new DashboardResponse.WeekSummary(completed, total, percentage),
         todayAssignments,
-        weekAssignments);
+        weekAssignments,
+        overdueAssignments);
   }
 
   @Transactional(readOnly = true)
@@ -433,6 +436,24 @@ public class OccurrenceService {
             householdId,
             from,
             until);
+    return ids.stream().map(id -> assignmentResponse(id, userId)).toList();
+  }
+
+  private List<AssignmentResponse> overdueAssignmentList(UUID householdId, UUID userId) {
+    List<UUID> ids =
+        jdbc.query(
+            """
+                SELECT a.id FROM chore_assignments a
+                JOIN chore_assignment_assignees aa ON aa.assignment_id=a.id
+                WHERE a.household_id=? AND aa.user_id=?
+                  AND a.status IN ('PENDING','SUBMITTED')
+                  AND a.due_at IS NOT NULL AND a.due_at<?
+                ORDER BY a.due_at, a.scheduled_for, a.id
+                """,
+            (rs, row) -> rs.getObject("id", UUID.class),
+            householdId,
+            userId,
+            OffsetDateTime.now(ZoneOffset.UTC));
     return ids.stream().map(id -> assignmentResponse(id, userId)).toList();
   }
 

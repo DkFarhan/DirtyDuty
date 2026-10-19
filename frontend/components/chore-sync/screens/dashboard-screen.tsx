@@ -102,6 +102,12 @@ export function DashboardScreen() {
   const householdTotal = summary?.totalCount ?? 0
   const today = dashboard?.today ?? []
   const week = dashboard?.thisWeek ?? []
+  const overdueAssignments = (dashboard?.overdue ?? []).filter(
+    (assignment) =>
+      assignment.overdue &&
+      assignment.assignees.some((assignee) => assignee.userId === state.currentUser.id),
+  )
+  const overdueIds = new Set(overdueAssignments.map(({ id }) => id))
   const personalWeek = week.filter((assignment) =>
     assignment.assignees.some((assignee) => assignee.userId === state.currentUser.id),
   )
@@ -114,9 +120,7 @@ export function DashboardScreen() {
   const personalDueToday = personalToday.filter(
     (assignment) => assignment.status === "PENDING" && !assignment.overdue,
   ).length
-  const personalOverdue = personalWeek.filter(
-    (assignment) => assignment.status === "PENDING" && assignment.overdue,
-  ).length
+  const personalOverdue = overdueAssignments.length
   const personalCounts = {
     assigned: personalWeek.length,
     completed: personalCompleted,
@@ -131,11 +135,13 @@ export function DashboardScreen() {
     state.currentUser.id,
     dateKey,
   )
-  const todayForDisplay = [...today].sort((left, right) => {
-    const priority = (status: (typeof today)[number]["status"]) =>
-      status === "PENDING" ? 0 : status === "COMPLETED" ? 2 : 1
-    return priority(left.status) - priority(right.status)
-  })
+  const todayForDisplay = today
+    .filter((assignment) => !overdueIds.has(assignment.id))
+    .sort((left, right) => {
+      const priority = (status: (typeof today)[number]["status"]) =>
+        status === "PENDING" ? 0 : status === "COMPLETED" ? 2 : 1
+      return priority(left.status) - priority(right.status)
+    })
   const upcoming = getUpcomingAssignments(week, today, dateKey)
   const upcomingGroups = groupAssignmentsByDate(upcoming)
   const summaryAccent =
@@ -364,6 +370,34 @@ export function DashboardScreen() {
               </dl>
             </section>
 
+            {overdueAssignments.length > 0 && (
+              <section aria-labelledby="needs-attention-heading">
+                <div className="mb-2.5 flex items-center justify-between gap-3">
+                  <h2
+                    className="font-display text-sm font-bold text-slate-700 dark:text-slate-200"
+                    id="needs-attention-heading"
+                  >
+                    Needs Attention
+                  </h2>
+                  <span className="text-[11px] font-semibold text-rose-800 dark:text-rose-300">
+                    {overdueAssignments.length} overdue
+                  </span>
+                </div>
+                <div className="flex flex-col gap-3">
+                  {overdueAssignments.map((assignment) => (
+                    <ServerAssignmentCard
+                      assignment={assignment}
+                      completing={completingId === assignment.id}
+                      currentUserId={state.currentUser.id}
+                      householdTimezone={household?.timezone ?? "UTC"}
+                      key={assignment.id}
+                      onComplete={(id) => void completeAssignment(id)}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+
             <section aria-labelledby="today-heading">
               <div className="mb-2.5 flex items-center justify-between gap-3">
                 <h2
@@ -372,21 +406,34 @@ export function DashboardScreen() {
                 >
                   Today
                 </h2>
-                {today.length > 0 && (
+                {todayForDisplay.length > 0 && (
                   <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                    {today.filter((item) => item.status === "PENDING").length} pending
+                    {todayForDisplay.filter((item) => item.status === "PENDING").length} pending
                   </span>
                 )}
               </div>
-              {today.length === 0 ? (
+              {todayForDisplay.length === 0 ? (
                 <div className="rounded-2xl bg-white px-5 py-4 text-center dark:bg-slate-900">
-                  <div className="mb-1.5 text-3xl">🎉</div>
-                  <p className="font-bold text-slate-900 dark:text-slate-100">
-                    No chores due today!
-                  </p>
-                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-                    Enjoy your free time
-                  </p>
+                  {overdueAssignments.length > 0 && today.length > 0 ? (
+                    <>
+                      <p className="font-bold text-slate-900 dark:text-slate-100">
+                        No other chores due today.
+                      </p>
+                      <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                        Overdue work is listed above.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="mb-1.5 text-3xl">🎉</div>
+                      <p className="font-bold text-slate-900 dark:text-slate-100">
+                        No chores due today!
+                      </p>
+                      <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                        Enjoy your free time
+                      </p>
+                    </>
+                  )}
                 </div>
               ) : (
                 <div className="flex flex-col gap-3">

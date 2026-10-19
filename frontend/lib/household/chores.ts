@@ -90,6 +90,7 @@ export type HouseholdDashboard = {
   }
   today: AssignmentDTO[]
   thisWeek: AssignmentDTO[]
+  overdue: AssignmentDTO[]
 }
 
 export function categoryIcon(iconKey: string | null | undefined) {

@@ -1332,6 +1332,86 @@ class HouseholdControllerIntegrationTest {
   }
 
   @Test
+  void dashboardIncludesPersonalOverdueCarryoverOutsideCurrentWeek() throws Exception {
+    WebSession owner = login("overduecarryover");
+    UUID householdId = createHousehold(owner, "Overdue Carryover Home", "UTC");
+    UUID userId = UUID.fromString(owner.userId());
+    UUID categoryId =
+        jdbcTemplate.queryForObject(
+            "SELECT id FROM chore_categories WHERE household_id=? ORDER BY sort_order LIMIT 1",
+            UUID.class,
+            householdId);
+    UUID choreId = UUID.randomUUID();
+    UUID assignmentId = UUID.randomUUID();
+    LocalDate currentWeekMonday = LocalDate.now(ZoneOffset.UTC).with(java.time.DayOfWeek.MONDAY);
+    LocalDate priorSunday = currentWeekMonday.minusDays(1);
+    OffsetDateTime dueAt = priorSunday.atTime(23, 0).atOffset(ZoneOffset.UTC);
+    jdbcTemplate.update(
+        """
+                INSERT INTO chores (id, household_id, category_id, title, created_by_user_id)
+                VALUES (?, ?, ?, 'Laundry', ?)
+                """,
+        choreId,
+        householdId,
+        categoryId,
+        userId);
+    jdbcTemplate.update(
+        """
+                INSERT INTO chore_assignments
+                    (id, household_id, chore_id, scheduled_for, due_at, status, title_snapshot,
+                     priority_snapshot, difficulty_snapshot)
+                VALUES (?, ?, ?, ?, ?, 'PENDING', 'Laundry', 'NORMAL', 1)
+                """,
+        assignmentId,
+        householdId,
+        choreId,
+        priorSunday,
+        dueAt);
+    jdbcTemplate.update(
+        """
+                INSERT INTO chore_assignment_assignees (household_id, assignment_id, user_id)
+                VALUES (?, ?, ?)
+                """,
+        householdId,
+        assignmentId,
+        userId);
+
+    String base = "/api/households/" + householdId;
+    mockMvc
+        .perform(get(base + "/dashboard").cookie(owner.cookie()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.weekSummary.totalCount").value(0))
+        .andExpect(jsonPath("$.weekSummary.completedCount").value(0))
+        .andExpect(jsonPath("$.thisWeek.length()").value(0))
+        .andExpect(jsonPath("$.today.length()").value(0))
+        .andExpect(jsonPath("$.overdue.length()").value(1))
+        .andExpect(jsonPath("$.overdue[0].id").value(assignmentId.toString()))
+        .andExpect(jsonPath("$.overdue[0].title").value("Laundry"))
+        .andExpect(jsonPath("$.overdue[0].status").value("PENDING"))
+        .andExpect(jsonPath("$.overdue[0].overdue").value(true))
+        .andExpect(jsonPath("$.overdue[0].canComplete").value(true))
+        .andExpect(jsonPath("$.overdue[0].scheduledFor").value(priorSunday.toString()));
+
+    mockMvc
+        .perform(
+            post(base + "/assignments/" + assignmentId + "/complete")
+                .cookie(owner.cookie())
+                .header(owner.csrfHeader(), owner.csrfToken()))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(get(base + "/dashboard").cookie(owner.cookie()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.overdue.length()").value(0))
+        .andExpect(jsonPath("$.weekSummary.totalCount").value(0));
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT scheduled_for FROM chore_assignments WHERE id=?",
+                LocalDate.class,
+                assignmentId))
+        .isEqualTo(priorSunday);
+  }
+
+  @Test
   void multiPersonOccurrencesAreGeneratedSharedAndCompletableOnlyByAssignees() throws Exception {
     WebSession owner = login("multichoreowner");
     WebSession member = login("multichoremember");
