@@ -219,6 +219,7 @@ export function getUpcomingAssignments(
       const dateKey = scheduledDateKey(assignment)
       return (
         assignment.status === "PENDING" &&
+        !assignment.overdue &&
         !todayIds.has(assignment.id) &&
         dateKey !== null &&
         dateKey > todayKey

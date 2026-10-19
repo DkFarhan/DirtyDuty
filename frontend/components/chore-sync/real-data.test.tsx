@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { AppShell } from "./app-shell"
 import { clearCsrfToken } from "@/lib/auth/api"
+import type { HouseholdDashboard } from "@/lib/household/chores"
 import { stubAuthFeatures } from "../../test/stub-auth-features"
 import { getLocalDateKey, WEEK_SUMMARY_TEMPLATES } from "./week-summary"
 
@@ -49,6 +50,7 @@ const dashboard = {
   weekSummary: { completedCount: 1, totalCount: 2, completionPercentage: 50 },
   today: [pendingAssignment],
   thisWeek: [pendingAssignment],
+  overdue: [],
 }
 
 function jsonResponse(payload: unknown, status = 200) {
@@ -58,11 +60,14 @@ function jsonResponse(payload: unknown, status = 200) {
   })
 }
 
-async function startAtDashboard(data = dashboard, householdData = household) {
+async function startAtDashboard(
+  data: Partial<HouseholdDashboard> = dashboard,
+  householdData = household,
+) {
   fetchMock
     .mockResolvedValueOnce(jsonResponse(user))
     .mockResolvedValueOnce(jsonResponse([householdData]))
-    .mockResolvedValueOnce(jsonResponse(data))
+    .mockResolvedValueOnce(jsonResponse({ ...dashboard, ...data }))
   render(<AppShell />)
   await screen.findByRole("heading", { name: "Today" }, { timeout: 3_000 })
 }
@@ -78,6 +83,7 @@ describe("server-backed chore data", () => {
 
   afterEach(() => {
     cleanup()
+    vi.useRealTimers()
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
     clearCsrfToken()
@@ -93,6 +99,7 @@ describe("server-backed chore data", () => {
       ...dashboard,
       today: [timezoneBoundaryAssignment],
       thisWeek: [timezoneBoundaryAssignment],
+      overdue: [timezoneBoundaryAssignment],
     })
     expect(screen.getByText("1/2")).toBeTruthy()
     expect(screen.getAllByText("Assigned to You, Ahmed")).toHaveLength(1)
@@ -126,6 +133,7 @@ describe("server-backed chore data", () => {
             },
           ],
           thisWeek: [],
+          overdue: [],
         }),
       )
     fireEvent.click(screen.getByRole("button", { name: "Mark Clean Kitchen complete" }))
@@ -159,6 +167,7 @@ describe("server-backed chore data", () => {
       weekSummary: { completedCount: 1, totalCount: 2, completionPercentage: 50 },
       today: [personalAssignments[4], personalAssignments[5]],
       thisWeek: [...personalAssignments, otherMemberAssignment],
+      overdue: [personalAssignments[5]],
     })
 
     expect(screen.getByText("4 of 9 completed")).toBeTruthy()
@@ -190,7 +199,84 @@ describe("server-backed chore data", () => {
     expect(screen.getByRole("img", { name: "1 of 1 assigned chores completed" })).toBeTruthy()
   })
 
-  it("orders pending TODAY chores before completed chores", async () => {
+  it("keeps a prior-week Sunday overdue chore visible after the Monday rollover", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date("2026-10-19T12:00:00Z"))
+    const sundayLaundry = {
+      ...pendingAssignment,
+      id: "sunday-laundry",
+      title: "Laundry",
+      categoryName: "Laundry",
+      scheduledFor: "2026-10-18",
+      dueAt: "2026-10-18T23:00:00Z",
+      assignees: [{ userId: user.userId, displayName: user.displayName }],
+      canComplete: true,
+      overdue: true,
+    }
+    await startAtDashboard(
+      {
+        weekSummary: { completedCount: 0, totalCount: 0, completionPercentage: 0 },
+        today: [],
+        thisWeek: [],
+        overdue: [sundayLaundry],
+      },
+      { ...household, timezone: "UTC" },
+    )
+
+    const yourWeek = screen.getByRole("region", { name: "Your Week" })
+    expect(within(yourWeek).getByText("Assigned").nextElementSibling?.textContent).toBe("0")
+    expect(within(yourWeek).getByText("Completed").nextElementSibling?.textContent).toBe("0")
+    expect(within(yourWeek).getByText("Due today").nextElementSibling?.textContent).toBe("0")
+    expect(within(yourWeek).getByText("Overdue").nextElementSibling?.textContent).toBe("1")
+    expect(within(yourWeek).queryByRole("img")).toBeNull()
+    expect(within(yourWeek).queryByText(/%/)).toBeNull()
+    expect(
+      WEEK_SUMMARY_TEMPLATES.OVERDUE.some(({ title, body }) => {
+        return within(yourWeek).queryByText(title) || within(yourWeek).queryByText(body)
+      }),
+    ).toBe(true)
+
+    const attention = screen.getByRole("region", { name: "Needs Attention" })
+    expect(within(attention).getByRole("heading", { name: "Laundry" })).toBeTruthy()
+    expect(within(attention).getByText("1 overdue")).toBeTruthy()
+    expect(
+      within(screen.getByRole("region", { name: "Today" })).queryByRole("heading", {
+        name: "Laundry",
+      }),
+    ).toBeNull()
+    expect(
+      within(screen.getByRole("region", { name: "Up Next" })).queryByRole("heading", {
+        name: "Laundry",
+      }),
+    ).toBeNull()
+    expect(screen.getByText("0% done")).toBeTruthy()
+    expect(screen.getByText("0/0")).toBeTruthy()
+
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ token: "complete-csrf", headerName: "X-CSRF-TOKEN" }))
+      .mockResolvedValueOnce(
+        jsonResponse({ ...sundayLaundry, status: "COMPLETED", overdue: false }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          weekSummary: { completedCount: 0, totalCount: 0, completionPercentage: 0 },
+          today: [],
+          thisWeek: [],
+          overdue: [],
+        }),
+      )
+    fireEvent.click(screen.getByRole("button", { name: "Mark Laundry complete" }))
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Needs Attention" })).toBeNull(),
+    )
+    expect(
+      within(screen.getByRole("region", { name: "Your Week" })).getByText("Overdue")
+        .nextElementSibling?.textContent,
+    ).toBe("0")
+    vi.useRealTimers()
+  })
+
+  it("orders actionable TODAY chores before completed chores", async () => {
     const completed = {
       ...pendingAssignment,
       id: "completed-washroom",
@@ -205,12 +291,13 @@ describe("server-backed chore data", () => {
       id: "overdue-laundry",
       title: "Laundry",
       status: "PENDING" as const,
-      overdue: true,
+      overdue: false,
     }
     await startAtDashboard({
       weekSummary: { completedCount: 1, totalCount: 2, completionPercentage: 50 },
       today: [completed, overdue],
       thisWeek: [completed, overdue],
+      overdue: [],
     })
 
     const todayHeadings = within(screen.getByRole("region", { name: "Today" }))

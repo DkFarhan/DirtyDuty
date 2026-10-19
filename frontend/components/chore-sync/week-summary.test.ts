@@ -150,10 +150,14 @@ describe("UP NEXT assignment selection", () => {
     const todayItem = assignment("today", "2026-10-18T12:00:00Z")
     const tomorrow = assignment("tomorrow", "2026-10-19T12:00:00Z")
     const later = assignment("later", "2026-10-20T12:00:00Z")
+    const overdueFuture = {
+      ...assignment("overdue-future", "2026-10-21T12:00:00Z"),
+      overdue: true,
+    }
     const completed = assignment("completed", "2026-10-21T12:00:00Z", "COMPLETED")
     expect(
       getUpcomingAssignments(
-        [later, todayItem, completed, tomorrow],
+        [later, todayItem, completed, overdueFuture, tomorrow],
         [todayItem],
         "2026-10-18",
       ).map(({ id }) => id),
