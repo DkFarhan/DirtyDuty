@@ -1,9 +1,14 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { createBrowserPushSubscription, removeBrowserPushSubscription } from "./push"
+import {
+  createBrowserPushSubscription,
+  getBrowserPushSubscriptionStatus,
+  removeBrowserPushSubscription,
+} from "./push"
 
 const permissionRequest = vi.fn<() => Promise<NotificationPermission>>()
+let permissionState: NotificationPermission = "default"
 const register = vi.fn()
 const getRegistration = vi.fn()
 const getSubscription = vi.fn()
@@ -33,9 +38,14 @@ describe("browser push helpers", () => {
     getSubscription.mockReset()
     subscribe.mockReset()
     unsubscribe.mockReset()
+    permissionState = "default"
     vi.stubGlobal(
       "Notification",
       class {
+        static get permission() {
+          return permissionState
+        }
+
         static requestPermission = permissionRequest
       },
     )
@@ -66,17 +76,74 @@ describe("browser push helpers", () => {
     await expect(createBrowserPushSubscription("BNc-test-key")).resolves.toBe(subscription)
 
     expect(permissionRequest).toHaveBeenCalledOnce()
-    expect(register).toHaveBeenCalledWith("/service-worker.js")
+    expect(register).toHaveBeenCalledWith("/service-worker.js", { scope: "/" })
     expect(subscribe).toHaveBeenCalledWith(expect.objectContaining({ userVisibleOnly: true }))
   })
 
-  it("stops before registering a worker when browser permission is denied", async () => {
-    permissionRequest.mockResolvedValue("denied")
+  it("reuses an existing subscription without requesting already-granted permission", async () => {
+    permissionState = "granted"
+    getSubscription.mockResolvedValue(subscription)
+
+    await expect(createBrowserPushSubscription("BNc-test-key")).resolves.toBe(subscription)
+
+    expect(permissionRequest).not.toHaveBeenCalled()
+    expect(subscribe).not.toHaveBeenCalled()
+  })
+
+  it("does not request permission again after it has been denied", async () => {
+    permissionState = "denied"
 
     await expect(createBrowserPushSubscription("BNc-test-key")).rejects.toThrow(
       /permission was denied/,
     )
+
+    expect(permissionRequest).not.toHaveBeenCalled()
     expect(register).not.toHaveBeenCalled()
+  })
+
+  it("reports a granted permission with no subscription as recoverable", async () => {
+    permissionState = "granted"
+    getRegistration.mockResolvedValue({ pushManager: { getSubscription } })
+    getSubscription.mockResolvedValue(null)
+
+    await expect(getBrowserPushSubscriptionStatus()).resolves.toBe("missing")
+    expect(getRegistration).toHaveBeenCalledWith("/")
+    expect(permissionRequest).not.toHaveBeenCalled()
+    expect(subscribe).not.toHaveBeenCalled()
+  })
+
+  it("reports an existing subscription without modifying it", async () => {
+    permissionState = "granted"
+    getRegistration.mockResolvedValue({ pushManager: { getSubscription } })
+    getSubscription.mockResolvedValue(subscription)
+
+    await expect(getBrowserPushSubscriptionStatus()).resolves.toBe("subscribed")
+    expect(subscribe).not.toHaveBeenCalled()
+    expect(unsubscribe).not.toHaveBeenCalled()
+  })
+
+  it("does not inspect subscription state when permission has not been granted", async () => {
+    await expect(getBrowserPushSubscriptionStatus()).resolves.toBe("permission-required")
+    expect(getRegistration).not.toHaveBeenCalled()
+    expect(permissionRequest).not.toHaveBeenCalled()
+  })
+
+  it("reports denied permission without requesting it again", async () => {
+    permissionState = "denied"
+
+    await expect(getBrowserPushSubscriptionStatus()).resolves.toBe("permission-denied")
+
+    expect(getRegistration).not.toHaveBeenCalled()
+    expect(permissionRequest).not.toHaveBeenCalled()
+  })
+
+  it("reports unsupported browsers without attempting permission or worker access", async () => {
+    Reflect.deleteProperty(window, "PushManager")
+
+    await expect(getBrowserPushSubscriptionStatus()).resolves.toBe("unsupported")
+
+    expect(permissionRequest).not.toHaveBeenCalled()
+    expect(getRegistration).not.toHaveBeenCalled()
   })
 
   it("unsubscribes the current browser subscription", async () => {

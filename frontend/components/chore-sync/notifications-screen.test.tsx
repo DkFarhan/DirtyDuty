@@ -6,12 +6,14 @@ import { clearCsrfToken } from "@/lib/auth/api"
 import { ChoreSyncProvider } from "@/lib/chore-sync/store"
 import {
   createBrowserPushSubscription,
+  getBrowserPushSubscriptionStatus,
   removeBrowserPushSubscription,
 } from "@/lib/notifications/push"
 import { NotificationsScreen } from "./screens/notifications-screen"
 
 vi.mock("@/lib/notifications/push", () => ({
   createBrowserPushSubscription: vi.fn(),
+  getBrowserPushSubscriptionStatus: vi.fn(),
   removeBrowserPushSubscription: vi.fn(),
 }))
 
@@ -62,10 +64,12 @@ const preferences = {
   competitiveNotificationsEnabled: true,
   pushEnabled: false,
 }
+let currentPreferences = { ...preferences }
+let pushSubscriptionRequestFails = false
 
-function jsonResponse(payload: unknown) {
+function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
-    status: 200,
+    status,
     headers: { "content-type": "application/json" },
   })
 }
@@ -73,8 +77,12 @@ function jsonResponse(payload: unknown) {
 describe("notifications screen", () => {
   beforeEach(() => {
     fetchMock.mockReset()
+    currentPreferences = { ...preferences }
+    pushSubscriptionRequestFails = false
     vi.mocked(removeBrowserPushSubscription).mockReset()
     vi.mocked(createBrowserPushSubscription).mockReset()
+    vi.mocked(getBrowserPushSubscriptionStatus).mockReset()
+    vi.mocked(getBrowserPushSubscriptionStatus).mockResolvedValue("unsupported")
     fetchMock.mockImplementation(async (input, init) => {
       const url = String(input)
       if (url.endsWith("/api/notifications") && !url.endsWith("/unread-count"))
@@ -83,7 +91,7 @@ describe("notifications screen", () => {
       if (url.endsWith("/api/notifications/preferences") && init?.method === "PUT") {
         return jsonResponse(JSON.parse(String(init.body)))
       }
-      if (url.endsWith("/api/notifications/preferences")) return jsonResponse(preferences)
+      if (url.endsWith("/api/notifications/preferences")) return jsonResponse(currentPreferences)
       if (url.endsWith("/api/notifications/push/public-key"))
         return jsonResponse({ publicKey: "test-vapid-key", available: true })
       if (url.endsWith("/api/auth/csrf"))
@@ -93,8 +101,11 @@ describe("notifications screen", () => {
         url.endsWith("/api/notifications/read-all")
       )
         return new Response(null, { status: 204 })
-      if (url.endsWith("/api/notifications/push-subscriptions"))
-        return new Response(null, { status: 204 })
+      if (url.endsWith("/api/notifications/push-subscriptions")) {
+        return pushSubscriptionRequestFails
+          ? jsonResponse({ message: "Temporary failure" }, 500)
+          : new Response(null, { status: 204 })
+      }
       if (url.endsWith("/api/notifications/push-subscriptions/unsubscribe"))
         return new Response(null, { status: 204 })
       throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url}`)
@@ -190,7 +201,7 @@ describe("notifications screen", () => {
     expect(screen.queryByText("Preferences saved.")).toBeNull()
 
     fireEvent.click(screen.getByRole("button", { name: "Save preferences" }))
-    expect((await screen.findByRole("status")).textContent).toContain("Preferences saved.")
+    expect(await screen.findByText("Preferences saved.")).toBeTruthy()
     expect(vi.mocked(createBrowserPushSubscription)).toHaveBeenCalledWith(expect.any(String))
     expect(
       fetchMock.mock.calls.some(
@@ -198,6 +209,122 @@ describe("notifications screen", () => {
           String(url).endsWith("/api/notifications/push-subscriptions") && init?.method === "PUT",
       ),
     ).toBe(true)
+  })
+
+  it("offers user-initiated recovery when enabled push has no browser subscription", async () => {
+    currentPreferences = { ...preferences, pushEnabled: true }
+    vi.mocked(getBrowserPushSubscriptionStatus).mockResolvedValue("missing")
+
+    render(
+      <ChoreSyncProvider>
+        <NotificationsScreen />
+      </ChoreSyncProvider>,
+    )
+
+    const restoreButton = await screen.findByRole("button", {
+      name: "Restore push notifications",
+    })
+    expect(vi.mocked(createBrowserPushSubscription)).not.toHaveBeenCalled()
+
+    fireEvent.click(restoreButton)
+
+    expect(
+      await screen.findByText("This browser’s push subscription is synchronized."),
+    ).toBeTruthy()
+    expect(vi.mocked(createBrowserPushSubscription)).toHaveBeenCalledWith("test-vapid-key")
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url, init]) =>
+          String(url).endsWith("/api/notifications/push-subscriptions") && init?.method === "PUT",
+      ),
+    ).toHaveLength(1)
+    expect(
+      fetchMock.mock.calls.some(
+        ([url, init]) =>
+          String(url).endsWith("/api/notifications/preferences") && init?.method === "PUT",
+      ),
+    ).toBe(false)
+  })
+
+  it("lets the user synchronize an existing browser subscription with the current account", async () => {
+    currentPreferences = { ...preferences, pushEnabled: true }
+    vi.mocked(getBrowserPushSubscriptionStatus).mockResolvedValue("subscribed")
+
+    render(
+      <ChoreSyncProvider>
+        <NotificationsScreen />
+      </ChoreSyncProvider>,
+    )
+
+    const syncButton = await screen.findByRole("button", { name: "Sync this browser" })
+    expect(vi.mocked(createBrowserPushSubscription)).not.toHaveBeenCalled()
+    expect(
+      fetchMock.mock.calls.some(
+        ([url, init]) =>
+          String(url).endsWith("/api/notifications/push-subscriptions") && init?.method === "PUT",
+      ),
+    ).toBe(false)
+
+    fireEvent.click(syncButton)
+
+    expect(
+      await screen.findByText("This browser’s push subscription is synchronized."),
+    ).toBeTruthy()
+    expect(vi.mocked(createBrowserPushSubscription)).toHaveBeenCalledWith("test-vapid-key")
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url, init]) =>
+          String(url).endsWith("/api/notifications/push-subscriptions") && init?.method === "PUT",
+      ),
+    ).toHaveLength(1)
+  })
+
+  it("keeps recovery available after backend synchronization fails", async () => {
+    currentPreferences = { ...preferences, pushEnabled: true }
+    pushSubscriptionRequestFails = true
+    vi.mocked(getBrowserPushSubscriptionStatus).mockResolvedValue("missing")
+
+    render(
+      <ChoreSyncProvider>
+        <NotificationsScreen />
+      </ChoreSyncProvider>,
+    )
+
+    fireEvent.click(await screen.findByRole("button", { name: "Restore push notifications" }))
+
+    expect(await screen.findByText("Something went wrong. Please try again.")).toBeTruthy()
+    expect(await screen.findByRole("button", { name: "Retry push setup" })).toBeTruthy()
+    expect(screen.getByLabelText("Push notifications")).toHaveProperty("checked", true)
+  })
+
+  it("does not inspect or restore push when the saved preference is disabled", async () => {
+    render(
+      <ChoreSyncProvider>
+        <NotificationsScreen />
+      </ChoreSyncProvider>,
+    )
+
+    await screen.findByLabelText("Push notifications")
+    expect(getBrowserPushSubscriptionStatus).not.toHaveBeenCalled()
+    expect(
+      screen.queryByRole("button", { name: /restore push|enable push|retry push/i }),
+    ).toBeNull()
+  })
+
+  it("directs users with blocked permission to settings without retrying a permission prompt", async () => {
+    currentPreferences = { ...preferences, pushEnabled: true }
+    vi.mocked(getBrowserPushSubscriptionStatus).mockResolvedValue("permission-denied")
+
+    render(
+      <ChoreSyncProvider>
+        <NotificationsScreen />
+      </ChoreSyncProvider>,
+    )
+
+    expect(await screen.findByText(/Push permission is blocked\. Allow notifications/)).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Check permission again" }))
+    await waitFor(() => expect(getBrowserPushSubscriptionStatus).toHaveBeenCalledTimes(2))
+    expect(createBrowserPushSubscription).not.toHaveBeenCalled()
   })
 
   it("shows a clear empty state when there are no notifications", async () => {
