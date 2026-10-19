@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.dirtyduty.app.config.SecurityConfig;
 import com.dirtyduty.app.dto.auth.CsrfResponse;
 import com.dirtyduty.app.dto.auth.RegisterRequest;
 import com.dirtyduty.app.dto.auth.RegisterResponse;
@@ -21,17 +22,23 @@ import com.dirtyduty.app.service.GoogleIdentityService;
 import com.dirtyduty.app.service.LegalDocumentVersions;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.Cookie;
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.web.authentication.session.ChangeSessionIdAuthenticationStrategy;
 import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
+import org.springframework.session.web.http.CookieSerializer;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -55,6 +62,9 @@ class AuthSessionIntegrationTest {
   @Autowired private JdbcTemplate jdbcTemplate;
 
   @Autowired private SessionAuthenticationStrategy sessionAuthenticationStrategy;
+
+  @Value("${app.security.session-cookie-secure:true}")
+  private boolean sessionCookieSecure;
 
   @AfterEach
   void cleanUpTestOwnedSessionsAndUsers() {
@@ -110,6 +120,17 @@ class AuthSessionIntegrationTest {
     assertThat(csrf.getResponse().getHeader("Set-Cookie")).containsIgnoringCase("SameSite=Lax");
     Cookie loginCookie = login.getResponse().getCookie("SESSION");
     assertThat(loginCookie).isNotNull();
+    assertThat(loginCookie.getMaxAge()).isEqualTo((int) Duration.ofDays(365).toSeconds());
+    assertThat(loginCookie.isHttpOnly()).isTrue();
+    assertThat(loginCookie.getSecure()).isEqualTo(sessionCookieSecure);
+    assertThat(loginCookie.getPath()).isEqualTo("/");
+    assertThat(login.getResponse().getHeader("Set-Cookie")).containsIgnoringCase("SameSite=Lax");
+    String[] cookieAttributes = login.getResponse().getHeader("Set-Cookie").split(";");
+    assertThat(
+            Arrays.stream(cookieAttributes)
+                .map(String::trim)
+                .anyMatch(attribute -> attribute.equalsIgnoreCase("Secure")))
+        .isEqualTo(sessionCookieSecure);
     mockMvc
         .perform(get("/api/auth/me").cookie(loginCookie))
         .andExpect(status().isOk())
@@ -122,6 +143,55 @@ class AuthSessionIntegrationTest {
         jdbcTemplate.queryForObject(
             "SELECT COUNT(*) FROM spring_session WHERE principal_name = ?", Integer.class, email);
     assertThat(persistedSessions).isGreaterThanOrEqualTo(1);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT max_inactive_interval FROM spring_session WHERE principal_name = ?",
+                Integer.class,
+                email))
+        .isEqualTo((int) Duration.ofDays(30).toSeconds());
+  }
+
+  @Test
+  void normalAuthenticatedAccessSlidesServerSessionExpiry() throws Exception {
+    String email = uniqueEmail("sliding-session");
+    register(email, AccountStatus.ACTIVE);
+    Cookie loginCookie =
+        performLogin(email, "StrongPassword123!", csrf()).getResponse().getCookie("SESSION");
+
+    long staleLastAccess = System.currentTimeMillis() - Duration.ofMinutes(5).toMillis();
+    long staleExpiry = staleLastAccess + Duration.ofDays(30).toMillis();
+    jdbcTemplate.update(
+        "UPDATE spring_session SET last_access_time=?, expiry_time=? WHERE principal_name=?",
+        staleLastAccess,
+        staleExpiry,
+        email);
+
+    mockMvc.perform(get("/api/auth/me").cookie(loginCookie)).andExpect(status().isOk());
+
+    Long refreshedLastAccess =
+        jdbcTemplate.queryForObject(
+            "SELECT last_access_time FROM spring_session WHERE principal_name=?",
+            Long.class,
+            email);
+    Long refreshedExpiry =
+        jdbcTemplate.queryForObject(
+            "SELECT expiry_time FROM spring_session WHERE principal_name=?", Long.class, email);
+    assertThat(refreshedLastAccess).isGreaterThan(staleLastAccess);
+    assertThat(refreshedExpiry).isGreaterThan(staleExpiry);
+  }
+
+  @Test
+  void localSessionCookieOverrideRemainsInsecureAndPersistent() {
+    MockHttpServletRequest request = new MockHttpServletRequest();
+    MockHttpServletResponse response = new MockHttpServletResponse();
+    CookieSerializer serializer =
+        new SecurityConfig().cookieSerializer(false, Duration.ofDays(365));
+    serializer.writeCookieValue(new CookieSerializer.CookieValue(request, response, "session-id"));
+
+    String setCookie = response.getHeader("Set-Cookie");
+    assertThat(setCookie)
+        .contains("SESSION=", "Max-Age=31536000", "Path=/", "HttpOnly", "SameSite=Lax")
+        .doesNotContain("Secure");
   }
 
   @Test
