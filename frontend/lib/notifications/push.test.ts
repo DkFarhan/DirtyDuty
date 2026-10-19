@@ -30,6 +30,14 @@ const subscription = {
 const originalServiceWorker = Object.getOwnPropertyDescriptor(navigator, "serviceWorker")
 const originalPushManager = Object.getOwnPropertyDescriptor(window, "PushManager")
 
+function activeRegistration() {
+  return {
+    scope: new URL("/", window.location.origin).href,
+    active: { scriptURL: new URL("/service-worker.js", window.location.origin).href },
+    pushManager: { getSubscription, subscribe },
+  }
+}
+
 describe("browser push helpers", () => {
   beforeEach(() => {
     permissionRequest.mockReset()
@@ -55,7 +63,7 @@ describe("browser push helpers", () => {
       value: { register, getRegistration },
     })
     register.mockResolvedValue({ pushManager: { getSubscription, subscribe } })
-    getRegistration.mockResolvedValue({ pushManager: { getSubscription } })
+    getRegistration.mockResolvedValue(activeRegistration())
     getSubscription.mockResolvedValue(null)
     subscribe.mockResolvedValue(subscription)
     unsubscribe.mockResolvedValue(true)
@@ -103,7 +111,7 @@ describe("browser push helpers", () => {
 
   it("reports a granted permission with no subscription as recoverable", async () => {
     permissionState = "granted"
-    getRegistration.mockResolvedValue({ pushManager: { getSubscription } })
+    getRegistration.mockResolvedValue(activeRegistration())
     getSubscription.mockResolvedValue(null)
 
     await expect(getBrowserPushSubscriptionStatus()).resolves.toBe("missing")
@@ -114,7 +122,7 @@ describe("browser push helpers", () => {
 
   it("reports an existing subscription without modifying it", async () => {
     permissionState = "granted"
-    getRegistration.mockResolvedValue({ pushManager: { getSubscription } })
+    getRegistration.mockResolvedValue(activeRegistration())
     getSubscription.mockResolvedValue(subscription)
 
     await expect(getBrowserPushSubscriptionStatus()).resolves.toBe("subscribed")

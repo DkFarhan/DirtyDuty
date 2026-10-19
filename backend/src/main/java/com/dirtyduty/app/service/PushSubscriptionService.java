@@ -1,5 +1,7 @@
 package com.dirtyduty.app.service;
 
+import com.dirtyduty.app.dto.notification.PushSubscriptionHealthRequest;
+import com.dirtyduty.app.dto.notification.PushSubscriptionHealthResponse;
 import com.dirtyduty.app.dto.notification.PushSubscriptionRequest;
 import com.dirtyduty.app.exception.DuplicateResourceException;
 import com.dirtyduty.app.exception.InvalidHouseholdException;
@@ -7,6 +9,9 @@ import com.dirtyduty.app.exception.ResourceNotFoundException;
 import com.dirtyduty.app.repository.UserRepository;
 import java.net.InetAddress;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.time.OffsetDateTime;
 import java.util.Base64;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -39,7 +44,12 @@ public class PushSubscriptionService {
                     public_key=EXCLUDED.public_key,
                     auth_secret=EXCLUDED.auth_secret,
                     active=TRUE,
-                    last_used_at=NULL
+                    last_used_at=NULL,
+                    last_client_confirmed_at=CASE
+                        WHEN push_subscriptions.active=FALSE
+                          OR push_subscriptions.public_key IS DISTINCT FROM EXCLUDED.public_key
+                          OR push_subscriptions.auth_secret IS DISTINCT FROM EXCLUDED.auth_secret
+                        THEN NULL ELSE push_subscriptions.last_client_confirmed_at END
                 WHERE push_subscriptions.user_id=EXCLUDED.user_id
                 """,
             userId,
@@ -57,6 +67,107 @@ public class PushSubscriptionService {
                 ON CONFLICT (user_id) DO UPDATE SET push_enabled=TRUE, updated_at=NOW()
                 """,
         userId);
+  }
+
+  @Transactional
+  public PushSubscriptionHealthResponse confirmClientPossession(
+      PushSubscriptionHealthRequest request, Authentication authentication) {
+    UUID userId = currentUserId(authentication);
+    Boolean enabled =
+        jdbc.queryForObject(
+            """
+                SELECT COALESCE(
+                    (SELECT push_enabled FROM notification_preferences WHERE user_id=?), FALSE)
+                """,
+            Boolean.class,
+            userId);
+    if (!Boolean.TRUE.equals(enabled)) {
+      return new PushSubscriptionHealthResponse(
+          PushSubscriptionHealthResponse.Status.DISABLED, null);
+    }
+
+    SubscriptionHealthState state =
+        jdbc.query(
+            """
+                SELECT id, user_id, public_key, auth_secret, active, last_client_confirmed_at
+                FROM push_subscriptions
+                WHERE endpoint=?
+                """,
+            rs ->
+                rs.next()
+                    ? new SubscriptionHealthState(
+                        rs.getObject("id", UUID.class),
+                        rs.getObject("user_id", UUID.class),
+                        rs.getString("public_key"),
+                        rs.getString("auth_secret"),
+                        rs.getBoolean("active"),
+                        rs.getObject("last_client_confirmed_at", OffsetDateTime.class))
+                    : null,
+            request.endpoint());
+    if (state == null
+        || !state.userId().equals(userId)
+        || !state.active()
+        || !constantTimeEquals(state.publicKey(), request.publicKey())
+        || !constantTimeEquals(state.authSecret(), request.authSecret())) {
+      return new PushSubscriptionHealthResponse(
+          PushSubscriptionHealthResponse.Status.SYNC_REQUIRED, null);
+    }
+
+    jdbc.update(
+        """
+            UPDATE push_subscriptions
+            SET last_client_confirmed_at=NOW()
+            WHERE id=? AND user_id=? AND active=TRUE
+              AND (last_client_confirmed_at IS NULL
+                   OR last_client_confirmed_at<=NOW() - INTERVAL '24 hours')
+              AND EXISTS (
+                  SELECT 1 FROM notification_preferences
+                  WHERE user_id=? AND push_enabled=TRUE)
+            """,
+        state.id(),
+        userId,
+        userId);
+
+    SubscriptionHealthState confirmed =
+        jdbc.query(
+            """
+                SELECT id, user_id, public_key, auth_secret, active, last_client_confirmed_at
+                FROM push_subscriptions
+                WHERE id=?
+                """,
+            rs ->
+                rs.next()
+                    ? new SubscriptionHealthState(
+                        rs.getObject("id", UUID.class),
+                        rs.getObject("user_id", UUID.class),
+                        rs.getString("public_key"),
+                        rs.getString("auth_secret"),
+                        rs.getBoolean("active"),
+                        rs.getObject("last_client_confirmed_at", OffsetDateTime.class))
+                    : null,
+            state.id());
+    Boolean stillEnabled =
+        jdbc.queryForObject(
+            """
+                SELECT COALESCE(
+                    (SELECT push_enabled FROM notification_preferences WHERE user_id=?), FALSE)
+                """,
+            Boolean.class,
+            userId);
+    if (!Boolean.TRUE.equals(stillEnabled)) {
+      return new PushSubscriptionHealthResponse(
+          PushSubscriptionHealthResponse.Status.DISABLED, null);
+    }
+    if (confirmed == null
+        || !confirmed.userId().equals(userId)
+        || !confirmed.active()
+        || !constantTimeEquals(confirmed.publicKey(), request.publicKey())
+        || !constantTimeEquals(confirmed.authSecret(), request.authSecret())) {
+      return new PushSubscriptionHealthResponse(
+          PushSubscriptionHealthResponse.Status.SYNC_REQUIRED, null);
+    }
+    return new PushSubscriptionHealthResponse(
+        PushSubscriptionHealthResponse.Status.CONFIRMED, confirmed.lastClientConfirmedAt());
   }
 
   @Transactional
@@ -116,4 +227,17 @@ public class PushSubscriptionService {
       throw new InvalidHouseholdException("The push subscription " + label + " is invalid.");
     }
   }
+
+  private boolean constantTimeEquals(String expected, String actual) {
+    return MessageDigest.isEqual(
+        expected.getBytes(StandardCharsets.UTF_8), actual.getBytes(StandardCharsets.UTF_8));
+  }
+
+  private record SubscriptionHealthState(
+      UUID id,
+      UUID userId,
+      String publicKey,
+      String authSecret,
+      boolean active,
+      OffsetDateTime lastClientConfirmedAt) {}
 }

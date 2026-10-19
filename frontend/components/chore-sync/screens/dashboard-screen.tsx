@@ -13,6 +13,7 @@ import { HouseGlyphIcon } from "../icons"
 import { InviteHousemateDialog } from "../invite-housemate-dialog"
 import { Avatar, ProgressBar } from "../primitives"
 import { notificationApi } from "@/lib/notifications/api"
+import { usePushSubscriptionHealth } from "@/lib/notifications/push-health"
 import {
   formatUpcomingDateLabel,
   getLocalDateKey,
@@ -29,6 +30,11 @@ function greetingForNow() {
 
 export function DashboardScreen() {
   const { state, navigate, openNotifications } = useChoreSync()
+  const {
+    state: pushHealth,
+    refresh: refreshPushHealth,
+    restore: restorePush,
+  } = usePushSubscriptionHealth()
   const { households, createdHouseholdInvite, queueCreatedHouseholdInvite } = useHouseholds()
   const [dashboard, setDashboard] = useState<HouseholdDashboard | null>(null)
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading")
@@ -214,6 +220,43 @@ export function DashboardScreen() {
       )}
 
       <main className="flex flex-col gap-5 px-4 pb-4 pt-5">
+        {pushHealth.status === "attention" && pushHealth.reason !== "unsupported" && (
+          <section
+            aria-label="Push notification status"
+            aria-live="polite"
+            className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100"
+          >
+            <h2 className="font-bold">
+              {pushHealth.reason === "permission-denied"
+                ? "Notification permission is blocked"
+                : pushHealth.reason === "check-failed"
+                  ? "Push status could not be checked"
+                  : "Notifications need attention"}
+            </h2>
+            <p className="mt-1 text-xs leading-relaxed">{pushHealth.message}</p>
+            <button
+              className="mt-2 rounded-lg border border-amber-300 bg-white/70 px-3 py-2 text-xs font-bold text-amber-900 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-600 dark:border-amber-700 dark:bg-slate-900/50 dark:text-amber-100 dark:hover:bg-slate-900"
+              onClick={() => {
+                if (pushHealth.reason === "check-failed") {
+                  void refreshPushHealth(true)
+                } else if (pushHealth.reason === "permission-denied") {
+                  openNotifications("dashboard")
+                } else {
+                  void restorePush()
+                }
+              }}
+              type="button"
+            >
+              {pushHealth.reason === "sync-required"
+                ? "Sync this browser"
+                : pushHealth.reason === "check-failed"
+                  ? "Retry check"
+                  : pushHealth.reason === "permission-denied"
+                    ? "View permission help"
+                    : "Restore notifications"}
+            </button>
+          </section>
+        )}
         {status === "loading" && (
           <div aria-label="Loading dashboard" className="space-y-4">
             {[0, 1, 2].map((item) => (

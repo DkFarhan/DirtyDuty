@@ -5,6 +5,8 @@ import com.dirtyduty.app.dto.notification.NotificationPreferencesRequest;
 import com.dirtyduty.app.dto.notification.NotificationPreferencesResponse;
 import com.dirtyduty.app.dto.notification.NotificationResponse;
 import com.dirtyduty.app.dto.notification.PushPublicKeyResponse;
+import com.dirtyduty.app.dto.notification.PushSubscriptionHealthRequest;
+import com.dirtyduty.app.dto.notification.PushSubscriptionHealthResponse;
 import com.dirtyduty.app.dto.notification.PushSubscriptionRequest;
 import com.dirtyduty.app.dto.notification.PushUnsubscribeRequest;
 import com.dirtyduty.app.dto.notification.UnreadCountResponse;
@@ -94,6 +96,12 @@ public class NotificationController {
   public void subscribe(
       @Valid @RequestBody PushSubscriptionRequest request, Authentication authentication) {
     pushSubscriptionService.subscribe(request, authentication);
+  }
+
+  @PostMapping("/push-subscriptions/confirm")
+  public PushSubscriptionHealthResponse confirmPushSubscription(
+      @Valid @RequestBody PushSubscriptionHealthRequest request, Authentication authentication) {
+    return pushSubscriptionService.confirmClientPossession(request, authentication);
   }
 
   @PostMapping("/push-subscriptions/unsubscribe")

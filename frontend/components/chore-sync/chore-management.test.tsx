@@ -6,6 +6,31 @@ import { AppShell } from "./app-shell"
 import { clearCsrfToken } from "@/lib/auth/api"
 import { stubAuthFeatures } from "../../test/stub-auth-features"
 
+vi.mock("@/lib/notifications/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/notifications/api")>()
+  return {
+    ...actual,
+    notificationApi: {
+      ...actual.notificationApi,
+      preferences: () =>
+        Promise.resolve({
+          choreAssignedEnabled: true,
+          choreRemindersEnabled: true,
+          overdueEnabled: true,
+          choreCompletionEnabled: true,
+          householdUpdatesEnabled: true,
+          quietHoursStart: null,
+          quietHoursEnd: null,
+          notificationStyleOverride: null,
+          householdNotificationStyle: "NORMAL",
+          funnyNotificationsEnabled: false,
+          competitiveNotificationsEnabled: true,
+          pushEnabled: false,
+        }),
+    },
+  }
+})
+
 const fetchMock = vi.fn<typeof fetch>()
 const user = {
   userId: "user-1",

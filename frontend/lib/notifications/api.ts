@@ -39,6 +39,11 @@ export type PushPublicKey = {
   available: boolean
 }
 
+export type PushSubscriptionHealth = {
+  status: "CONFIRMED" | "SYNC_REQUIRED" | "DISABLED"
+  lastClientConfirmedAt: string | null
+}
+
 export const notificationApi = {
   list: () => api.get<Notification[]>("/api/notifications"),
   unreadCount: () => api.get<{ count: number }>("/api/notifications/unread-count"),
@@ -47,6 +52,12 @@ export const notificationApi = {
   pushPublicKey: () => api.get<PushPublicKey>("/api/notifications/push/public-key"),
   subscribePush: (subscription: { endpoint: string; publicKey: string; authSecret: string }) =>
     api.put<void>("/api/notifications/push-subscriptions", subscription),
+  confirmPushSubscription: (subscription: {
+    endpoint: string
+    publicKey: string
+    authSecret: string
+  }) =>
+    api.post<PushSubscriptionHealth>("/api/notifications/push-subscriptions/confirm", subscription),
   unsubscribePush: (endpoint: string) =>
     api.post<void>("/api/notifications/push-subscriptions/unsubscribe", { endpoint }),
   setHouseholdStyle: (householdId: string, style: NotificationStyle) =>
