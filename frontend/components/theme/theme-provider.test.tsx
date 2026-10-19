@@ -59,10 +59,12 @@ describe("theme selection", () => {
     renderTheme()
 
     expect(screen.getByRole("radiogroup", { name: "Color theme" })).toBeTruthy()
+    expect(screen.getByRole("radio", { name: "Light" })).toBeTruthy()
+    expect(screen.getByRole("radio", { name: "Dark" })).toBeTruthy()
     expect(screen.getByRole("radio", { name: "System" })).toBeTruthy()
-    expect(screen.getByText("Always use the light theme.")).toBeTruthy()
-    expect(screen.getByText("Always use the dark theme.")).toBeTruthy()
-    expect(screen.getByText("Match your device appearance automatically.")).toBeTruthy()
+    expect(screen.queryByText("Always use the light theme.")).toBeNull()
+    expect(screen.queryByText("Always use the dark theme.")).toBeNull()
+    expect(screen.getByText("Use your device appearance")).toBeTruthy()
     await waitFor(() =>
       expect(screen.getByRole<HTMLInputElement>("radio", { name: "System" }).checked).toBe(true),
     )
