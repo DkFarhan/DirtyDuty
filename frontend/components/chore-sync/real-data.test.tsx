@@ -9,6 +9,17 @@ import { stubAuthFeatures } from "../../test/stub-auth-features"
 import { getLocalDateKey, WEEK_SUMMARY_TEMPLATES } from "./week-summary"
 
 const fetchMock = vi.fn<typeof fetch>()
+const pushMocks = vi.hoisted(() => ({
+  inspect: vi.fn(),
+  create: vi.fn(),
+  remove: vi.fn(),
+}))
+vi.mock("@/lib/notifications/push", () => ({
+  inspectBrowserPushSubscription: pushMocks.inspect,
+  createBrowserPushSubscription: pushMocks.create,
+  removeBrowserPushSubscription: pushMocks.remove,
+}))
+
 const user = {
   userId: "user-1",
   displayName: "Jahid",
@@ -64,10 +75,16 @@ async function startAtDashboard(
   data: Partial<HouseholdDashboard> = dashboard,
   householdData = household,
 ) {
-  fetchMock
-    .mockResolvedValueOnce(jsonResponse(user))
-    .mockResolvedValueOnce(jsonResponse([householdData]))
-    .mockResolvedValueOnce(jsonResponse({ ...dashboard, ...data }))
+  fetchMock.mockImplementation(async (input) => {
+    const url = String(input)
+    if (url.endsWith("/api/auth/me")) return jsonResponse(user)
+    if (url.endsWith("/api/households")) return jsonResponse([householdData])
+    if (url.endsWith(`/api/households/${householdData.id}/dashboard`))
+      return jsonResponse({ ...dashboard, ...data })
+    if (url.endsWith("/api/notifications/preferences")) return jsonResponse({ pushEnabled: false })
+    if (url.endsWith("/api/notifications/unread-count")) return jsonResponse({ count: 0 })
+    return jsonResponse({}, 404)
+  })
   render(<AppShell />)
   await screen.findByRole("heading", { name: "Today" }, { timeout: 3_000 })
 }
@@ -75,6 +92,9 @@ async function startAtDashboard(
 describe("server-backed chore data", () => {
   beforeEach(() => {
     fetchMock.mockReset()
+    pushMocks.inspect.mockReset().mockResolvedValue({ status: "unsupported", subscription: null })
+    pushMocks.create.mockReset()
+    pushMocks.remove.mockReset()
     stubAuthFeatures(fetchMock)
     clearCsrfToken()
     localStorage.clear()
@@ -101,6 +121,7 @@ describe("server-backed chore data", () => {
       thisWeek: [timezoneBoundaryAssignment],
       overdue: [timezoneBoundaryAssignment],
     })
+
     expect(screen.getByText("1/2")).toBeTruthy()
     expect(screen.getAllByText("Assigned to You, Ahmed")).toHaveLength(1)
     expect(screen.getAllByText("Overdue")).toHaveLength(2)
@@ -148,6 +169,78 @@ describe("server-backed chore data", () => {
     ).toBe(true)
     const completeRequest = fetchMock.mock.calls.find(([, request]) => request?.method === "POST")
     expect(new Headers(completeRequest?.[1]?.headers).get("X-CSRF-TOKEN")).toBe("complete-csrf")
+  })
+
+  it("shows dashboard recovery and syncs a missing subscription after explicit action", async () => {
+    const browserSubscription = {
+      endpoint: "https://push.example.test/new-endpoint",
+      expirationTime: null,
+      options: { applicationServerKey: null, userVisibleOnly: true },
+      getKey: () => null,
+      unsubscribe: async () => true,
+      toJSON: () => ({ keys: { p256dh: "public-key", auth: "auth-secret" } }),
+    } satisfies PushSubscription
+    pushMocks.inspect.mockResolvedValue({ status: "missing", subscription: null })
+    pushMocks.create.mockResolvedValue(browserSubscription)
+    fetchMock.mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.endsWith("/api/auth/me")) return jsonResponse(user)
+      if (url.endsWith("/api/auth/providers"))
+        return jsonResponse({ google: false, passwordReset: false })
+      if (url.endsWith("/api/households")) return jsonResponse([household])
+      if (url.endsWith("/api/households/home-1/dashboard")) return jsonResponse(dashboard)
+      if (url.endsWith("/api/notifications/preferences")) return jsonResponse({ pushEnabled: true })
+      if (url.endsWith("/api/notifications/unread-count")) return jsonResponse({ count: 0 })
+      if (url.endsWith("/api/notifications/push/public-key"))
+        return jsonResponse({ available: true, publicKey: "vapid-key" })
+      if (url.endsWith("/api/auth/csrf"))
+        return jsonResponse({ token: "push-recovery-csrf", headerName: "X-CSRF-TOKEN" })
+      if (url.endsWith("/api/notifications/push-subscriptions/confirm"))
+        return jsonResponse({
+          status: "CONFIRMED",
+          lastClientConfirmedAt: new Date().toISOString(),
+        })
+      if (url.endsWith("/api/notifications/push-subscriptions"))
+        return new Response(null, { status: 204 })
+      return jsonResponse({}, 404)
+    })
+
+    render(<AppShell initialScreen="dashboard" />)
+    await screen.findByRole("heading", { name: "Today" }, { timeout: 3_000 })
+    const status = await screen.findByRole("region", { name: "Push notification status" })
+    expect(within(status).getByText(/no longer has a push subscription/i)).toBeTruthy()
+    expect(pushMocks.create).not.toHaveBeenCalled()
+
+    fireEvent.click(within(status).getByRole("button", { name: "Restore notifications" }))
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, request]) =>
+            String(url).endsWith("/api/notifications/push-subscriptions/confirm") &&
+            request?.method === "POST",
+        ),
+      ).toBe(true),
+    )
+    expect(screen.queryByRole("region", { name: "Push notification status" })).toBeNull()
+    expect(pushMocks.create).toHaveBeenCalledWith("vapid-key")
+    const subscribeRequest = fetchMock.mock.calls.find(
+      ([url, request]) =>
+        String(url).endsWith("/api/notifications/push-subscriptions") && request?.method === "PUT",
+    )
+    expect(subscribeRequest).toBeTruthy()
+    expect(JSON.parse(String(subscribeRequest?.[1]?.body))).toEqual({
+      endpoint: browserSubscription.endpoint,
+      publicKey: "public-key",
+      authSecret: "auth-secret",
+    })
+    expect(
+      fetchMock.mock.calls.some(
+        ([url, request]) =>
+          String(url).endsWith("/api/notifications/push-subscriptions/confirm") &&
+          request?.method === "POST",
+      ),
+    ).toBe(true)
   })
 
   it("shows personal weekly progress and metrics from only the current user's assignments", async () => {

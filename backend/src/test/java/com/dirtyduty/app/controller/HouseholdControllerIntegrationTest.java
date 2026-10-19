@@ -483,6 +483,128 @@ class HouseholdControllerIntegrationTest {
   }
 
   @Test
+  void pushHealthConfirmationRequiresAnActiveMatchingSubscriptionAndEnabledPreference()
+      throws Exception {
+    WebSession owner = login("pushhealthowner");
+    WebSession other = login("pushhealthother");
+    String ownerEndpoint = "https://8.8.8.8/health-owner";
+    String otherEndpoint = "https://8.8.8.8/health-other";
+    String key = Base64.getUrlEncoder().withoutPadding().encodeToString(new byte[65]);
+    String auth = Base64.getUrlEncoder().withoutPadding().encodeToString(new byte[16]);
+    String ownerHealth = pushSubscriptionHealthJson(ownerEndpoint, key, auth);
+
+    mockMvc
+        .perform(
+            put("/api/notifications/push-subscriptions")
+                .cookie(owner.cookie())
+                .header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content(pushSubscriptionJson(ownerEndpoint, key, auth)))
+        .andExpect(status().isNoContent());
+    mockMvc
+        .perform(
+            put("/api/notifications/push-subscriptions")
+                .cookie(other.cookie())
+                .header(other.csrfHeader(), other.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content(pushSubscriptionJson(otherEndpoint, key, auth)))
+        .andExpect(status().isNoContent());
+
+    mockMvc
+        .perform(
+            post("/api/notifications/push-subscriptions/confirm")
+                .cookie(owner.cookie())
+                .contentType(APPLICATION_JSON)
+                .content(ownerHealth))
+        .andExpect(status().isForbidden());
+
+    mockMvc
+        .perform(
+            post("/api/notifications/push-subscriptions/confirm")
+                .cookie(owner.cookie())
+                .header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content(ownerHealth))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("CONFIRMED"))
+        .andExpect(jsonPath("$.lastClientConfirmedAt").isNotEmpty());
+    OffsetDateTime firstConfirmation =
+        jdbcTemplate.queryForObject(
+            "SELECT last_client_confirmed_at FROM push_subscriptions WHERE endpoint=?",
+            OffsetDateTime.class,
+            ownerEndpoint);
+
+    mockMvc
+        .perform(
+            post("/api/notifications/push-subscriptions/confirm")
+                .cookie(owner.cookie())
+                .header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content(ownerHealth))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("CONFIRMED"))
+        .andExpect(jsonPath("$.lastClientConfirmedAt").isNotEmpty());
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT last_client_confirmed_at FROM push_subscriptions WHERE endpoint=?",
+                OffsetDateTime.class,
+                ownerEndpoint))
+        .isEqualTo(firstConfirmation);
+
+    mockMvc
+        .perform(
+            post("/api/notifications/push-subscriptions/confirm")
+                .cookie(other.cookie())
+                .header(other.csrfHeader(), other.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content(ownerHealth))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("SYNC_REQUIRED"))
+        .andExpect(jsonPath("$.lastClientConfirmedAt").doesNotExist());
+
+    mockMvc
+        .perform(
+            post("/api/notifications/push-subscriptions/confirm")
+                .cookie(owner.cookie())
+                .header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content(pushSubscriptionHealthJson("https://8.8.8.8/unknown", key, auth)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("SYNC_REQUIRED"));
+
+    mockMvc
+        .perform(
+            post("/api/notifications/push-subscriptions/unsubscribe")
+                .cookie(owner.cookie())
+                .header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content("{\"endpoint\":\"" + ownerEndpoint + "\"}"))
+        .andExpect(status().isNoContent());
+    mockMvc
+        .perform(
+            post("/api/notifications/push-subscriptions/confirm")
+                .cookie(owner.cookie())
+                .header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content(ownerHealth))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("SYNC_REQUIRED"));
+
+    jdbcTemplate.update(
+        "UPDATE notification_preferences SET push_enabled=FALSE WHERE user_id=?",
+        UUID.fromString(owner.userId()));
+    mockMvc
+        .perform(
+            post("/api/notifications/push-subscriptions/confirm")
+                .cookie(owner.cookie())
+                .header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content(ownerHealth))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("DISABLED"));
+  }
+
+  @Test
   void notificationPreferencesPreserveOverridesAndHouseholdDefaults() throws Exception {
     WebSession owner = login("preferenceowner");
     UUID householdId = createHousehold(owner, "Preference Home", "UTC");
@@ -2602,6 +2724,10 @@ class HouseholdControllerIntegrationTest {
         + "\",\"authSecret\":\""
         + auth
         + "\"}";
+  }
+
+  private String pushSubscriptionHealthJson(String endpoint, String key, String auth) {
+    return pushSubscriptionJson(endpoint, key, auth);
   }
 
   private void insertRetentionNotification(UUID userId, String key, String readAtExpression) {

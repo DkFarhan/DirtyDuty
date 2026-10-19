@@ -1,21 +1,55 @@
 export type BrowserPushSubscriptionStatus =
-  "unsupported" | "permission-required" | "permission-denied" | "missing" | "subscribed"
+  | "unsupported"
+  | "permission-required"
+  | "permission-denied"
+  | "missing-registration"
+  | "worker-starting"
+  | "unexpected-registration"
+  | "missing"
+  | "subscribed"
 
-export async function getBrowserPushSubscriptionStatus(): Promise<BrowserPushSubscriptionStatus> {
+export type BrowserPushSubscriptionInspection =
+  | { status: "subscribed"; subscription: PushSubscription }
+  | {
+      status: Exclude<BrowserPushSubscriptionStatus, "subscribed">
+      subscription: null
+    }
+
+export async function inspectBrowserPushSubscription(): Promise<BrowserPushSubscriptionInspection> {
   if (
     !("Notification" in window) ||
     !("serviceWorker" in navigator) ||
     !("PushManager" in window)
   ) {
-    return "unsupported"
+    return { status: "unsupported", subscription: null }
   }
 
-  if (Notification.permission === "denied") return "permission-denied"
-  if (Notification.permission !== "granted") return "permission-required"
+  if (Notification.permission === "denied") {
+    return { status: "permission-denied", subscription: null }
+  }
+  if (Notification.permission !== "granted") {
+    return { status: "permission-required", subscription: null }
+  }
 
   const registration = await navigator.serviceWorker.getRegistration("/")
-  const subscription = await registration?.pushManager.getSubscription()
-  return subscription ? "subscribed" : "missing"
+  if (!registration) return { status: "missing-registration", subscription: null }
+  if (registration.scope !== new URL("/", window.location.origin).href) {
+    return { status: "unexpected-registration", subscription: null }
+  }
+  const worker = registration.active ?? registration.waiting ?? registration.installing
+  if (!worker) return { status: "worker-starting", subscription: null }
+  if (worker.scriptURL !== new URL("/service-worker.js", window.location.origin).href) {
+    return { status: "unexpected-registration", subscription: null }
+  }
+
+  const subscription = await registration.pushManager.getSubscription()
+  return subscription
+    ? { status: "subscribed", subscription }
+    : { status: "missing", subscription: null }
+}
+
+export async function getBrowserPushSubscriptionStatus(): Promise<BrowserPushSubscriptionStatus> {
+  return (await inspectBrowserPushSubscription()).status
 }
 
 export async function createBrowserPushSubscription(publicKey: string): Promise<PushSubscription> {
