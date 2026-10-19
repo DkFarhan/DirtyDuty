@@ -24,11 +24,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.Cookie;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -60,6 +62,9 @@ class AuthSessionIntegrationTest {
   @Autowired private JdbcTemplate jdbcTemplate;
 
   @Autowired private SessionAuthenticationStrategy sessionAuthenticationStrategy;
+
+  @Value("${app.security.session-cookie-secure:true}")
+  private boolean sessionCookieSecure;
 
   @AfterEach
   void cleanUpTestOwnedSessionsAndUsers() {
@@ -117,10 +122,15 @@ class AuthSessionIntegrationTest {
     assertThat(loginCookie).isNotNull();
     assertThat(loginCookie.getMaxAge()).isEqualTo((int) Duration.ofDays(365).toSeconds());
     assertThat(loginCookie.isHttpOnly()).isTrue();
-    assertThat(loginCookie.getSecure()).isTrue();
+    assertThat(loginCookie.getSecure()).isEqualTo(sessionCookieSecure);
     assertThat(loginCookie.getPath()).isEqualTo("/");
     assertThat(login.getResponse().getHeader("Set-Cookie")).containsIgnoringCase("SameSite=Lax");
-    assertThat(login.getResponse().getHeader("Set-Cookie")).containsIgnoringCase("Secure");
+    String[] cookieAttributes = login.getResponse().getHeader("Set-Cookie").split(";");
+    assertThat(
+            Arrays.stream(cookieAttributes)
+                .map(String::trim)
+                .anyMatch(attribute -> attribute.equalsIgnoreCase("Secure")))
+        .isEqualTo(sessionCookieSecure);
     mockMvc
         .perform(get("/api/auth/me").cookie(loginCookie))
         .andExpect(status().isOk())
