@@ -7,6 +7,7 @@ import com.dirtyduty.app.security.GoogleLoginPromptResolver;
 import com.dirtyduty.app.security.LegalAcceptanceFilter;
 import com.dirtyduty.app.security.NoStoreAuthorizedClientRepository;
 import com.dirtyduty.app.service.LegalAcceptanceService;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
@@ -202,11 +203,13 @@ public class SecurityConfig {
 
   @Bean
   public CookieSerializer cookieSerializer(
-      @Value("${app.security.session-cookie-secure:true}") boolean secureCookie) {
+      @Value("${app.security.session-cookie-secure:true}") boolean secureCookie,
+      @Value("${server.servlet.session.cookie.max-age:365d}") Duration cookieMaxAge) {
     DefaultCookieSerializer serializer = new DefaultCookieSerializer();
     serializer.setCookieName("SESSION");
     serializer.setCookiePath("/");
     serializer.setUseHttpOnlyCookie(true);
+    serializer.setCookieMaxAge(Math.toIntExact(cookieMaxAge.toSeconds()));
     serializer.setSameSite("Lax");
     serializer.setUseSecureCookie(secureCookie);
     return serializer;

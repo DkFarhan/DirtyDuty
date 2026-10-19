@@ -35,6 +35,7 @@ The file includes:
 - `FRONTEND_ORIGINS`
 - `SESSION_COOKIE_SECURE`
 - `SESSION_TIMEOUT`
+- `SESSION_COOKIE_MAX_AGE`
 - `WEB_PUSH_PUBLIC_KEY`
 - `WEB_PUSH_PRIVATE_KEY`
 - `WEB_PUSH_SUBJECT`
@@ -45,6 +46,13 @@ The file includes:
 Set `POSTGRES_PASSWORD` to a unique randomly generated value before running any
 Compose command. The production Compose configuration intentionally fails when
 it is empty instead of falling back to a known development password.
+
+Spring Session expires sessions after 30 days without activity by default
+(`SESSION_TIMEOUT=30d`). The persistent `SESSION` cookie defaults to one year
+(`SESSION_COOKIE_MAX_AGE=365d`) so browser/PWA restarts do not end a login and
+the cookie does not impose the same 30-day absolute limit as the sliding server
+timeout. The server-side session remains authoritative; adjust the cookie
+lifetime only if accepting a different browser-persistence safety limit.
 
 ## Optional authentication providers
 

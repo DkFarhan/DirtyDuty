@@ -17,7 +17,7 @@ spring:
 
   session:
     store-type: jdbc
-    timeout: ${SESSION_TIMEOUT:24h}
+    timeout: ${SESSION_TIMEOUT:30d}
     jdbc:
       initialize-schema: never
   mail:
@@ -74,5 +74,6 @@ server:
       cookie:
         http-only: true
         secure: ${SESSION_COOKIE_SECURE:true}
+        max-age: ${SESSION_COOKIE_MAX_AGE:365d}
         same-site: lax
         path: /
