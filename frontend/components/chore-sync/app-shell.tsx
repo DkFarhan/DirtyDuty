@@ -29,6 +29,7 @@ import { ResetPasswordScreen } from "./screens/reset-password-screen"
 import { LegalAcceptanceScreen } from "./screens/legal-acceptance-screen"
 import { AppearanceScreen } from "./screens/appearance-screen"
 import { AppLaunchGate } from "./launch-experience"
+import { PushSubscriptionHealthProvider } from "@/lib/notifications/push-health"
 
 function ScreenRouter() {
   const { screen, adminTab, navigate, setCurrentUser } = useChoreSync()
@@ -199,13 +200,15 @@ export function AppShell({ initialScreen = "login" }: { initialScreen?: Screen }
       <AuthProvider>
         <HouseholdProvider>
           <ChoreSyncProvider initialScreen={initialScreen}>
-            <div className="min-h-screen bg-slate-200 flex items-start justify-center">
-              <div className="w-full max-w-sm bg-white min-h-screen relative overflow-hidden shadow-2xl">
-                <AppLaunchGate>
-                  <ScreenRouter />
-                </AppLaunchGate>
+            <PushSubscriptionHealthProvider>
+              <div className="min-h-screen bg-slate-200 flex items-start justify-center">
+                <div className="w-full max-w-sm bg-white min-h-screen relative overflow-hidden shadow-2xl">
+                  <AppLaunchGate>
+                    <ScreenRouter />
+                  </AppLaunchGate>
+                </div>
               </div>
-            </div>
+            </PushSubscriptionHealthProvider>
           </ChoreSyncProvider>
         </HouseholdProvider>
       </AuthProvider>
