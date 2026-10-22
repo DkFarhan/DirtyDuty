@@ -386,8 +386,9 @@ it must not automatically revert database schema or volumes.
   scaling could duplicate scheduled work unless a distributed scheduler lock
   is introduced separately.
 - Spring Boot trusts forwarded TLS headers using
-  `server.forward-headers.strategy=framework`. The Caddy routes preserve the
-  explicit `X-Forwarded-*` headers, and `/actuator/*` is not exposed publicly.
+  `server.forward-headers.strategy=framework`. Production Caddy uses the
+  standard `reverse_proxy` behavior for forwarded headers without overriding
+  client address headers; `/actuator/*` is not exposed publicly.
 - The frontend same-origin API default reaches `/api/*` through Caddy. The
   frontend and backend have container health checks; PostgreSQL readiness gates
   backend startup and application health gates Caddy startup.
