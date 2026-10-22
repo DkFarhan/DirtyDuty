@@ -168,61 +168,180 @@ live deployment trigger is added in this phase.
 
 ### Safe manual deployment outline
 
-1. Review and approve the release commit and its image-manifest artifact. Confirm
-   both references target `linux/arm64`.
-2. Back up PostgreSQL to a protected location outside the repository. Example
-   (choose a unique, private backup path first):
+#### First-time migration to the production Compose configuration
 
-   ```bash
-   umask 077
-   docker compose -f docker-compose.production.yml --env-file .env.production exec -T postgres \
-     sh -ec 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom' \
-     > /secure/backups/dirtyduty-pre-release.dump
-   pg_restore --list /secure/backups/dirtyduty-pre-release.dump
-   ```
+The first rollout switches the existing Caddy container's bind mount from the
+server's current `caddy/Caddyfile` to the tracked
+`caddy/Caddyfile.production`. Subsequent releases use that production mount
+already; do not repeat the migration or recreate Caddy unless its configuration
+has changed.
 
-   Verify the archive and maintain a protected off-host copy according to the
-   operator's backup policy. Do not put it in the repository or a Docker volume
-   that application rollout commands might affect.
+**1. Review the release.** Approve the release commit and image-manifest
+artifact; confirm both image references target `linux/arm64`. Compare the
+tracked `docker-compose.production.yml` and `caddy/Caddyfile.production` with
+the server's current files first, preserving intentional server-local changes.
 
-3. Update the deployment working tree's `docker-compose.production.yml` and
-   `caddy/Caddyfile.production` from the reviewed release commit. Compare with server-local
-   changes first; do not overwrite an intentional local configuration. Edit
-   only the image digest references in the existing server-local
-   `.env.production`, after separately reconciling any required hostname changes.
-   Keep that file and all existing database/app secrets in place.
-4. Validate Compose without displaying interpolated values:
+**2. Verify the existing project and storage before switching.** Identify the
+exact running PostgreSQL and Caddy containers. Record their Compose project
+labels, PostgreSQL data volume, Caddy `/data` and `/config` volumes, and current
+Caddyfile bind source. These commands report container metadata only; they do
+not print environment variables:
 
-   ```bash
-   docker compose -f docker-compose.production.yml --env-file .env.production config --quiet
-   ```
+```bash
+docker ps --filter label=com.docker.compose.service=postgres \
+  --format '{{.ID}} {{.Names}} {{.Label "com.docker.compose.project"}}'
+docker ps --filter label=com.docker.compose.service=caddy \
+  --format '{{.ID}} {{.Names}} {{.Label "com.docker.compose.project"}}'
+docker inspect --format \
+  '{{.Name}} project={{index .Config.Labels "com.docker.compose.project"}} mounts={{range .Mounts}}{{if .Name}}{{.Name}}:{{.Destination}} {{end}}{{end}}' \
+  <postgres-container-id>
+docker inspect --format \
+  '{{.Name}} project={{index .Config.Labels "com.docker.compose.project"}} mounts={{range .Mounts}}{{if .Name}}{{.Name}}:{{.Destination}}{{else}}{{.Source}}:{{.Destination}}{{end}} {{end}}' \
+  <caddy-container-id>
+```
 
-5. Pull only the application images and update application services:
+Enter the project label common to the PostgreSQL and Caddy containers when
+prompted. The following prints only the resolved Compose project, volume names,
+and Caddyfile mount source—not the interpolated environment values:
 
-   ```bash
-   docker compose -f docker-compose.production.yml --env-file .env.production pull backend frontend
-   docker compose -f docker-compose.production.yml --env-file .env.production up -d --no-build backend frontend
-   ```
+```bash
+read -r -p "Enter the shared Compose project label shown above: " PROJECT
+docker compose -p "$PROJECT" -f docker-compose.production.yml \
+  --env-file .env.production config --format json |
+  python3 -c 'import json,sys; c=json.load(sys.stdin); print("project="+c["name"]); print("volumes="+", ".join(v["name"] for v in c["volumes"].values())); print("caddyfile="+next(v["source"] for v in c["services"]["caddy"]["volumes"] if v["target"]=="/etc/caddy/Caddyfile"))'
+```
 
-   Do not run `down -v`, remove named volumes, rebuild on the host, or run a
-   schema rollback. PostgreSQL remains running; Caddy retains its certificate
-   storage. Backend startup applies Flyway migrations before the backend health
-   check passes. Caddy waits for healthy backend and frontend services.
+Use this exact `PROJECT` value explicitly for the production Compose commands
+below. Confirm the observed volumes match `dirtyduty_postgres_data`, `caddy_data`,
+and `caddy_config` under that project, and that the current Caddyfile bind source
+is expected. **Stop if the project, containers, bind path, or any volume
+identity is missing or different.** Do not infer volume identity from a
+directory name.
 
-6. Validate and reload Caddy after the tracked Caddyfile has been reviewed:
+**3. Back up PostgreSQL.** Use a protected location outside the repository,
+verify the archive, and keep an off-host copy according to the operator's
+backup policy. Choose a new private backup path:
 
-   ```bash
-   docker compose -f docker-compose.production.yml --env-file .env.production exec -T caddy \
-     caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
-   docker compose -f docker-compose.production.yml --env-file .env.production exec -T caddy \
-     caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
-   docker compose -f docker-compose.production.yml --env-file .env.production exec -T backend \
-     curl -fsS http://localhost:8080/actuator/health
-   docker compose -f docker-compose.production.yml --env-file .env.production ps
-   ```
+```bash
+umask 077
+docker compose -p "$PROJECT" -f docker-compose.production.yml \
+  --env-file .env.production exec -T postgres \
+  sh -ec 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom' \
+  > /secure/backups/dirtyduty-pre-release.dump
+pg_restore --list /secure/backups/dirtyduty-pre-release.dump
+```
 
-   Also verify `https://dirtyduty.app/` and the `www` redirect. Review backend
-   logs for migration errors and notification scheduler startup.
+Do not store the backup in the repository or an application Docker volume.
+
+**4. Update and validate the deployment files.** Update the deployment working
+tree from the reviewed commit without blindly replacing server-local files.
+Keep the existing `.env.production` and all credentials. Change only the app
+image digests and separately reviewed hostname settings. Validate Compose
+without displaying interpolated values:
+
+```bash
+docker compose -p "$PROJECT" -f docker-compose.production.yml \
+  --env-file .env.production config --quiet
+```
+
+Recheck the resolved project and volume names against step 2 before proceeding.
+
+**5. Pull and update backend and frontend only.** `--no-deps` prevents Compose
+from recreating PostgreSQL as part of the migration:
+
+```bash
+docker compose -p "$PROJECT" -f docker-compose.production.yml \
+  --env-file .env.production pull backend frontend
+docker compose -p "$PROJECT" -f docker-compose.production.yml \
+  --env-file .env.production up -d --no-build --no-deps backend frontend
+docker compose -p "$PROJECT" -f docker-compose.production.yml \
+  --env-file .env.production ps
+docker compose -p "$PROJECT" -f docker-compose.production.yml \
+  --env-file .env.production exec -T backend \
+  curl -fsS http://localhost:8080/actuator/health
+```
+
+Proceed only when both application services are healthy and backend logs show
+no migration errors. Flyway migrations run on backend startup; never attempt an
+automatic schema rollback.
+
+**6. Validate and switch Caddy.** Before replacing the existing Caddy container,
+validate the production file in a one-off container without mounting or sharing
+the live Caddy certificate volumes:
+
+```bash
+docker run --rm -e CADDY_EMAIL=ops@example.com \
+  -v "$PWD/caddy/Caddyfile.production:/etc/caddy/Caddyfile:ro" \
+  caddy:2.9-alpine caddy validate \
+  --config /etc/caddy/Caddyfile --adapter caddyfile
+```
+
+The production Compose service mounts `./caddy/Caddyfile.production` at
+`/etc/caddy/Caddyfile`. The existing container still has its old bind source,
+so explicitly recreate only Caddy. `--no-deps` avoids recreating PostgreSQL or
+any other dependency:
+
+```bash
+docker compose -p "$PROJECT" -f docker-compose.production.yml \
+  --env-file .env.production up -d --no-deps --force-recreate caddy
+```
+
+Verify the running container's mount source is the absolute path to
+`caddy/Caddyfile.production`, validate that mounted file, and inspect service
+status:
+
+```bash
+CADDY_ID=$(docker compose -p "$PROJECT" -f docker-compose.production.yml \
+  --env-file .env.production ps -q caddy)
+docker inspect --format \
+  '{{range .Mounts}}{{if eq .Destination "/etc/caddy/Caddyfile"}}{{.Source}}{{end}}{{end}}' \
+  "$CADDY_ID"
+docker compose -p "$PROJECT" -f docker-compose.production.yml \
+  --env-file .env.production exec -T caddy \
+  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+docker compose -p "$PROJECT" -f docker-compose.production.yml \
+  --env-file .env.production ps
+```
+
+Do not run `docker compose down -v`, prune volumes, or remove/recreate
+PostgreSQL. Check HTTPS and the canonical redirect:
+
+```bash
+curl --fail --silent --show-error --output /dev/null \
+  --write-out '%{http_code}\n' https://dirtyduty.app/
+curl --silent --show-error --output /dev/null \
+  --write-out '%{http_code} %{redirect_url}\n' https://www.dirtyduty.app/
+```
+
+Expect a successful primary-site response and a `308` redirect to
+`https://dirtyduty.app/`. Review backend logs for migration errors and
+notification scheduler startup.
+
+#### Subsequent releases
+
+Once the production Caddy mount is confirmed, later releases normally update
+only backend and frontend. Back up PostgreSQL and validate the Compose project
+and volume identities as above, then pull and update those two services with
+the same `pull` and `up -d --no-build --no-deps backend frontend` commands.
+Do not recreate Caddy unless its configuration changed. When it does change,
+validate the production file and explicitly recreate only Caddy with
+`up -d --no-deps --force-recreate caddy`, then recheck its mounted source,
+health, and public HTTPS routes. PostgreSQL remains in place in every case.
+
+#### Recovery
+
+If the project or volume identity checks do not match, stop before pulling or
+starting services and have the operator reconcile the deployment directory,
+project name, and actual volume mappings. If Caddy validation or HTTPS checks
+fail after the first-time switch, restore the last-known-good Caddyfile from
+the protected server copy, temporarily point the production Compose Caddy bind
+mount back to that file, and recreate only Caddy using
+`up -d --no-deps --force-recreate caddy`. Verify the restored mount and HTTPS
+routes before continuing. If an application health check fails, restore the
+previous application image digests and update only backend/frontend with
+`up -d --no-build --no-deps backend frontend`. Never remove volumes or
+automatically roll back database schema; retain Flyway changes and escalate
+database recovery to an operator using the verified backup.
 
 ### Rollback and migrations
 
