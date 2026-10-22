@@ -629,7 +629,7 @@ def validate_release_compose(
         config = services.get(service)
         if (
             not isinstance(config, dict)
-            or config.get("image") != request[f"{service.upper()}_IMAGE"]
+            or config.get("image") != request[f"{service}_image"]
             or config.get("platform") != "linux/arm64"
         ):
             raise DeploymentError(

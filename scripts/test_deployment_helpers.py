@@ -127,6 +127,25 @@ class DeploymentInputTests(unittest.TestCase):
         self.assertEqual(updated.count("FRONTEND_IMAGE="), 1)
 
 
+class ReleaseComposeValidationTests(unittest.TestCase):
+    def test_validates_images_using_lowercase_request_keys(self):
+        backend = f"ghcr.io/dkfarhan/dirtyduty-backend@sha256:{'b' * 64}"
+        frontend = f"ghcr.io/dkfarhan/dirtyduty-frontend@sha256:{'c' * 64}"
+        request = {"backend_image": backend, "frontend_image": frontend}
+        config = {
+            "services": {
+                "backend": {"image": backend, "platform": "linux/arm64"},
+                "frontend": {"image": frontend, "platform": "linux/arm64"},
+            }
+        }
+        # A valid deployment request must not raise KeyError.
+        deploy.validate_release_compose(config, request)
+
+        config["services"]["frontend"]["image"] = backend
+        with self.assertRaises(deploy.DeploymentError):
+            deploy.validate_release_compose(config, request)
+
+
 class EnvironmentPermissionTests(unittest.TestCase):
     def test_atomic_image_update_keeps_secret_file_private(self):
         with tempfile.TemporaryDirectory() as directory:
