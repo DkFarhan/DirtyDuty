@@ -149,6 +149,9 @@ cd backend
 ```
 
 Use the Docker Compose setup in `backend/docker-compose.yml` if you need a local PostgreSQL 17 database for backend verification.
+Run `python3 -m unittest scripts.test_deployment_helpers` to check the
+deployment helper's input validation, image manifest, environment preservation,
+and backup evidence rules.
 
 ## CI and image publication
 
@@ -158,17 +161,189 @@ checks out that exact commit, builds `linux/arm64` images, and publishes them to
 GHCR with the Actions-provided `GITHUB_TOKEN`. It has package-write permission
 only for that job, adds source/revision labels and BuildKit SBOM/provenance, and
 produces a 90-day artifact containing immutable image digest references.
+The deployment verifies the artifact's publisher workflow/run, selected source
+SHA, fixed GHCR repositories, digest syntax, and the pulled images' ARM64 and
+OCI revision/source labels. It does not independently cryptographically verify
+a signed provenance attestation; the publisher workflow and protected `main`
+history remain part of the trusted computing base.
 
 The production Compose file consumes only those digest references. The
-production host needs a GHCR credential with package-pull access if the packages
-are private; do not reuse a publishing token or grant write/delete access on the
-host. Store Docker credentials with restrictive permissions. No production
-deployment workflow, production GitHub environment, deployment credential, or
-live deployment trigger is added in this phase.
+manually triggered [production deployment workflow](./.github/workflows/deploy-production.yml)
+resolves references from the successful publisher run; digests and image URLs
+are not workflow inputs. The server receives the job-scoped token with
+`packages: read` only to pull those two private images. It writes Docker
+credentials to a private temporary directory under `/run` and removes that
+directory after deployment; no persistent GHCR credential is required.
 
-### Safe manual deployment outline
+### Manual production deployment workflow
 
-#### First-time migration to the production Compose configuration
+Run **Deploy production** with a full commit SHA from the approved `main`
+history. The workflow checks that the commit is an ancestor of current `main`,
+has a successful push-triggered `CI` run, and has a successful `Publish ARM64
+images` run with an unexpired matching artifact. It accepts only the exact
+first-party backend/frontend digest references in that artifact. It checks out
+no release-controlled scripts and never builds or guesses an image reference.
+
+The job runs only when dispatched from `main`, targets the `production`
+environment, and uses a non-canceling concurrency group. Configure the
+environment's deployment branch rule to allow `main` only. Configure required
+reviewers and disable self-review where available. GitHub environment settings
+are not created by repository code; without them, the workflow's own `main`
+branch condition still applies, but there is no environment approval gate.
+Do not manually cancel a deployment after it has started.
+
+#### Exact GitHub `production` environment configuration
+
+Add these **environment-level variables** to GitHub's `production` environment:
+
+- `DEPLOY_HOST`: Oracle server DNS name or IPv4 address (SSH port 22).
+- `DEPLOY_USER`: dedicated deployment-only Linux account name.
+- `DEPLOY_SSH_KNOWN_HOSTS`: the server's out-of-band verified SSH host-key
+  entry with a literal, exact `DEPLOY_HOST` field (no wildcard/negated
+  patterns); do not obtain/trust it with `ssh-keyscan` in a workflow run.
+
+Add this **environment-level secret**:
+
+- `DEPLOY_SSH_PRIVATE_KEY`: private key for the dedicated deployment identity,
+  not a personal Oracle login key.
+
+`GITHUB_TOKEN` is supplied by Actions and is not a manually created secret.
+The release-resolution job has only `actions: read` and `contents: read`; the
+separate deployment job has only `packages: read`. Only the latter job's
+temporary token is sent to Oracle for GHCR pulls. In **each** private GHCR
+backend and frontend package's package settings, grant the
+`DkFarhan/DirtyDuty` repository Actions access with read/pull permission. A
+repository token permission alone does not grant access to a package that has
+not granted this repository access. That package setting must be verified
+manually; a failed remote pull stops deployment.
+
+The existing `NEXT_PUBLIC_*` build variables remain repository-level variables
+for image publication; they are public build-time values, not production
+deployment credentials.
+
+#### Required Oracle host setup
+
+Before using the workflow, manually establish and verify the following on the
+existing Oracle VM. This repository does not connect to or configure the host:
+
+- Keep the reviewed production Compose tree at `/opt/dirtyduty`, owned by
+  `root:root` and not writable by the deployment account. The production
+  Compose file must resolve project name `dirtyduty` and exactly the four
+  services `backend`, `frontend`, `postgres`, and `caddy`.
+- Provide Python 3.9 or newer, Docker Engine with the Compose v2 plugin, and
+  host `curl`; the root entry point uses these fixed system tools.
+- Keep `/opt/dirtyduty/.env.production` root-owned with mode `0600`. Preserve
+  its existing database credentials, Google OAuth, Resend SMTP, session
+  settings, Web Push keys, and all other local configuration. Define exactly
+  one valid digest-pinned `BACKEND_IMAGE` and `FRONTEND_IMAGE`; the workflow
+  changes only those two lines.
+- Verify the live `dirtyduty` Compose project and its PostgreSQL data, Caddy
+  `/data`, and Caddy `/config` named volumes match the production Compose
+  configuration. The root entry point checks this before pulling. It refuses
+  to continue on any mismatch, and checks the PostgreSQL and Caddy container
+  identities again after the app update.
+- Install `scripts/production-deploy.py` as the root-owned executable
+  `/usr/local/sbin/dirtyduty-deploy`. The deployment account must not belong
+  to the `docker` group, have Docker socket access, write to deployment files,
+  or have general sudo rights. Docker daemon control is root-equivalent; the
+  root-owned entry point is deliberately limited to fixed paths and only
+  `backend`/`frontend` pulls and updates.
+- Restrict the dedicated SSH public key in the deployment account's
+  `authorized_keys` to the forced command and no interactive/forwarded access.
+  For example, the options should include
+  `command="sudo -n /usr/local/sbin/dirtyduty-deploy",no-port-forwarding,no-agent-forwarding,no-X11-forwarding,no-pty,no-user-rc`.
+  Add a `sudoers` rule granting only that exact executable with **no
+  arguments**. Keep its wrapper, sudoers file, public key, and executable
+  root-owned and non-writable by the deployment account. Confirm the root
+  script runs as UID 0 and can use the Docker daemon. Never reuse a personal
+  SSH key or give the deployment account a shell-capable Docker privilege.
+- Obtain and verify the SSH server host key out of band, then put its exact
+  `known_hosts` entry in the environment variable. The workflow enforces
+  `StrictHostKeyChecking=yes`, disables global/updated host keys, and requires
+  the entry to match `DEPLOY_HOST`.
+- Install the independently managed root-owned executable
+  `/usr/local/sbin/dirtyduty-backup-verify`. If absent, untrusted, stale, or
+  unsuccessful, the deployment fails closed. It must perform an actual check
+  of the newest PostgreSQL 17 custom-format backup and its off-host recovery
+  copy—not read a checkbox or accept a local file as off-host evidence. In
+  particular, it must retrieve/verify the off-host object, verify its
+  integrity, restore it into an isolated disposable PostgreSQL 17 instance
+  (never the production database), validate the restored result, and emit
+  JSON only after that test succeeds. The command contract is:
+
+  ```bash
+  /usr/local/sbin/dirtyduty-backup-verify \
+    --json --max-age-hours 24 --require-offsite-restore-verification
+  ```
+
+  Its JSON must include non-empty `backup_id`, `backup_created_at`,
+  `offsite_copy_id`, `offsite_restore_verified_at`, and `restore_test_id`. The
+  backup and successful restore test must both be no more than 24 hours old,
+  the restore test must refer to a copy created from that backup, and failures
+  must return non-zero. The command and its backup-system credentials/config
+  must be root-owned and not group/world-writable. No such off-host backup
+  integration is present in this repository today, so the workflow is not
+  deployable until this real verifier and its underlying backup/restore
+  process have been provisioned and tested.
+- Allow the root entry point to use `/run` for its short-lived private Docker
+  credential configuration and deployment lock, and
+  `/var/lib/dirtyduty-deploy` for its root-only deployment ledger. The ledger
+  records the requested commit and digests, timestamps, success or failure,
+  backup evidence IDs, and previous successful application references.
+
+#### Deployment and safety behavior
+
+- The restricted SSH process accepts one validated JSON request over stdin.
+  SHA and digest formats, the two exact GHCR repositories, and registry
+  username/token shape are checked again on the server. The token is passed
+  to `docker login --password-stdin`; it is never placed in a command-line
+  argument, printed, or persisted outside a mode-`0700` temporary Docker
+  configuration under `/run`, which is removed after the deployment.
+- Before pulling, the root entry point requires the verified backup, validates
+  the existing Compose project and named volume identities, and checks one
+  running backend instance. It pulls only the selected backend and frontend
+  digest references, checks each local image is `linux/arm64`, then runs
+  Compose only for `backend frontend` with `--no-build --no-deps`. It never
+  runs `down`, prunes/deletes volumes, or invokes PostgreSQL or Caddy as
+  Compose targets. It refuses if the running PostgreSQL/Caddy identities
+  change.
+- The backend and frontend images have Docker health checks. The server waits
+  with bounded timeouts for backend and frontend Docker health,
+  Spring Boot `/actuator/health` to report `UP`, `https://dirtyduty.app/` to
+  return success, and `https://www.dirtyduty.app/` to return the expected
+  `308` redirect. The backend remains one instance because its scheduled
+  notification jobs run in-process.
+- Failed health checks are recorded and fail the workflow. There is no
+  automatic application or Flyway schema rollback. The deployment ledger
+  records the previous successful release and digest references for an
+  operator-authorized rollback. Since publisher artifacts expire after 90
+  days, a rollback through this workflow requires the previous release's
+  successful publication artifact to remain available. If it has expired,
+  stop rather than rebuild or guess the old digest.
+- Caddy is never a target of this workflow, even if a Caddy configuration
+  change is committed. Validate and authorize any Caddy change separately;
+  do not restart Caddy unless its configuration genuinely changed and the
+  update has been independently validated.
+
+For an application rollback, an authorized operator manually dispatches this
+same workflow with the previous successful release commit recorded in the
+server ledger. The workflow revalidates its main ancestry, CI, and publisher
+artifact and deploys only those historical digests. Review database migration
+compatibility first: rollback changes application images only, never attempts
+Flyway rollback, and never recreates or deletes PostgreSQL data. If validation
+or publication evidence is unavailable, do not bypass the checks with mutable
+tags or arbitrary image URLs.
+
+The manual host migration/recovery instructions below are for
+operator-approved one-time setup or incident recovery only, not routine
+releases. Ordinary releases must use the protected workflow.
+
+#### Manual host migration/recovery runbook (not routine releases)
+
+Use only for the one-time Compose transition or operator-approved recovery.
+The deployment workflow above does not execute these commands.
+
+##### First-time migration to the production Compose configuration
 
 The first rollout switches the existing Caddy container's bind mount from the
 server's current `caddy/Caddyfile` to the tracked
@@ -212,11 +387,11 @@ docker compose -p "$PROJECT" -f docker-compose.production.yml \
 ```
 
 Use this exact `PROJECT` value explicitly for the production Compose commands
-below. Confirm the observed volumes match `dirtyduty_postgres_data`, `caddy_data`,
-and `caddy_config` under that project, and that the current Caddyfile bind source
-is expected. **Stop if the project, containers, bind path, or any volume
-identity is missing or different.** Do not infer volume identity from a
-directory name.
+below. Compare each resolved Compose volume source and Caddyfile bind source
+with the actual container mounts. Do not assume the generated volume name from
+the key in the Compose file. **Stop if the project, containers, bind path, or
+any volume identity is missing or different.** Do not infer volume identity
+from a directory name.
 
 **3. Back up PostgreSQL.** Use a protected location outside the repository,
 verify the archive, and keep an off-host copy according to the operator's
@@ -317,18 +492,16 @@ Expect a successful primary-site response and a `308` redirect to
 `https://dirtyduty.app/`. Review backend logs for migration errors and
 notification scheduler startup.
 
-#### Subsequent releases
+##### Emergency manual application recovery
 
-Once the production Caddy mount is confirmed, later releases normally update
-only backend and frontend. Back up PostgreSQL and validate the Compose project
-and volume identities as above, then pull and update those two services with
-the same `pull` and `up -d --no-build --no-deps backend frontend` commands.
-Do not recreate Caddy unless its configuration changed. When it does change,
-validate the production file and explicitly recreate only Caddy with
-`up -d --no-deps --force-recreate caddy`, then recheck its mounted source,
-health, and public HTTPS routes. PostgreSQL remains in place in every case.
+Use these manual application commands only for an operator-approved emergency
+when the protected workflow is unavailable. Confirm the backup, project, and
+volume identity preconditions above, then update only backend and frontend with
+`pull` and `up -d --no-build --no-deps backend frontend`. Do not recreate
+Caddy unless its configuration changed and was separately validated.
+PostgreSQL remains in place.
 
-#### Recovery
+##### Host recovery checks
 
 If the project or volume identity checks do not match, stop before pulling or
 starting services and have the operator reconcile the deployment directory,
@@ -345,37 +518,10 @@ database recovery to an operator using the verified backup.
 
 ### Rollback and migrations
 
-Record the current image digests before each release. To roll back application
-code, restore the previous frontend/backend digest references in the existing
-`.env.production`, then repeat the pull and `up -d --no-build` commands above.
-Do not roll back or drop the database volume. Flyway applies migrations
-automatically on backend startup and this repository does not configure an
-automatic schema rollback.
-
 V12 adds a nullable timestamp column to `push_subscriptions`; it does not rewrite
 existing subscription data. The prior backend does not reference the column and
 can run against the migrated database, so application rollback can retain the
 schema. Always take and verify a database backup before applying any migration.
-
-### Future production release workflow proposal
-
-This phase does not implement or enable deployment automation. Before adding a
-future release workflow, configure a protected GitHub `production` environment
-with required human reviewers and prevent self-approval where supported. A
-manual `workflow_dispatch` release should accept only a commit-specific image
-manifest, serialize deployments with a non-canceling `production` concurrency
-group, and use a narrowly scoped read-only SSH user. Provision and verify the
-host public key out of band, then require strict SSH host-key checking; do not
-trust `ssh-keyscan` output fetched during a release job. Keep any deployment
-private key and host information in the protected environment, not repository
-files.
-
-The future release workflow should back up before migration, deploy only the
-digest-pinned app images, poll backend and public frontend/redirect health, and
-write the commit, image digests, migration result, health outcome, and rollback
-reference to the Actions summary. A failed health check should stop rollout and
-report the prior image digests for an operator-approved application rollback;
-it must not automatically revert database schema or volumes.
 
 ### Deployment behavior and constraints
 
@@ -393,14 +539,16 @@ it must not automatically revert database schema or volumes.
   frontend and backend have container health checks; PostgreSQL readiness gates
   backend startup and application health gates Caddy startup.
 - A single Compose backend replacement can cause a short API interruption.
-  Perform the first release during a low-traffic window and monitor health.
+  Monitor the first workflow deployment and schedule it for an appropriate
+  traffic window.
 - The production certificate, DNS, Oracle host, firewall, server-local
   configuration, and actual backup restoration must be verified by an operator;
   none are tested or changed by repository CI.
 
 ## Branch protection
 
-Configure GitHub branch protection or a ruleset to require the `CI` workflow
-before merging to `main`. The workflow defines validation checks, but branch
+Configure GitHub branch protection or a ruleset for `main` to require pull
+requests, at least one trusted review, successful `CI`, and no force pushes or
+unreviewed bypasses. The workflows define validation checks, but branch
 protection is a GitHub-side setting and is not configured by this repository.
-Verify that setting before treating CI as a merge gate.
+Verify those settings before treating the `main` history as approved.
