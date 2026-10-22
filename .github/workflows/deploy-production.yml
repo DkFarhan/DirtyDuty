@@ -1,0 +1,166 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Full 40-character commit SHA from the approved main history
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+
+jobs:
+  resolve-release:
+    name: Validate release and resolve immutable images
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      backend_image: ${{ steps.release.outputs.backend_image }}
+      frontend_image: ${{ steps.release.outputs.frontend_image }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_SHA: ${{ inputs.release_sha }}
+    steps:
+      - name: Check out main history
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate release commit is approved main history
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::release_sha must be a full lowercase 40-character commit SHA."
+            exit 1
+          fi
+
+          git cat-file -e "${RELEASE_SHA}^{commit}"
+          if ! git merge-base --is-ancestor "$RELEASE_SHA" refs/remotes/origin/main; then
+            echo "::error::The selected commit is not in the current main-branch history."
+            exit 1
+          fi
+
+      - name: Resolve CI-validated release and published image digests
+        id: release
+        run: python3 scripts/resolve-production-release.py
+
+  deploy:
+    name: Deploy validated release
+    needs: resolve-release
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment:
+      name: production
+    permissions:
+      packages: read
+    steps:
+      - name: Deploy over restricted SSH
+        id: deploy
+        env:
+          BACKEND_IMAGE: ${{ needs.resolve-release.outputs.backend_image }}
+          FRONTEND_IMAGE: ${{ needs.resolve-release.outputs.frontend_image }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          DEPLOY_SSH_KNOWN_HOSTS: ${{ vars.DEPLOY_SSH_KNOWN_HOSTS }}
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          GHCR_PULL_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USERNAME: ${{ github.actor }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$DEPLOY_HOST" =~ ^([a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?|([0-9]{1,3}\.){3}[0-9]{1,3})$ ]]; then
+            echo "::error::DEPLOY_HOST must be a DNS name or IPv4 address."
+            exit 1
+          fi
+          if [[ ! "$DEPLOY_USER" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]; then
+            echo "::error::DEPLOY_USER has an invalid format."
+            exit 1
+          fi
+          if [[ -z "$DEPLOY_SSH_PRIVATE_KEY" || -z "$DEPLOY_SSH_KNOWN_HOSTS" ]]; then
+            echo "::error::The production SSH key and pinned known-hosts entry are required."
+            exit 1
+          fi
+
+          key_file="$RUNNER_TEMP/production-deploy-key"
+          known_hosts_file="$RUNNER_TEMP/production-known-hosts"
+          umask 077
+          printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > "$key_file"
+          printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > "$known_hosts_file"
+          trap 'rm -f -- "$key_file" "$known_hosts_file"' EXIT
+          if ! python3 -c '
+          import os, sys
+          host = os.environ["DEPLOY_HOST"]
+          with open(sys.argv[1], encoding="utf-8") as known_hosts:
+              exact_pin = any(
+                  fields and fields[0] == host and len(fields) >= 3
+                  for line in known_hosts
+                  if (fields := line.split()) and not fields[0].startswith("#")
+              )
+          sys.exit(0 if exact_pin else 1)
+          ' "$known_hosts_file"; then
+            echo "::error::Known-hosts data must contain a literal, exact host entry (wildcards are not allowed)."
+            exit 1
+          fi
+          if ! ssh-keygen -F "$DEPLOY_HOST" -f "$known_hosts_file" >/dev/null; then
+            echo "::error::Pinned known-hosts data does not contain the configured production host."
+            exit 1
+          fi
+
+          python3 -c '
+          import json, os, sys
+          request = {
+              "release_sha": os.environ["RELEASE_SHA"],
+              "backend_image": os.environ["BACKEND_IMAGE"],
+              "frontend_image": os.environ["FRONTEND_IMAGE"],
+              "registry_username": os.environ["GHCR_USERNAME"],
+              "registry_token": os.environ["GHCR_PULL_TOKEN"],
+          }
+          sys.stdout.write(json.dumps(request, separators=(",", ":")))
+          ' | ssh \
+            -F /dev/null \
+            -i "$key_file" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=10 \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$known_hosts_file" \
+            -o GlobalKnownHostsFile=/dev/null \
+            -o UpdateHostKeys=no \
+            -o IdentitiesOnly=yes \
+            -o ForwardAgent=no \
+            -o ClearAllForwardings=yes \
+            -o RequestTTY=no \
+            "$DEPLOY_USER@$DEPLOY_HOST"
+
+      - name: Write deployment summary
+        if: always()
+        env:
+          DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
+          BACKEND_IMAGE: ${{ needs.resolve-release.outputs.backend_image }}
+          FRONTEND_IMAGE: ${{ needs.resolve-release.outputs.frontend_image }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          recorded_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          {
+            printf '## Production deployment\n\n'
+            printf -- '- Requested commit: `%s`\n' "$RELEASE_SHA"
+            printf -- '- Backend: `%s`\n' "${BACKEND_IMAGE:-not resolved}"
+            printf -- '- Frontend: `%s`\n' "${FRONTEND_IMAGE:-not resolved}"
+            printf -- '- Recorded at: `%s`\n' "$recorded_at"
+            printf -- '- Workflow result: `%s`\n' "${DEPLOY_OUTCOME:-not started}"
+            printf '\nThe root-owned server deployment ledger contains the authoritative timestamp, result, and previous release references.\n'
+          } >> "$GITHUB_STEP_SUMMARY"
