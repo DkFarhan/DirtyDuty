@@ -1,0 +1,116 @@
+services:
+  caddy:
+    image: caddy:2.9-alpine
+    restart: unless-stopped
+    environment:
+      CADDY_EMAIL: ${CADDY_EMAIL:-}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+      - ./caddy/Caddyfile.production:/etc/caddy/Caddyfile:ro
+    depends_on:
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-dirtyduty}
+      POSTGRES_USER: ${POSTGRES_USER:-dirtyduty_user}
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.production}"
+    expose:
+      - "5432"
+    volumes:
+      - dirtyduty_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-dirtyduty_user} -d ${POSTGRES_DB:-dirtyduty}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  backend:
+    image: ${BACKEND_IMAGE:?Set BACKEND_IMAGE to a digest-pinned GHCR backend image}
+    platform: linux/arm64
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      NOTIFICATION_SCHEDULER_DELAY: ${NOTIFICATION_SCHEDULER_DELAY:-60000}
+      SERVER_FORWARD_HEADERS_STRATEGY: ${SERVER_FORWARD_HEADERS_STRATEGY:-framework}
+      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-dirtyduty}
+      DB_USERNAME: ${POSTGRES_USER:-dirtyduty_user}
+      DB_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.production}"
+      APP_BASE_URL: ${APP_BASE_URL:-https://${DOMAIN:-dirtyduty.app}}
+      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-https://dirtyduty.app}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
+      SESSION_TIMEOUT: ${SESSION_TIMEOUT:-30d}
+      SESSION_COOKIE_MAX_AGE: ${SESSION_COOKIE_MAX_AGE:-365d}
+      GOOGLE_AUTH_ENABLED: ${GOOGLE_AUTH_ENABLED:-false}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      PASSWORD_RESET_ENABLED: ${PASSWORD_RESET_ENABLED:-false}
+      PASSWORD_RESET_TTL: ${PASSWORD_RESET_TTL:-30m}
+      AUTH_RATE_LIMIT_HMAC_SECRET: ${AUTH_RATE_LIMIT_HMAC_SECRET:-}
+      PASSWORD_RESET_EMAIL_LIMIT: ${PASSWORD_RESET_EMAIL_LIMIT:-3}
+      PASSWORD_RESET_IP_LIMIT: ${PASSWORD_RESET_IP_LIMIT:-5}
+      PASSWORD_RESET_CONFIRM_IP_LIMIT: ${PASSWORD_RESET_CONFIRM_IP_LIMIT:-10}
+      MAIL_HOST: ${MAIL_HOST:-}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_SMTP_AUTH: ${MAIL_SMTP_AUTH:-true}
+      MAIL_STARTTLS_ENABLED: ${MAIL_STARTTLS_ENABLED:-true}
+      MAIL_STARTTLS_REQUIRED: ${MAIL_STARTTLS_REQUIRED:-true}
+      MAIL_TLS_VERIFY_SERVER_IDENTITY: ${MAIL_TLS_VERIFY_SERVER_IDENTITY:-true}
+      MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-DirtyDuty}
+      MANAGEMENT_HEALTH_MAIL_ENABLED: ${MANAGEMENT_HEALTH_MAIL_ENABLED:-false}
+      WEB_PUSH_PUBLIC_KEY: ${WEB_PUSH_PUBLIC_KEY:-}
+      WEB_PUSH_PRIVATE_KEY: ${WEB_PUSH_PRIVATE_KEY:-}
+      WEB_PUSH_SUBJECT: ${WEB_PUSH_SUBJECT:-mailto:support@example.com}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "8080"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://localhost:8080/actuator/health || exit 1",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  frontend:
+    image: ${FRONTEND_IMAGE:?Set FRONTEND_IMAGE to a digest-pinned GHCR frontend image}
+    platform: linux/arm64
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+    depends_on:
+      backend:
+        condition: service_started
+    expose:
+      - "3000"
+
+volumes:
+  caddy_data:
+  caddy_config:
+  dirtyduty_postgres_data:

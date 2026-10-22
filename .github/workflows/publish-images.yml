@@ -1,0 +1,116 @@
+name: Publish ARM64 images
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-images-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build and publish ARM64 images
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out the exact CI-validated commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate public frontend build configuration
+        env:
+          NEXT_PUBLIC_SUPPORT_EMAIL: ${{ vars.NEXT_PUBLIC_SUPPORT_EMAIL }}
+        run: |
+          if [ -z "$NEXT_PUBLIC_SUPPORT_EMAIL" ]; then
+            echo "::error::Set the NEXT_PUBLIC_SUPPORT_EMAIL repository variable before publishing frontend images."
+            exit 1
+          fi
+
+      - name: Build and publish backend image
+        id: backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          platforms: linux/arm64
+          push: true
+          tags: ghcr.io/dkfarhan/dirtyduty-backend:sha-${{ github.event.workflow_run.head_sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/DkFarhan/DirtyDuty
+            org.opencontainers.image.revision=${{ github.event.workflow_run.head_sha }}
+          provenance: mode=max
+          sbom: true
+
+      - name: Build and publish frontend image
+        id: frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          platforms: linux/arm64
+          push: true
+          tags: ghcr.io/dkfarhan/dirtyduty-frontend:sha-${{ github.event.workflow_run.head_sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/DkFarhan/DirtyDuty
+            org.opencontainers.image.revision=${{ github.event.workflow_run.head_sha }}
+          build-args: |
+            NEXT_PUBLIC_API_BASE_URL=${{ vars.NEXT_PUBLIC_API_BASE_URL }}
+            NEXT_PUBLIC_SUPPORT_EMAIL=${{ vars.NEXT_PUBLIC_SUPPORT_EMAIL }}
+          provenance: mode=max
+          sbom: true
+
+      - name: Prepare immutable image references
+        env:
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+          BACKEND_DIGEST: ${{ steps.backend.outputs.digest }}
+          FRONTEND_DIGEST: ${{ steps.frontend.outputs.digest }}
+        run: |
+          {
+            printf 'source_commit=%s\n' "$SOURCE_SHA"
+            printf 'backend_image=ghcr.io/dkfarhan/dirtyduty-backend@%s\n' "$BACKEND_DIGEST"
+            printf 'frontend_image=ghcr.io/dkfarhan/dirtyduty-frontend@%s\n' "$FRONTEND_DIGEST"
+          } > "$RUNNER_TEMP/deployment-images.txt"
+
+          {
+            printf '### ARM64 images published for `%s`\n\n' "$SOURCE_SHA"
+            printf 'Use these digest-pinned values for a manually authorized release:\n\n'
+            printf '```text\n'
+            cat "$RUNNER_TEMP/deployment-images.txt"
+            printf '```\n'
+            printf '\nNo production deployment was started by this workflow.\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save image references as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-images-${{ github.event.workflow_run.head_sha }}
+          path: ${{ runner.temp }}/deployment-images.txt
+          if-no-files-found: error
+          retention-days: 90
