@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ApiError } from "@/lib/auth/api"
 import {
   notificationApi,
@@ -14,6 +14,7 @@ import {
 } from "@/lib/notifications/push"
 import { usePushSubscriptionHealth } from "@/lib/notifications/push-health"
 import { useChoreSync } from "@/lib/chore-sync/store"
+import { notificationResource, useDataSync } from "@/lib/data-sync/data-sync-context"
 import { SubpageHeader } from "./subpage-header"
 import { SettingsRow } from "../primitives"
 
@@ -72,31 +73,83 @@ export function NotificationsScreen() {
   const [unreadCount, setUnreadCount] = useState(0)
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading")
   const [error, setError] = useState("")
-  const [busyId, setBusyId] = useState<string | null>(null)
+  const [actionError, setActionError] = useState("")
+  const [busyIds, setBusyIds] = useState<Set<string>>(() => new Set())
+  const [markAllBusy, setMarkAllBusy] = useState(false)
   const [preferences, setPreferences] = useState<NotificationPreferences | null>(null)
   const [savedPreferences, setSavedPreferences] = useState<NotificationPreferences | null>(null)
   const [preferencesError, setPreferencesError] = useState("")
   const [preferencesBusy, setPreferencesBusy] = useState(false)
   const [preferencesSaved, setPreferencesSaved] = useState(false)
+  const itemsRef = useRef<Notification[]>([])
+  const unreadCountRef = useRef(0)
+  const hasLoadedRef = useRef(false)
+  const requestSequence = useRef(0)
+  const pendingReads = useRef(
+    new Map<
+      string,
+      { previousReadAt: string | null; optimisticReadAt: string; serverConfirmed: boolean }
+    >(),
+  )
+  const pendingReadAll = useRef(
+    new Map<string, { previousReadAt: string | null; optimisticReadAt: string }>(),
+  )
+  const pendingReadAllCount = useRef<number | null>(null)
+  const {
+    revision: notificationRevision,
+    invalidate: invalidateNotifications,
+    claim,
+    release,
+  } = useDataSync(notificationResource)
 
   const load = useCallback(async () => {
-    setStatus("loading")
-    setError("")
+    const requestId = ++requestSequence.current
+    const hasLoaded = hasLoadedRef.current
+    if (!hasLoaded) setStatus("loading")
     try {
       const [notifications, unread] = await Promise.all([
         notificationApi.list(),
         notificationApi.unreadCount(),
       ])
-      setItems(notifications)
-      setUnreadCount(unread.count)
+      if (requestId !== requestSequence.current) return
+      const nextItems = notifications.map((notification) => {
+        const pending = pendingReads.current.get(notification.id)
+        if (pending && notification.readAt) {
+          pending.serverConfirmed = true
+          return notification
+        }
+        if (pending) {
+          return { ...notification, readAt: pending.optimisticReadAt }
+        }
+        const pendingAll = pendingReadAll.current.get(notification.id)
+        if (pendingAll && !notification.readAt) {
+          return { ...notification, readAt: pendingAll.optimisticReadAt }
+        }
+        return notification
+      })
+      const pendingUnread = [...pendingReads.current.keys()].filter((id) =>
+        notifications.some((notification) => notification.id === id && !notification.readAt),
+      ).length
+      const nextUnreadCount = pendingReadAll.current.size
+        ? 0
+        : Math.max(0, unread.count - pendingUnread)
+      itemsRef.current = nextItems
+      unreadCountRef.current = nextUnreadCount
+      setItems(nextItems)
+      setUnreadCount(nextUnreadCount)
+      setError("")
+      hasLoadedRef.current = true
       setStatus("loaded")
     } catch (cause) {
+      if (requestId !== requestSequence.current) return
       setError(
         cause instanceof ApiError
           ? cause.message
-          : "Unable to load notifications. Please try again.",
+          : hasLoaded
+            ? "Unable to refresh notifications. Please try again."
+            : "Unable to load notifications. Please try again.",
       )
-      setStatus("error")
+      if (!hasLoaded) setStatus("error")
     }
   }, [])
 
@@ -116,41 +169,124 @@ export function NotificationsScreen() {
   useEffect(() => {
     void load()
     void loadPreferences()
-  }, [load, loadPreferences])
+    return () => {
+      requestSequence.current += 1
+    }
+  }, [load, loadPreferences, notificationRevision])
 
   const markRead = async (notification: Notification) => {
-    if (notification.readAt || busyId) return
-    setBusyId(notification.id)
-    setError("")
+    if (
+      notification.readAt ||
+      markAllBusy ||
+      pendingReadAll.current.size > 0 ||
+      pendingReads.current.has(notification.id) ||
+      !claim(notification.id)
+    ) {
+      return
+    }
+    const current = itemsRef.current.find((item) => item.id === notification.id)
+    if (!current || current.readAt) {
+      release(notification.id)
+      return
+    }
+    const optimisticReadAt = new Date().toISOString()
+    pendingReads.current.set(notification.id, {
+      previousReadAt: current.readAt,
+      optimisticReadAt,
+      serverConfirmed: false,
+    })
+    requestSequence.current += 1
+    itemsRef.current = itemsRef.current.map((item) =>
+      item.id === notification.id ? { ...item, readAt: optimisticReadAt } : item,
+    )
+    unreadCountRef.current = Math.max(0, unreadCountRef.current - 1)
+    setItems(itemsRef.current)
+    setUnreadCount(unreadCountRef.current)
+    setBusyIds((currentIds) => new Set(currentIds).add(notification.id))
+    setActionError("")
     try {
       await notificationApi.markRead(notification.id)
-      const readAt = new Date().toISOString()
-      setItems((current) =>
-        current.map((item) => (item.id === notification.id ? { ...item, readAt } : item)),
-      )
-      setUnreadCount((count) => Math.max(0, count - 1))
+      pendingReads.current.delete(notification.id)
+      invalidateNotifications()
     } catch (cause) {
-      setError(
+      requestSequence.current += 1
+      const pending = pendingReads.current.get(notification.id)
+      if (pending && !pending.serverConfirmed) {
+        itemsRef.current = itemsRef.current.map((item) =>
+          item.id === notification.id && item.readAt === pending.optimisticReadAt
+            ? { ...item, readAt: pending.previousReadAt }
+            : item,
+        )
+        unreadCountRef.current += 1
+        setItems(itemsRef.current)
+        setUnreadCount(unreadCountRef.current)
+      }
+      pendingReads.current.delete(notification.id)
+      setActionError(
         cause instanceof ApiError ? cause.message : "Unable to mark this notification as read.",
       )
+      invalidateNotifications()
     } finally {
-      setBusyId(null)
+      release(notification.id)
+      setBusyIds((currentIds) => {
+        const next = new Set(currentIds)
+        next.delete(notification.id)
+        return next
+      })
     }
   }
 
   const markAllRead = async () => {
-    if (!unreadCount || busyId) return
-    setBusyId("all")
-    setError("")
+    if (
+      !unreadCountRef.current ||
+      busyIds.size > 0 ||
+      pendingReads.current.size > 0 ||
+      markAllBusy ||
+      !claim("read-all")
+    ) {
+      return
+    }
+    const optimisticReadAt = new Date().toISOString()
+    pendingReadAllCount.current = unreadCountRef.current
+    const unreadItems = itemsRef.current.filter((item) => !item.readAt)
+    pendingReadAll.current = new Map(
+      unreadItems.map((item) => [item.id, { previousReadAt: item.readAt, optimisticReadAt }]),
+    )
+    requestSequence.current += 1
+    itemsRef.current = itemsRef.current.map((item) =>
+      item.readAt ? item : { ...item, readAt: optimisticReadAt },
+    )
+    unreadCountRef.current = 0
+    setItems(itemsRef.current)
+    setUnreadCount(0)
+    setMarkAllBusy(true)
+    setActionError("")
     try {
       await notificationApi.markAllRead()
-      const readAt = new Date().toISOString()
-      setItems((current) => current.map((item) => (item.readAt ? item : { ...item, readAt })))
-      setUnreadCount(0)
+      pendingReadAll.current.clear()
+      pendingReadAllCount.current = null
+      invalidateNotifications()
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : "Unable to mark notifications as read.")
+      requestSequence.current += 1
+      itemsRef.current = itemsRef.current.map((item) => {
+        const pending = pendingReadAll.current.get(item.id)
+        return pending && item.readAt === pending.optimisticReadAt
+          ? { ...item, readAt: pending.previousReadAt }
+          : item
+      })
+      unreadCountRef.current =
+        pendingReadAllCount.current ?? itemsRef.current.filter((item) => !item.readAt).length
+      setItems(itemsRef.current)
+      setUnreadCount(unreadCountRef.current)
+      pendingReadAll.current.clear()
+      pendingReadAllCount.current = null
+      setActionError(
+        cause instanceof ApiError ? cause.message : "Unable to mark notifications as read.",
+      )
+      invalidateNotifications()
     } finally {
-      setBusyId(null)
+      release("read-all")
+      setMarkAllBusy(false)
     }
   }
 
@@ -237,7 +373,7 @@ export function NotificationsScreen() {
           unreadCount > 0 ? (
             <button
               className="rounded-lg px-2 py-1 text-xs font-bold text-teal-700 transition-colors hover:bg-teal-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 disabled:opacity-50 dark:text-teal-300 dark:hover:bg-slate-700"
-              disabled={busyId !== null}
+              disabled={markAllBusy || busyIds.size > 0}
               onClick={() => void markAllRead()}
               type="button"
             >
@@ -247,12 +383,12 @@ export function NotificationsScreen() {
         }
       />
       <main className="flex flex-col gap-4 px-4 pt-4">
-        {error && (
+        {(actionError || (status === "loaded" && error)) && (
           <p
             className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700"
             role="alert"
           >
-            {error}
+            {actionError || error}
           </p>
         )}
         {status === "loading" && (
@@ -314,17 +450,16 @@ export function NotificationsScreen() {
                       </div>
                       <p className="mt-1 text-sm leading-relaxed text-slate-600">{item.message}</p>
                       <p className="mt-2 text-xs leading-relaxed text-slate-500 dark:text-slate-300">
-                        {dateLabel(item.deliveredAt ?? item.sentAt ?? item.createdAt)} ·{" "}
-                        {item.category.toLowerCase()}
+                        {dateLabel(item.deliveredAt ?? item.sentAt ?? item.createdAt)}
                       </p>
                       {!read && (
                         <button
                           className="mt-2 text-xs font-bold text-teal-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 disabled:opacity-50 dark:text-teal-300"
-                          disabled={busyId !== null}
+                          disabled={busyIds.has(item.id) || markAllBusy}
                           onClick={() => void markRead(item)}
                           type="button"
                         >
-                          {busyId === item.id ? "Marking read…" : "Mark as read"}
+                          {busyIds.has(item.id) ? "Marking read…" : "Mark as read"}
                         </button>
                       )}
                     </div>

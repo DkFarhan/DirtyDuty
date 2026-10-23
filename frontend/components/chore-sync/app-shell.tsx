@@ -1,12 +1,13 @@
 "use client"
 
-import { useEffect } from "react"
-import { ThemeProvider } from "@/components/theme/theme-provider"
+import { useEffect, useLayoutEffect } from "react"
+import { ThemeProvider, useTheme } from "@/components/theme/theme-provider"
 import type { Screen } from "@/lib/chore-sync/types"
 import { AuthProvider, useAuth } from "@/lib/auth/auth-context"
 import { getAuthRedirect } from "@/lib/auth/routing"
 import { ChoreSyncProvider, useChoreSync } from "@/lib/chore-sync/store"
 import { HouseholdProvider, useHouseholds } from "@/lib/household/household-context"
+import { DataSyncProvider } from "@/lib/data-sync/data-sync-context"
 import { getHouseholdRedirect } from "@/lib/household/routing"
 import { LoginScreen } from "./screens/login-screen"
 import { RegisterScreen } from "./screens/register-screen"
@@ -31,15 +32,27 @@ import { AppearanceScreen } from "./screens/appearance-screen"
 import { AppLaunchGate } from "./launch-experience"
 import { PushSubscriptionHealthProvider } from "@/lib/notifications/push-health"
 
+const authenticationScreens = new Set<Screen>([
+  "login",
+  "register",
+  "forgot-password",
+  "reset-password",
+])
+
 function ScreenRouter() {
   const { screen, adminTab, navigate, setCurrentUser } = useChoreSync()
   const { user, isAuthenticated, isLoading, authError, refreshUser } = useAuth()
+  const { setPresentationLight } = useTheme()
   const {
     households,
     status: householdStatus,
     error: householdError,
     refresh: refreshHouseholds,
   } = useHouseholds()
+
+  useLayoutEffect(() => {
+    setPresentationLight(authenticationScreens.has(screen) || (!isAuthenticated && !isLoading))
+  }, [isAuthenticated, isLoading, screen, setPresentationLight])
 
   useEffect(() => {
     if (isLoading) return
@@ -198,19 +211,21 @@ export function AppShell({ initialScreen = "login" }: { initialScreen?: Screen }
   return (
     <ThemeProvider>
       <AuthProvider>
-        <HouseholdProvider>
-          <ChoreSyncProvider initialScreen={initialScreen}>
-            <PushSubscriptionHealthProvider>
-              <div className="min-h-screen bg-slate-200 flex items-start justify-center">
-                <div className="w-full max-w-sm bg-white min-h-screen relative overflow-hidden shadow-2xl">
-                  <AppLaunchGate>
-                    <ScreenRouter />
-                  </AppLaunchGate>
+        <DataSyncProvider>
+          <HouseholdProvider>
+            <ChoreSyncProvider initialScreen={initialScreen}>
+              <PushSubscriptionHealthProvider>
+                <div className="min-h-screen bg-slate-200 flex items-start justify-center">
+                  <div className="w-full max-w-sm bg-white min-h-screen relative overflow-hidden shadow-2xl">
+                    <AppLaunchGate>
+                      <ScreenRouter />
+                    </AppLaunchGate>
+                  </div>
                 </div>
-              </div>
-            </PushSubscriptionHealthProvider>
-          </ChoreSyncProvider>
-        </HouseholdProvider>
+              </PushSubscriptionHealthProvider>
+            </ChoreSyncProvider>
+          </HouseholdProvider>
+        </DataSyncProvider>
       </AuthProvider>
     </ThemeProvider>
   )

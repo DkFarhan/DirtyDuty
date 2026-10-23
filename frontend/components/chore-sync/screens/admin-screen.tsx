@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { MoreHorizontal } from "lucide-react"
 import { useChoreSync } from "@/lib/chore-sync/store"
 import { ApiError } from "@/lib/auth/api"
@@ -11,6 +11,7 @@ import {
   type ChoreManagementOptions,
 } from "@/lib/household/chores"
 import { useHouseholds } from "@/lib/household/household-context"
+import { householdChoreResource, useDataSync } from "@/lib/data-sync/data-sync-context"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { BottomNav } from "../bottom-nav"
@@ -19,56 +20,102 @@ import { ChevronLeftIcon } from "../icons"
 export function AdminScreen({ initialTab = "chores" }: { initialTab?: "members" | "chores" }) {
   void initialTab
   const { navigate, editChore } = useChoreSync()
-  const { households } = useHouseholds()
+  const { activeHousehold: household } = useHouseholds()
   const [chores, setChores] = useState<Chore[]>([])
   const [choreState, setChoreState] = useState<"loading" | "loaded" | "error">("loading")
   const [choreError, setChoreError] = useState<string | null>(null)
+  const [refreshError, setRefreshError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [busyChoreId, setBusyChoreId] = useState<string | null>(null)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [archiveChore, setArchiveChore] = useState<Chore | null>(null)
   const [managementOptions, setManagementOptions] = useState<ChoreManagementOptions | null>(null)
-  const household = households[0]
+  const requestSequence = useRef(0)
+  const loadedHouseholdId = useRef<string | null>(null)
+  const busyChores = useRef(new Set<string>())
+  const choreResource = household
+    ? householdChoreResource(household.id)
+    : "household:none:chores-and-assignments"
+  const { revision, invalidate } = useDataSync(choreResource)
 
   const loadChores = useCallback(async () => {
-    if (!household) return
-    setChoreState("loading")
-    setChoreError(null)
+    if (!household) {
+      requestSequence.current += 1
+      setChores([])
+      setManagementOptions(null)
+      loadedHouseholdId.current = null
+      setChoreState("error")
+      setChoreError("Your household could not be found.")
+      return
+    }
+    const requestId = ++requestSequence.current
+    const hasCurrentData = loadedHouseholdId.current === household.id
+    if (!hasCurrentData) setChoreState("loading")
     try {
       const [nextChores, nextOptions] = await Promise.all([
         choreApi.list(household.id),
         choreApi.options(household.id),
       ])
+      if (requestId !== requestSequence.current) return
       setChores(nextChores)
       setManagementOptions(nextOptions)
+      loadedHouseholdId.current = household.id
+      setChoreError(null)
+      setRefreshError(null)
       setChoreState("loaded")
     } catch (cause) {
-      setChoreError(
-        cause instanceof ApiError ? cause.message : "Unable to load chores. Please try again.",
-      )
+      if (requestId !== requestSequence.current) return
+      const message =
+        cause instanceof ApiError ? cause.message : "Unable to load chores. Please try again."
+      if (hasCurrentData) {
+        setRefreshError(
+          cause instanceof ApiError ? cause.message : "Unable to refresh chores. Please try again.",
+        )
+        return
+      }
+      setChoreError(message)
       setChoreState("error")
     }
   }, [household])
 
   useEffect(() => {
     void loadChores()
-  }, [loadChores])
+    return () => {
+      requestSequence.current += 1
+    }
+  }, [loadChores, revision])
 
   const runLifecycleAction = async (chore: Chore, action: "pause" | "activate" | "archive") => {
     if (!household) return
+    const operationKey = `${household.id}:${chore.id}`
+    if (busyChores.current.has(operationKey)) return
+    busyChores.current.add(operationKey)
+    setBusyChoreId(operationKey)
     setActionError(null)
     try {
-      if (action === "pause") await choreApi.pause(household.id, chore.id)
-      if (action === "activate") await choreApi.activate(household.id, chore.id)
-      if (action === "archive") await choreApi.archive(household.id, chore.id)
+      const updated =
+        action === "pause"
+          ? await choreApi.pause(household.id, chore.id)
+          : action === "activate"
+            ? await choreApi.activate(household.id, chore.id)
+            : await choreApi.archive(household.id, chore.id)
+      if (loadedHouseholdId.current === household.id) {
+        setChores((current) => current.map((item) => (item.id === updated.id ? updated : item)))
+      }
       setOpenMenuId(null)
       setArchiveChore(null)
-      await loadChores()
+      invalidate()
     } catch (cause) {
-      setActionError(
-        cause instanceof ApiError
-          ? cause.message
-          : "Unable to update this chore. Please try again.",
-      )
+      if (loadedHouseholdId.current === household.id) {
+        setActionError(
+          cause instanceof ApiError
+            ? cause.message
+            : "Unable to update this chore. Please try again.",
+        )
+      }
+    } finally {
+      busyChores.current.delete(operationKey)
+      setBusyChoreId((current) => (current === operationKey ? null : current))
     }
   }
 
@@ -141,12 +188,12 @@ export function AdminScreen({ initialTab = "chores" }: { initialTab?: "members" 
           >
             <span>+</span> Create Chore
           </Button>
-          {actionError && (
+          {(actionError || (choreState === "loaded" && refreshError)) && (
             <p
               role="alert"
               className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700"
             >
-              {actionError}
+              {actionError ?? refreshError}
             </p>
           )}
           {choreState === "loading" && (
@@ -280,9 +327,16 @@ export function AdminScreen({ initialTab = "chores" }: { initialTab?: "members" 
                         onClick={() =>
                           void runLifecycleAction(chore, chore.active ? "pause" : "activate")
                         }
+                        disabled={busyChoreId === `${household?.id}:${chore.id}`}
                         type="button"
                       >
-                        {chore.active ? "Pause" : "Activate"}
+                        {busyChoreId === `${household?.id}:${chore.id}`
+                          ? chore.active
+                            ? "Pausing…"
+                            : "Activating…"
+                          : chore.active
+                            ? "Pause"
+                            : "Activate"}
                       </button>
                       <button
                         className="w-full px-3 py-2 text-left text-sm font-medium text-rose-600 hover:bg-rose-50"
@@ -329,9 +383,10 @@ export function AdminScreen({ initialTab = "chores" }: { initialTab?: "members" 
               <Button
                 className="flex-1 rounded-xl bg-rose-600 text-white hover:bg-rose-700"
                 onClick={() => void runLifecycleAction(archiveChore, "archive")}
+                disabled={busyChoreId === `${household?.id}:${archiveChore.id}`}
                 type="button"
               >
-                Archive
+                {busyChoreId === `${household?.id}:${archiveChore.id}` ? "Archiving…" : "Archive"}
               </Button>
             </div>
           </section>

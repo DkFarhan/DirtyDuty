@@ -15,6 +15,7 @@ import {
   type ChoreRequest,
 } from "@/lib/household/chores"
 import { useHouseholds } from "@/lib/household/household-context"
+import { householdChoreResource, useDataSync } from "@/lib/data-sync/data-sync-context"
 import { cn } from "@/lib/utils"
 
 const weekdays = [
@@ -144,8 +145,7 @@ const sectionTitleClass =
 
 export function ChoreFormScreen() {
   const { state, screen, navigate, editingChoreId } = useChoreSync()
-  const { households } = useHouseholds()
-  const household = households[0]
+  const { activeHousehold: household } = useHouseholds()
   const isEditing = screen === "edit-chore"
   const [values, setValues] = useState(() => initialValues(state.currentUser.id))
   const [options, setOptions] = useState<ChoreManagementOptions | null>(null)
@@ -156,6 +156,9 @@ export function ChoreFormScreen() {
   const [confirmDiscard, setConfirmDiscard] = useState(false)
   const [savedValues, setSavedValues] = useState("")
   const householdId = household?.id
+  const { invalidate: invalidateChores } = useDataSync(
+    householdId ? householdChoreResource(householdId) : "household:none:chores-and-assignments",
+  )
   const serializedValues = useMemo(() => JSON.stringify(values), [values])
   const dirty = savedValues !== "" && serializedValues !== savedValues
 
@@ -356,6 +359,7 @@ export function ChoreFormScreen() {
     try {
       if (isEditing && editingChoreId) await choreApi.update(householdId, editingChoreId, request)
       else await choreApi.create(householdId, request)
+      invalidateChores()
       navigate("admin", "chores")
     } catch (cause) {
       setError(

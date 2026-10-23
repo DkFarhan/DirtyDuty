@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useChoreSync } from "@/lib/chore-sync/store"
 import { ApiError } from "@/lib/auth/api"
 import { choreApi, type HouseholdDashboard } from "@/lib/household/chores"
@@ -13,6 +13,16 @@ import { HouseGlyphIcon } from "../icons"
 import { InviteHousemateDialog } from "../invite-housemate-dialog"
 import { Avatar, ProgressBar } from "../primitives"
 import { notificationApi } from "@/lib/notifications/api"
+import {
+  householdChoreResource,
+  notificationResource,
+  useDataSync,
+} from "@/lib/data-sync/data-sync-context"
+import {
+  optimisticallyCompleteDashboardAssignment,
+  rollbackDashboardAssignmentCompletion,
+  updateDashboardAssignment,
+} from "@/lib/household/assignment-state"
 import { usePushSubscriptionHealth } from "@/lib/notifications/push-health"
 import {
   formatUpcomingDateLabel,
@@ -35,46 +45,140 @@ export function DashboardScreen() {
     refresh: refreshPushHealth,
     restore: restorePush,
   } = usePushSubscriptionHealth()
-  const { households, createdHouseholdInvite, queueCreatedHouseholdInvite } = useHouseholds()
+  const {
+    activeHousehold: household,
+    createdHouseholdInvite,
+    queueCreatedHouseholdInvite,
+  } = useHouseholds()
   const [dashboard, setDashboard] = useState<HouseholdDashboard | null>(null)
+  const [dashboardHouseholdId, setDashboardHouseholdId] = useState<string | null>(null)
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading")
   const [error, setError] = useState<string | null>(null)
-  const [completingId, setCompletingId] = useState<string | null>(null)
+  const [refreshError, setRefreshError] = useState<string | null>(null)
+  const [notificationCountError, setNotificationCountError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [completingIds, setCompletingIds] = useState<Set<string>>(() => new Set())
   const [inviteHousehold, setInviteHousehold] = useState<Household | null>(null)
   const [unreadCount, setUnreadCount] = useState(0)
-  const household = households[0]
+  const dashboardRef = useRef<HouseholdDashboard | null>(null)
+  const dashboardHouseholdIdRef = useRef<string | null>(null)
+  const requestSequence = useRef(0)
+  const unreadRequestSequence = useRef(0)
+  const pendingCompletions = useRef(
+    new Map<
+      string,
+      {
+        householdId: string
+        assignmentId: string
+        previous: import("@/lib/household/chores").AssignmentDTO
+        incrementedWeekSummary: boolean
+        serverConfirmed: boolean
+      }
+    >(),
+  )
+  const pendingCompletionIds = useRef(new Set<string>())
+  const choreResource = household
+    ? householdChoreResource(household.id)
+    : "household:none:chores-and-assignments"
+  const {
+    revision: choresRevision,
+    invalidate: invalidateChores,
+    claim: claimCompletion,
+    release: releaseCompletion,
+  } = useDataSync(choreResource)
+  const { revision: notificationsRevision } = useDataSync(notificationResource)
   const canInvite = household?.currentUserRole === "OWNER" || household?.currentUserRole === "ADMIN"
 
   const loadDashboard = useCallback(async () => {
     if (!household) {
+      requestSequence.current += 1
+      dashboardRef.current = null
+      dashboardHouseholdIdRef.current = null
+      setDashboard(null)
+      setDashboardHouseholdId(null)
       setError("Your household could not be found.")
       setStatus("error")
       return
     }
-    setStatus("loading")
-    setError(null)
+    const requestId = ++requestSequence.current
+    const hasCurrentData =
+      dashboardHouseholdIdRef.current === household.id && dashboardRef.current !== null
+    if (!hasCurrentData) setStatus("loading")
     try {
-      setDashboard(await choreApi.dashboard(household.id))
+      const nextDashboard = await choreApi.dashboard(household.id)
+      if (requestId !== requestSequence.current) return
+      let reconciledDashboard = nextDashboard
+      for (const pending of pendingCompletions.current.values()) {
+        if (pending.householdId !== household.id) continue
+        const serverAssignment = [
+          reconciledDashboard.today,
+          reconciledDashboard.thisWeek,
+          reconciledDashboard.overdue,
+        ]
+          .flat()
+          .find((assignment) => assignment.id === pending.assignmentId)
+        if (serverAssignment?.status === "COMPLETED") {
+          pending.serverConfirmed = true
+        } else {
+          const optimistic = optimisticallyCompleteDashboardAssignment(
+            reconciledDashboard,
+            pending.assignmentId,
+          )
+          if (optimistic) reconciledDashboard = optimistic.dashboard
+        }
+      }
+      dashboardRef.current = reconciledDashboard
+      dashboardHouseholdIdRef.current = household.id
+      setDashboard(reconciledDashboard)
+      setDashboardHouseholdId(household.id)
+      setError(null)
+      setRefreshError(null)
       setStatus("loaded")
     } catch (cause) {
-      setError(
+      if (requestId !== requestSequence.current) return
+      const message =
         cause instanceof ApiError
           ? cause.message
-          : "Unable to load your dashboard. Please try again.",
-      )
+          : hasCurrentData
+            ? "Unable to refresh your dashboard. Please try again."
+            : "Unable to load your dashboard. Please try again."
+      if (hasCurrentData) {
+        setRefreshError(message)
+        return
+      }
+      setError(message)
       setStatus("error")
     }
   }, [household])
 
   useEffect(() => {
     void loadDashboard()
-  }, [loadDashboard])
+    return () => {
+      requestSequence.current += 1
+    }
+  }, [choresRevision, loadDashboard])
   useEffect(() => {
+    const requestId = ++unreadRequestSequence.current
     notificationApi
       .unreadCount()
-      .then((result) => setUnreadCount(result.count))
-      .catch(() => setUnreadCount(0))
-  }, [])
+      .then((result) => {
+        if (requestId === unreadRequestSequence.current) {
+          setUnreadCount(result.count)
+          setNotificationCountError(null)
+        }
+      })
+      .catch((cause) => {
+        if (requestId !== unreadRequestSequence.current) return
+        setNotificationCountError(
+          cause instanceof ApiError
+            ? cause.message
+            : "Unable to refresh notification count. Please try again.",
+        )
+      })
+    return () => {
+      unreadRequestSequence.current += 1
+    }
+  }, [notificationsRevision])
 
   useEffect(() => {
     if (!createdHouseholdInvite) return
@@ -83,20 +187,78 @@ export function DashboardScreen() {
   }, [createdHouseholdInvite, queueCreatedHouseholdInvite])
 
   const completeAssignment = async (assignmentId: string) => {
-    if (!household || completingId) return
-    setCompletingId(assignmentId)
-    setError(null)
+    if (!household) return
+    const operationKey = `${household.id}:${assignmentId}`
+    if (pendingCompletionIds.current.has(operationKey) || !claimCompletion(assignmentId)) return
+    const currentDashboard =
+      dashboardHouseholdIdRef.current === household.id ? dashboardRef.current : null
+    if (!currentDashboard) {
+      releaseCompletion(assignmentId)
+      return
+    }
+    const optimistic = optimisticallyCompleteDashboardAssignment(currentDashboard, assignmentId)
+    if (!optimistic) {
+      releaseCompletion(assignmentId)
+      return
+    }
+
+    pendingCompletionIds.current.add(operationKey)
+    pendingCompletions.current.set(operationKey, {
+      householdId: household.id,
+      assignmentId,
+      previous: optimistic.previous,
+      incrementedWeekSummary: optimistic.incrementedWeekSummary,
+      serverConfirmed: false,
+    })
+    requestSequence.current += 1
+    setCompletingIds((current) => new Set(current).add(operationKey))
+    dashboardRef.current = optimistic.dashboard
+    setDashboard(optimistic.dashboard)
+    setActionError(null)
     try {
-      await choreApi.complete(household.id, assignmentId)
-      await loadDashboard()
+      const confirmed = await choreApi.complete(household.id, assignmentId)
+      requestSequence.current += 1
+      if (dashboardHouseholdIdRef.current === household.id && dashboardRef.current) {
+        const reconciled = updateDashboardAssignment(dashboardRef.current, confirmed)
+        dashboardRef.current = reconciled
+        setDashboard(reconciled)
+      }
+      pendingCompletions.current.delete(operationKey)
+      invalidateChores()
     } catch (cause) {
-      setError(
-        cause instanceof ApiError
-          ? cause.message
-          : "Unable to complete this chore. Please try again.",
-      )
+      requestSequence.current += 1
+      const pending = pendingCompletions.current.get(operationKey)
+      if (
+        pending &&
+        !pending.serverConfirmed &&
+        dashboardHouseholdIdRef.current === household.id &&
+        dashboardRef.current
+      ) {
+        const rolledBack = rollbackDashboardAssignmentCompletion(
+          dashboardRef.current,
+          pending.previous,
+          pending.incrementedWeekSummary,
+        )
+        dashboardRef.current = rolledBack
+        setDashboard(rolledBack)
+      }
+      pendingCompletions.current.delete(operationKey)
+      if (dashboardHouseholdIdRef.current === household.id) {
+        setActionError(
+          cause instanceof ApiError
+            ? cause.message
+            : "Unable to complete this chore. Please try again.",
+        )
+      }
+      invalidateChores()
     } finally {
-      setCompletingId(null)
+      pendingCompletionIds.current.delete(operationKey)
+      releaseCompletion(assignmentId)
+      setCompletingIds((current) => {
+        const next = new Set(current)
+        next.delete(operationKey)
+        return next
+      })
     }
   }
 
@@ -134,6 +296,7 @@ export function DashboardScreen() {
     overdue: personalOverdue,
   }
   const personalState = getWeekSummaryState(personalCounts)
+  const visibleStatus = household && dashboardHouseholdId !== household.id ? "loading" : status
   const dateKey = getLocalDateKey(new Date(), household?.timezone)
   const personalMessage = getWeekSummaryMessage(
     personalState,
@@ -257,14 +420,14 @@ export function DashboardScreen() {
             </button>
           </section>
         )}
-        {status === "loading" && (
+        {visibleStatus === "loading" && (
           <div aria-label="Loading dashboard" className="space-y-4">
             {[0, 1, 2].map((item) => (
               <div className="h-28 animate-pulse rounded-2xl bg-white shadow-sm" key={item} />
             ))}
           </div>
         )}
-        {status === "error" && (
+        {visibleStatus === "error" && (
           <div className="rounded-2xl border border-slate-100 bg-white p-5 text-center">
             <p role="alert" className="text-sm text-slate-600">
               {error}
@@ -278,15 +441,23 @@ export function DashboardScreen() {
             </button>
           </div>
         )}
-        {status === "loaded" && error && (
+        {visibleStatus === "loaded" && (actionError || refreshError || error) && (
           <p
             role="alert"
             className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700"
           >
-            {error}
+            {actionError ?? refreshError ?? error}
           </p>
         )}
-        {status === "loaded" && dashboard && (
+        {notificationCountError && (
+          <p
+            role="alert"
+            className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700"
+          >
+            {notificationCountError}
+          </p>
+        )}
+        {visibleStatus === "loaded" && dashboard && (
           <>
             <section className="rounded-2xl bg-gradient-to-br from-teal-600 to-teal-500 p-4 text-white shadow-sm">
               <div className="mb-2 flex items-center justify-between">
@@ -430,7 +601,7 @@ export function DashboardScreen() {
                   {overdueAssignments.map((assignment) => (
                     <ServerAssignmentCard
                       assignment={assignment}
-                      completing={completingId === assignment.id}
+                      completing={completingIds.has(`${household?.id}:${assignment.id}`)}
                       currentUserId={state.currentUser.id}
                       householdTimezone={household?.timezone ?? "UTC"}
                       key={assignment.id}
@@ -483,7 +654,7 @@ export function DashboardScreen() {
                   {todayForDisplay.map((assignment) => (
                     <ServerAssignmentCard
                       assignment={assignment}
-                      completing={completingId === assignment.id}
+                      completing={completingIds.has(`${household?.id}:${assignment.id}`)}
                       currentUserId={state.currentUser.id}
                       householdTimezone={household?.timezone ?? "UTC"}
                       key={assignment.id}

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { clearCsrfToken } from "@/lib/auth/api"
 import { ChoreSyncProvider } from "@/lib/chore-sync/store"
+import type { Notification } from "@/lib/notifications/api"
 import {
   createBrowserPushSubscription,
   removeBrowserPushSubscription,
@@ -43,6 +44,7 @@ const notifications = [
     status: "SENT",
     scheduledAt: null,
     sentAt: "2026-09-29T12:00:00Z",
+    deliveredAt: null,
     readAt: null,
     createdAt: "2026-09-29T12:00:00Z",
   },
@@ -58,6 +60,7 @@ const notifications = [
     status: "SENT",
     scheduledAt: null,
     sentAt: "2026-09-28T12:00:00Z",
+    deliveredAt: null,
     readAt: "2026-09-28T12:00:00Z",
     createdAt: "2026-09-28T12:00:00Z",
   },
@@ -77,6 +80,7 @@ const preferences = {
   pushEnabled: false,
 }
 let currentPreferences = { ...preferences }
+let currentNotifications: Notification[] = [...notifications]
 
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -92,13 +96,17 @@ describe("notifications screen", () => {
     pushHealthMocks.restore.mockReset()
     pushHealthMocks.setPushEnabled.mockReset()
     currentPreferences = { ...preferences }
+    currentNotifications = [...notifications]
     vi.mocked(removeBrowserPushSubscription).mockReset()
     vi.mocked(createBrowserPushSubscription).mockReset()
     fetchMock.mockImplementation(async (input, init) => {
       const url = String(input)
       if (url.endsWith("/api/notifications") && !url.endsWith("/unread-count"))
-        return jsonResponse(notifications)
-      if (url.endsWith("/api/notifications/unread-count")) return jsonResponse({ count: 1 })
+        return jsonResponse(currentNotifications)
+      if (url.endsWith("/api/notifications/unread-count"))
+        return jsonResponse({
+          count: currentNotifications.filter((notification) => !notification.readAt).length,
+        })
       if (url.endsWith("/api/notifications/preferences") && init?.method === "PUT") {
         return jsonResponse(JSON.parse(String(init.body)))
       }
@@ -107,11 +115,21 @@ describe("notifications screen", () => {
         return jsonResponse({ publicKey: "test-vapid-key", available: true })
       if (url.endsWith("/api/auth/csrf"))
         return jsonResponse({ token: "notification-csrf", headerName: "X-CSRF-TOKEN" })
-      if (
-        url.endsWith("/api/notifications/note-1/read") ||
-        url.endsWith("/api/notifications/read-all")
-      )
+      if (url.endsWith("/api/notifications/note-1/read")) {
+        currentNotifications = currentNotifications.map((notification) =>
+          notification.id === "note-1"
+            ? { ...notification, readAt: new Date().toISOString() }
+            : notification,
+        )
         return new Response(null, { status: 204 })
+      }
+      if (url.endsWith("/api/notifications/read-all")) {
+        currentNotifications = currentNotifications.map((notification) => ({
+          ...notification,
+          readAt: notification.readAt ?? new Date().toISOString(),
+        }))
+        return new Response(null, { status: 204 })
+      }
       if (url.endsWith("/api/notifications/push-subscriptions"))
         return new Response(null, { status: 204 })
       if (url.endsWith("/api/notifications/push-subscriptions/unsubscribe"))
@@ -157,6 +175,7 @@ describe("notifications screen", () => {
       "dark:bg-slate-800/70",
     )
     expect(screen.getByText("1 unread")).toBeTruthy()
+    expect(screen.queryByText("CHORES")).toBeNull()
     expect(screen.getByLabelText("Quiet hours start")).toHaveProperty("value", "21:30")
 
     fireEvent.click(screen.getByRole("button", { name: "Mark as read" }))
@@ -188,6 +207,80 @@ describe("notifications screen", () => {
           String(url).endsWith("/api/notifications/note-1/read") && init?.method === "PATCH",
       ),
     ).toBe(true)
+  })
+
+  it("updates read state immediately and rolls it back when marking read fails", async () => {
+    let finishMarkRead!: (response: Response) => void
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = String(input)
+      if (url.endsWith("/api/notifications") && !url.endsWith("/unread-count"))
+        return jsonResponse(notifications)
+      if (url.endsWith("/api/notifications/unread-count")) return jsonResponse({ count: 1 })
+      if (url.endsWith("/api/notifications/preferences")) return jsonResponse(preferences)
+      if (url.endsWith("/api/auth/csrf"))
+        return jsonResponse({ token: "notification-csrf", headerName: "X-CSRF-TOKEN" })
+      if (url.endsWith("/api/notifications/note-1/read") && init?.method === "PATCH")
+        return new Promise((resolve) => {
+          finishMarkRead = resolve
+        })
+      throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url}`)
+    })
+
+    render(
+      <ChoreSyncProvider>
+        <NotificationsScreen />
+      </ChoreSyncProvider>,
+    )
+    const title = await screen.findByText("Kitchen chore due")
+
+    fireEvent.click(screen.getByRole("button", { name: "Mark as read" }))
+    await waitFor(() => expect(finishMarkRead).toBeTypeOf("function"))
+    expect(title.closest("article")?.getAttribute("data-read")).toBe("true")
+    expect(screen.getByText("You're all caught up")).toBeTruthy()
+
+    finishMarkRead(jsonResponse({ message: "Read update rejected." }, 500))
+    await waitFor(() => {
+      expect(title.closest("article")?.getAttribute("data-read")).toBe("false")
+      expect(screen.getByText("1 unread")).toBeTruthy()
+      expect(screen.getByRole("alert").textContent).toContain("Something went wrong.")
+    })
+  })
+
+  it("marks all unread notifications read optimistically", async () => {
+    let finishMarkAll!: (response: Response) => void
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = String(input)
+      if (url.endsWith("/api/notifications") && !url.endsWith("/unread-count"))
+        return jsonResponse(notifications)
+      if (url.endsWith("/api/notifications/unread-count")) return jsonResponse({ count: 1 })
+      if (url.endsWith("/api/notifications/preferences")) return jsonResponse(preferences)
+      if (url.endsWith("/api/auth/csrf"))
+        return jsonResponse({ token: "notification-csrf", headerName: "X-CSRF-TOKEN" })
+      if (url.endsWith("/api/notifications/read-all") && init?.method === "PATCH")
+        return new Promise((resolve) => {
+          finishMarkAll = resolve
+        })
+      throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url}`)
+    })
+
+    render(
+      <ChoreSyncProvider>
+        <NotificationsScreen />
+      </ChoreSyncProvider>,
+    )
+    const title = await screen.findByText("Kitchen chore due")
+
+    fireEvent.click(screen.getByRole("button", { name: "Read all" }))
+    await waitFor(() => expect(finishMarkAll).toBeTypeOf("function"))
+    expect(title.closest("article")?.getAttribute("data-read")).toBe("true")
+    expect(screen.getByText("You're all caught up")).toBeTruthy()
+
+    finishMarkAll(jsonResponse({ message: "Read-all update rejected." }, 500))
+    await waitFor(() => {
+      expect(title.closest("article")?.getAttribute("data-read")).toBe("false")
+      expect(screen.getByText("1 unread")).toBeTruthy()
+      expect(screen.getByRole("alert").textContent).toContain("Something went wrong.")
+    })
   })
 
   it("waits for an explicit save before enabling or disabling push", async () => {
