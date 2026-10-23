@@ -189,12 +189,20 @@ export function AdminScreen({ initialTab = "chores" }: { initialTab?: "members" 
             <span>+</span> Create Chore
           </Button>
           {(actionError || (choreState === "loaded" && refreshError)) && (
-            <p
-              role="alert"
-              className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700"
-            >
-              {actionError ?? refreshError}
-            </p>
+            <div className="flex items-center gap-3 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+              <p role="alert" className="flex-1">
+                {actionError ?? refreshError}
+              </p>
+              {choreState === "loaded" && refreshError && (
+                <button
+                  className="shrink-0 font-bold underline"
+                  onClick={() => void loadChores()}
+                  type="button"
+                >
+                  Retry
+                </button>
+              )}
+            </div>
           )}
           {choreState === "loading" && (
             <div aria-label="Loading chores" className="space-y-3">

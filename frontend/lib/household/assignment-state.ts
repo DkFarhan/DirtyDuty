@@ -5,6 +5,7 @@ export function optimisticAssignmentCompletion(assignment: AssignmentDTO): Assig
     ...assignment,
     status: "COMPLETED",
     canComplete: false,
+    overdue: false,
   }
 }
 

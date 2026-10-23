@@ -171,6 +171,39 @@ describe("server-backed chore data", () => {
     expect(new Headers(completeRequest?.[1]?.headers).get("X-CSRF-TOKEN")).toBe("complete-csrf")
   })
 
+  it("shows Dashboard's initial API error and recovers after retry", async () => {
+    let dashboardRequests = 0
+    fetchMock.mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.endsWith("/api/auth/me")) return jsonResponse(user)
+      if (url.endsWith("/api/households")) return jsonResponse([household])
+      if (url.endsWith("/api/households/home-1/dashboard")) {
+        dashboardRequests += 1
+        return dashboardRequests === 1
+          ? jsonResponse({ message: "Unavailable." }, 500)
+          : jsonResponse(dashboard)
+      }
+      if (url.endsWith("/api/notifications/preferences"))
+        return jsonResponse({ pushEnabled: false })
+      if (url.endsWith("/api/notifications/unread-count")) return jsonResponse({ count: 0 })
+      return jsonResponse({}, 404)
+    })
+    render(<AppShell initialScreen="dashboard" />)
+
+    expect(await screen.findByRole("alert", {}, { timeout: 3_000 })).toHaveProperty(
+      "textContent",
+      "Something went wrong. Please try again.",
+    )
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy()
+    expect(screen.queryByRole("heading", { name: "Today" })).toBeNull()
+
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+
+    expect(await screen.findByRole("heading", { name: "Today" })).toBeTruthy()
+    expect(screen.getByText("1/2")).toBeTruthy()
+    expect(dashboardRequests).toBe(2)
+  })
+
   it("shows chore completion immediately and restores it when the server rejects the request", async () => {
     await startAtDashboard()
     let finishCompletion!: (response: Response) => void

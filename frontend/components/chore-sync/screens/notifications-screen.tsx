@@ -85,6 +85,8 @@ export function NotificationsScreen() {
   const unreadCountRef = useRef(0)
   const hasLoadedRef = useRef(false)
   const requestSequence = useRef(0)
+  const preferencesRequestSequence = useRef(0)
+  const preferencesEditSequence = useRef(0)
   const pendingReads = useRef(
     new Map<
       string,
@@ -154,12 +156,21 @@ export function NotificationsScreen() {
   }, [])
 
   const loadPreferences = useCallback(async () => {
+    const requestId = ++preferencesRequestSequence.current
+    const editSequence = preferencesEditSequence.current
     setPreferencesError("")
     try {
       const nextPreferences = await notificationApi.preferences()
+      if (
+        requestId !== preferencesRequestSequence.current ||
+        editSequence !== preferencesEditSequence.current
+      ) {
+        return
+      }
       setPreferences(nextPreferences)
       setSavedPreferences(nextPreferences)
     } catch (cause) {
+      if (requestId !== preferencesRequestSequence.current) return
       setPreferencesError(
         cause instanceof ApiError ? cause.message : "Unable to load notification preferences.",
       )
@@ -168,11 +179,17 @@ export function NotificationsScreen() {
 
   useEffect(() => {
     void load()
-    void loadPreferences()
     return () => {
       requestSequence.current += 1
     }
-  }, [load, loadPreferences, notificationRevision])
+  }, [load, notificationRevision])
+
+  useEffect(() => {
+    void loadPreferences()
+    return () => {
+      preferencesRequestSequence.current += 1
+    }
+  }, [loadPreferences])
 
   const markRead = async (notification: Notification) => {
     if (
@@ -293,6 +310,8 @@ export function NotificationsScreen() {
   const savePreferences = async () => {
     if (!preferences || preferencesBusy) return
     const previousPushState = savedPreferences?.pushEnabled ?? false
+    const editSequence = preferencesEditSequence.current
+    preferencesRequestSequence.current += 1
     setPreferencesBusy(true)
     setPreferencesError("")
     setPreferencesSaved(false)
@@ -330,14 +349,13 @@ export function NotificationsScreen() {
       }
 
       const updated = await notificationApi.updatePreferences(preferences)
-      setPreferences(updated)
       setSavedPreferences(updated)
-      setPreferencesSaved(true)
+      if (editSequence === preferencesEditSequence.current) {
+        setPreferences(updated)
+        setPreferencesSaved(true)
+      }
       setPushEnabled(updated.pushEnabled)
     } catch (cause) {
-      setPreferences((current) =>
-        current ? { ...current, pushEnabled: previousPushState } : current,
-      )
       setPreferencesError(
         cause instanceof ApiError
           ? cause.message
@@ -354,6 +372,7 @@ export function NotificationsScreen() {
     key: K,
     value: NotificationPreferences[K],
   ) => {
+    preferencesEditSequence.current += 1
     setPreferences((current) => (current ? { ...current, [key]: value } : current))
     setPreferencesSaved(false)
   }
@@ -384,12 +403,20 @@ export function NotificationsScreen() {
       />
       <main className="flex flex-col gap-4 px-4 pt-4">
         {(actionError || (status === "loaded" && error)) && (
-          <p
-            className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700"
-            role="alert"
-          >
-            {actionError || error}
-          </p>
+          <div className="flex items-center gap-3 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            <p className="flex-1" role="alert">
+              {actionError || error}
+            </p>
+            {status === "loaded" && error && (
+              <button
+                className="shrink-0 font-bold underline"
+                onClick={() => void load()}
+                type="button"
+              >
+                Retry
+              </button>
+            )}
+          </div>
         )}
         {status === "loading" && (
           <div

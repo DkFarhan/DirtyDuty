@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { ApiError } from "@/lib/auth/api"
 import { useChoreSync } from "@/lib/chore-sync/store"
 import { apiUrl } from "@/lib/auth/api"
@@ -37,12 +37,15 @@ function dateLabel(value: string) {
 export function HouseholdSettingsScreen() {
   const { navigate } = useChoreSync()
   const { user, features } = useAuth()
-  const { households, activeHousehold, refresh } = useHouseholds()
+  const { households, activeHousehold, refresh, updateHousehold, removeHousehold } = useHouseholds()
   const household = activeHousehold ?? households[0]
+  const householdId = household?.id
   const [settings, setSettings] = useState<HouseholdSettings | null>(null)
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading")
+  const [settingsHouseholdId, setSettingsHouseholdId] = useState<string | null>(null)
+  const [settingsErrorHouseholdId, setSettingsErrorHouseholdId] = useState<string | null>(null)
   const [error, setError] = useState("")
   const [reauthMessage, setReauthMessage] = useState("")
   const [saved, setSaved] = useState(false)
@@ -55,6 +58,12 @@ export function HouseholdSettingsScreen() {
     "loading",
   )
   const [invitationError, setInvitationError] = useState("")
+  const [invitationHouseholdId, setInvitationHouseholdId] = useState<string | null>(null)
+  const [invitationErrorHouseholdId, setInvitationErrorHouseholdId] = useState<string | null>(null)
+  const settingsHouseholdIdRef = useRef<string | null>(null)
+  const settingsRequestSequence = useRef(0)
+  const invitationHouseholdIdRef = useRef<string | null>(null)
+  const invitationRequestSequence = useRef(0)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteStage, setDeleteStage] = useState<1 | 2 | 3>(1)
   const [deleteConsent, setDeleteConsent] = useState({ one: false, two: false, three: false })
@@ -92,51 +101,79 @@ export function HouseholdSettingsScreen() {
     settings?.currentUserRole === "OWNER" || settings?.currentUserRole === "ADMIN"
 
   const loadSettings = useCallback(async () => {
-    if (!household) {
+    if (!householdId) {
       setError("Your household could not be found.")
       setStatus("error")
       return
     }
-    setStatus("loading")
+    const requestId = ++settingsRequestSequence.current
+    const hasCurrentData = settingsHouseholdIdRef.current === householdId
+    setSettingsErrorHouseholdId(null)
+    if (!hasCurrentData) setStatus("loading")
     setError("")
     try {
-      const result = await householdApi.settings(household.id)
+      const result = await householdApi.settings(householdId)
+      if (requestId !== settingsRequestSequence.current) return
+      settingsHouseholdIdRef.current = householdId
+      setSettingsHouseholdId(householdId)
+      setSettingsErrorHouseholdId(null)
       setSettings(result)
-      setName(result.name)
-      setDescription(result.description ?? "")
+      if (!hasCurrentData) {
+        setName(result.name)
+        setDescription(result.description ?? "")
+      }
       setNotificationStyle(result.notificationStyle ?? "NORMAL")
       setStatus("loaded")
     } catch (cause) {
+      if (requestId !== settingsRequestSequence.current) return
       setError(
         cause instanceof ApiError
           ? cause.message
-          : "Unable to load household settings. Please try again.",
+          : hasCurrentData
+            ? "Unable to refresh household settings. Please try again."
+            : "Unable to load household settings. Please try again.",
       )
-      setStatus("error")
+      setSettingsErrorHouseholdId(householdId)
+      if (!hasCurrentData) setStatus("error")
     }
-  }, [household])
+  }, [householdId])
 
   const loadInvitations = useCallback(async () => {
-    if (!household) return
-    setInvitationStatus("loading")
+    if (!householdId) return
+    const requestId = ++invitationRequestSequence.current
+    const hasCurrentData = invitationHouseholdIdRef.current === householdId
+    setInvitationErrorHouseholdId(null)
+    if (!hasCurrentData) setInvitationStatus("loading")
     setInvitationError("")
     try {
-      const result = await householdApi.listInvitations(household.id)
+      const result = await householdApi.listInvitations(householdId)
+      if (requestId !== invitationRequestSequence.current) return
       setInvitations(result.filter((invitation) => invitation.status === "ACTIVE"))
+      invitationHouseholdIdRef.current = householdId
+      setInvitationHouseholdId(householdId)
+      setInvitationErrorHouseholdId(null)
       setInvitationStatus("loaded")
     } catch (cause) {
+      if (requestId !== invitationRequestSequence.current) return
       setInvitationError(
         cause instanceof ApiError ? cause.message : "Unable to load active invitations.",
       )
-      setInvitationStatus("error")
+      setInvitationErrorHouseholdId(householdId)
+      if (!hasCurrentData) setInvitationStatus("error")
     }
-  }, [household])
+  }, [householdId])
 
   useEffect(() => {
     void loadSettings()
+    return () => {
+      settingsRequestSequence.current += 1
+    }
   }, [loadSettings])
   useEffect(() => {
     void loadInvitations()
+    return () => {
+      invitationRequestSequence.current += 1
+    }
   }, [loadInvitations])
 
   const save = async () => {
@@ -144,7 +181,6 @@ export function HouseholdSettingsScreen() {
     setBusy(true)
     setSaved(false)
     setError("")
-    let didSave = false
     try {
       const updated = await householdApi.updateSettings(household.id, {
         name: name.trim(),
@@ -155,7 +191,7 @@ export function HouseholdSettingsScreen() {
       setName(updated.name)
       setDescription(updated.description ?? "")
       setSaved(true)
-      didSave = true
+      updateHousehold(updated)
     } catch (cause) {
       setError(
         cause instanceof ApiError
@@ -165,7 +201,6 @@ export function HouseholdSettingsScreen() {
     } finally {
       setBusy(false)
     }
-    if (didSave) await refresh().catch(() => undefined)
   }
 
   const saveNotificationStyle = async () => {
@@ -231,9 +266,10 @@ export function HouseholdSettingsScreen() {
         householdName: household.name,
         password: deletePassword,
       })
-      const remaining = await refresh()
+      const remaining = removeHousehold(household.id)
       resetDeleteFlow()
       navigate(remaining.length ? "dashboard" : "welcome")
+      void refresh().catch(() => undefined)
     } catch (cause) {
       setDeleteError(cause instanceof ApiError ? cause.message : "Unable to delete this household.")
     } finally {
@@ -248,6 +284,20 @@ export function HouseholdSettingsScreen() {
     deleteName.trim() === (household?.name ?? "") &&
     (!hasPassword || deletePassword.trim().length > 0)
   const revokeTarget = invitations.find((invitation) => invitation.id === revokeTargetId) ?? null
+  const visibleStatus = !householdId
+    ? status
+    : settingsHouseholdId === householdId
+      ? status
+      : settingsErrorHouseholdId === householdId
+        ? "error"
+        : "loading"
+  const visibleInvitationStatus = !householdId
+    ? invitationStatus
+    : invitationHouseholdId === householdId
+      ? invitationStatus
+      : invitationErrorHouseholdId === householdId
+        ? "error"
+        : "loading"
 
   return (
     <div className="min-h-screen bg-stone-100 pb-8 text-slate-800">
@@ -262,13 +312,13 @@ export function HouseholdSettingsScreen() {
             {reauthMessage}
           </p>
         )}
-        {status === "loading" && (
+        {visibleStatus === "loading" && (
           <div
             aria-label="Loading household settings"
             className="h-48 animate-pulse rounded-2xl border border-slate-200 bg-white shadow-sm"
           />
         )}
-        {status === "error" && (
+        {visibleStatus === "error" && (
           <div className="rounded-2xl border border-slate-200 bg-white p-5 text-center shadow-sm">
             <p role="alert" className="text-sm text-slate-600">
               {error}
@@ -282,7 +332,7 @@ export function HouseholdSettingsScreen() {
             </button>
           </div>
         )}
-        {status === "loaded" && settings && (
+        {visibleStatus === "loaded" && settings && (
           <>
             <section className="flex flex-col gap-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex items-start justify-between gap-3">
@@ -442,12 +492,12 @@ export function HouseholdSettingsScreen() {
                 </div>
 
                 <div className="mt-4 space-y-3">
-                  {invitationStatus === "loading" && (
+                  {visibleInvitationStatus === "loading" && (
                     <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500">
                       Loading invitations…
                     </p>
                   )}
-                  {invitationStatus === "error" && (
+                  {visibleInvitationStatus === "error" && (
                     <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-3 text-sm text-rose-700">
                       <p role="alert">{invitationError}</p>
                       <button
@@ -459,12 +509,26 @@ export function HouseholdSettingsScreen() {
                       </button>
                     </div>
                   )}
-                  {invitationStatus === "loaded" && invitations.length === 0 && (
+                  {visibleInvitationStatus === "loaded" && invitationError && (
+                    <div className="flex items-center gap-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                      <p role="alert" className="flex-1">
+                        {invitationError}
+                      </p>
+                      <button
+                        className="shrink-0 font-bold underline"
+                        onClick={() => void loadInvitations()}
+                        type="button"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  )}
+                  {visibleInvitationStatus === "loaded" && invitations.length === 0 && (
                     <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-500">
                       No active invitations.
                     </p>
                   )}
-                  {invitationStatus === "loaded" &&
+                  {visibleInvitationStatus === "loaded" &&
                     invitations.map((invitation) => (
                       <div
                         className="rounded-xl border border-slate-200 bg-slate-50 p-3.5"
@@ -525,13 +589,19 @@ export function HouseholdSettingsScreen() {
             )}
           </>
         )}
-        {error && status === "loaded" && (
-          <p
-            role="alert"
-            className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700"
-          >
-            {error}
-          </p>
+        {error && visibleStatus === "loaded" && (
+          <div className="flex items-center gap-3 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            <p role="alert" className="flex-1">
+              {error}
+            </p>
+            <button
+              className="shrink-0 font-bold underline"
+              onClick={() => void loadSettings()}
+              type="button"
+            >
+              Retry
+            </button>
+          </div>
         )}
       </main>
 

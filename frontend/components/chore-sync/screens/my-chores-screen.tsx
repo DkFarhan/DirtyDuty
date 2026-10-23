@@ -301,12 +301,20 @@ export function MyChoresScreen() {
           </div>
         )}
         {visibleStatus === "loaded" && (actionError || refreshError) && (
-          <p
-            role="alert"
-            className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700"
-          >
-            {actionError ?? refreshError}
-          </p>
+          <div className="flex items-center gap-3 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            <p role="alert" className="flex-1">
+              {actionError ?? refreshError}
+            </p>
+            {refreshError && (
+              <button
+                className="shrink-0 font-bold underline"
+                onClick={() => void loadChores()}
+                type="button"
+              >
+                Retry
+              </button>
+            )}
+          </div>
         )}
         {visibleStatus === "loaded" && displayed.length === 0 && (
           <div className="rounded-2xl border border-slate-100 bg-white px-5 py-7 text-center">

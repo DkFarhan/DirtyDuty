@@ -207,6 +207,27 @@ function ScreenRouter() {
   }
 }
 
+function HouseholdRefreshNotice() {
+  const { error, refresh, status } = useHouseholds()
+  if (!error || status === "loading" || status === "error") return null
+
+  return (
+    <div
+      className="flex items-center gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-900"
+      role="alert"
+    >
+      <p className="flex-1">{error}</p>
+      <button
+        className="shrink-0 font-bold underline underline-offset-2"
+        onClick={() => void refresh().catch(() => undefined)}
+        type="button"
+      >
+        Retry
+      </button>
+    </div>
+  )
+}
+
 export function AppShell({ initialScreen = "login" }: { initialScreen?: Screen }) {
   return (
     <ThemeProvider>
@@ -218,6 +239,7 @@ export function AppShell({ initialScreen = "login" }: { initialScreen?: Screen }
                 <div className="min-h-screen bg-slate-200 flex items-start justify-center">
                   <div className="w-full max-w-sm bg-white min-h-screen relative overflow-hidden shadow-2xl">
                     <AppLaunchGate>
+                      <HouseholdRefreshNotice />
                       <ScreenRouter />
                     </AppLaunchGate>
                   </div>

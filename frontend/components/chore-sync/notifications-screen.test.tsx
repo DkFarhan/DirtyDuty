@@ -246,6 +246,66 @@ describe("notifications screen", () => {
     })
   })
 
+  it("keeps unsaved preference edits when notification data is invalidated", async () => {
+    render(
+      <ChoreSyncProvider>
+        <NotificationsScreen />
+      </ChoreSyncProvider>,
+    )
+    const funnyPreference = await screen.findByRole<HTMLInputElement>("checkbox", {
+      name: "Funny messages",
+    })
+    expect(funnyPreference.checked).toBe(false)
+    fireEvent.click(funnyPreference)
+    expect(funnyPreference.checked).toBe(true)
+
+    fireEvent.click(screen.getByRole("button", { name: "Mark as read" }))
+    await waitFor(() =>
+      expect(
+        screen.getByText("Kitchen chore due").closest("article")?.getAttribute("data-read"),
+      ).toBe("true"),
+    )
+
+    expect(funnyPreference.checked).toBe(true)
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url, init]) =>
+          String(url).endsWith("/api/notifications/preferences") && init?.method !== "PUT",
+      ),
+    ).toHaveLength(1)
+  })
+
+  it("preserves editable preference values when saving fails", async () => {
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = String(input)
+      if (url.endsWith("/api/notifications") && !url.endsWith("/unread-count"))
+        return jsonResponse(notifications)
+      if (url.endsWith("/api/notifications/unread-count")) return jsonResponse({ count: 1 })
+      if (url.endsWith("/api/notifications/preferences") && init?.method === "PUT")
+        return jsonResponse({ message: "Save failed." }, 500)
+      if (url.endsWith("/api/notifications/preferences")) return jsonResponse(preferences)
+      if (url.endsWith("/api/auth/csrf"))
+        return jsonResponse({ token: "notification-csrf", headerName: "X-CSRF-TOKEN" })
+      throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url}`)
+    })
+
+    render(
+      <ChoreSyncProvider>
+        <NotificationsScreen />
+      </ChoreSyncProvider>,
+    )
+    const funnyPreference = await screen.findByRole<HTMLInputElement>("checkbox", {
+      name: "Funny messages",
+    })
+    fireEvent.click(funnyPreference)
+    fireEvent.click(screen.getByRole("button", { name: "Save preferences" }))
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain("Something went wrong."),
+    )
+    expect(funnyPreference.checked).toBe(true)
+  })
+
   it("marks all unread notifications read optimistically", async () => {
     let finishMarkAll!: (response: Response) => void
     fetchMock.mockImplementation(async (input, init) => {

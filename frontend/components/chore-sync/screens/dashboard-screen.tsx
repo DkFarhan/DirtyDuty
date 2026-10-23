@@ -64,6 +64,22 @@ export function DashboardScreen() {
   const dashboardHouseholdIdRef = useRef<string | null>(null)
   const requestSequence = useRef(0)
   const unreadRequestSequence = useRef(0)
+  const loadUnreadCount = useCallback(async () => {
+    const requestId = ++unreadRequestSequence.current
+    try {
+      const result = await notificationApi.unreadCount()
+      if (requestId !== unreadRequestSequence.current) return
+      setUnreadCount(result.count)
+      setNotificationCountError(null)
+    } catch (cause) {
+      if (requestId !== unreadRequestSequence.current) return
+      setNotificationCountError(
+        cause instanceof ApiError
+          ? cause.message
+          : "Unable to refresh notification count. Please try again.",
+      )
+    }
+  }, [])
   const pendingCompletions = useRef(
     new Map<
       string,
@@ -158,27 +174,11 @@ export function DashboardScreen() {
     }
   }, [choresRevision, loadDashboard])
   useEffect(() => {
-    const requestId = ++unreadRequestSequence.current
-    notificationApi
-      .unreadCount()
-      .then((result) => {
-        if (requestId === unreadRequestSequence.current) {
-          setUnreadCount(result.count)
-          setNotificationCountError(null)
-        }
-      })
-      .catch((cause) => {
-        if (requestId !== unreadRequestSequence.current) return
-        setNotificationCountError(
-          cause instanceof ApiError
-            ? cause.message
-            : "Unable to refresh notification count. Please try again.",
-        )
-      })
+    void loadUnreadCount()
     return () => {
       unreadRequestSequence.current += 1
     }
-  }, [notificationsRevision])
+  }, [loadUnreadCount, notificationsRevision])
 
   useEffect(() => {
     if (!createdHouseholdInvite) return
@@ -296,7 +296,8 @@ export function DashboardScreen() {
     overdue: personalOverdue,
   }
   const personalState = getWeekSummaryState(personalCounts)
-  const visibleStatus = household && dashboardHouseholdId !== household.id ? "loading" : status
+  const visibleStatus =
+    household && dashboardHouseholdId !== household.id && status !== "error" ? "loading" : status
   const dateKey = getLocalDateKey(new Date(), household?.timezone)
   const personalMessage = getWeekSummaryMessage(
     personalState,
@@ -442,20 +443,34 @@ export function DashboardScreen() {
           </div>
         )}
         {visibleStatus === "loaded" && (actionError || refreshError || error) && (
-          <p
-            role="alert"
-            className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700"
-          >
-            {actionError ?? refreshError ?? error}
-          </p>
+          <div className="flex items-center gap-3 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            <p role="alert" className="flex-1">
+              {actionError ?? refreshError ?? error}
+            </p>
+            {(refreshError || error) && (
+              <button
+                className="shrink-0 font-bold underline"
+                onClick={() => void loadDashboard()}
+                type="button"
+              >
+                Retry
+              </button>
+            )}
+          </div>
         )}
         {notificationCountError && (
-          <p
-            role="alert"
-            className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700"
-          >
-            {notificationCountError}
-          </p>
+          <div className="flex items-center gap-3 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            <p role="alert" className="flex-1">
+              {notificationCountError}
+            </p>
+            <button
+              className="shrink-0 font-bold underline"
+              onClick={() => void loadUnreadCount()}
+              type="button"
+            >
+              Retry
+            </button>
+          </div>
         )}
         {visibleStatus === "loaded" && dashboard && (
           <>

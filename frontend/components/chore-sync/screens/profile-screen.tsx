@@ -1,11 +1,12 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { ApiError } from "@/lib/auth/api"
 import { useAuth } from "@/lib/auth/auth-context"
 import { useChoreSync } from "@/lib/chore-sync/store"
 import { notificationApi } from "@/lib/notifications/api"
 import { profileApi, type Profile } from "@/lib/profile/api"
+import { notificationResource, useDataSync } from "@/lib/data-sync/data-sync-context"
 import { BottomNav } from "../bottom-nav"
 import { ChevronRightIcon } from "../icons"
 import { Avatar } from "../primitives"
@@ -23,6 +24,9 @@ export function ProfileScreen() {
   const [unreadCount, setUnreadCount] = useState(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState("")
+  const [notificationError, setNotificationError] = useState("")
+  const notificationRequestSequence = useRef(0)
+  const { revision: notificationRevision } = useDataSync(notificationResource)
 
   const loadProfile = useCallback(async () => {
     setError("")
@@ -38,15 +42,32 @@ export function ProfileScreen() {
     }
   }, [])
 
+  const loadNotificationCount = useCallback(async () => {
+    const requestId = ++notificationRequestSequence.current
+    try {
+      const result = await notificationApi.unreadCount()
+      if (requestId !== notificationRequestSequence.current) return
+      setUnreadCount(result.count)
+      setNotificationError("")
+    } catch (cause) {
+      if (requestId !== notificationRequestSequence.current) return
+      setNotificationError(
+        cause instanceof ApiError
+          ? cause.message
+          : "Unable to refresh notification count. Please try again.",
+      )
+    }
+  }, [])
+
   useEffect(() => {
     void loadProfile()
   }, [loadProfile])
   useEffect(() => {
-    notificationApi
-      .unreadCount()
-      .then((result) => setUnreadCount(result.count))
-      .catch(() => setUnreadCount(0))
-  }, [])
+    void loadNotificationCount()
+    return () => {
+      notificationRequestSequence.current += 1
+    }
+  }, [loadNotificationCount, notificationRevision])
 
   const handleLogout = async () => {
     if (isSubmitting) return
@@ -110,6 +131,20 @@ export function ProfileScreen() {
             <p role="alert">{error}</p>
             <button className="mt-1 font-bold" onClick={() => void loadProfile()} type="button">
               Try again
+            </button>
+          </div>
+        )}
+        {notificationError && (
+          <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            <p role="alert" className="flex-1">
+              {notificationError}
+            </p>
+            <button
+              className="shrink-0 font-bold underline"
+              onClick={() => void loadNotificationCount()}
+              type="button"
+            >
+              Retry
             </button>
           </div>
         )}
