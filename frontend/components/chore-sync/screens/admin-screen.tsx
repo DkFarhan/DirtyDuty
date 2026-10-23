@@ -155,6 +155,12 @@ export function AdminScreen({ initialTab = "chores" }: { initialTab?: "members" 
     return `${hour % 12 || 12}:${minutes} ${hour < 12 ? "AM" : "PM"}`
   }
 
+  const activeHouseholdId = household?.id ?? null
+  const visibleChoreState =
+    loadedHouseholdId.current === activeHouseholdId || choreState === "error"
+      ? choreState
+      : "loading"
+
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 pb-20">
       <header className="border-b border-slate-100 bg-white px-5 pb-4 pt-12">
@@ -188,12 +194,12 @@ export function AdminScreen({ initialTab = "chores" }: { initialTab?: "members" 
           >
             <span>+</span> Create Chore
           </Button>
-          {(actionError || (choreState === "loaded" && refreshError)) && (
+          {(actionError || (visibleChoreState === "loaded" && refreshError)) && (
             <div className="flex items-center gap-3 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">
               <p role="alert" className="flex-1">
                 {actionError ?? refreshError}
               </p>
-              {choreState === "loaded" && refreshError && (
+              {visibleChoreState === "loaded" && refreshError && (
                 <button
                   className="shrink-0 font-bold underline"
                   onClick={() => void loadChores()}
@@ -204,14 +210,14 @@ export function AdminScreen({ initialTab = "chores" }: { initialTab?: "members" 
               )}
             </div>
           )}
-          {choreState === "loading" && (
+          {visibleChoreState === "loading" && (
             <div aria-label="Loading chores" className="space-y-3">
               {[0, 1, 2].map((item) => (
                 <div className="h-28 animate-pulse rounded-2xl bg-white shadow-sm" key={item} />
               ))}
             </div>
           )}
-          {choreState === "error" && (
+          {visibleChoreState === "error" && (
             <div className="rounded-2xl border border-slate-100 bg-white p-5 text-center shadow-sm">
               <p role="alert" className="text-sm text-slate-600">
                 {choreError}
@@ -226,7 +232,7 @@ export function AdminScreen({ initialTab = "chores" }: { initialTab?: "members" 
               </Button>
             </div>
           )}
-          {choreState === "loaded" && chores.length === 0 && (
+          {visibleChoreState === "loaded" && chores.length === 0 && (
             <div className="rounded-2xl border border-slate-100 bg-white px-5 py-8 text-center shadow-sm">
               <div aria-hidden="true" className="mb-2 text-3xl">
                 🧹
@@ -244,7 +250,7 @@ export function AdminScreen({ initialTab = "chores" }: { initialTab?: "members" 
               </Button>
             </div>
           )}
-          {choreState === "loaded" &&
+          {visibleChoreState === "loaded" &&
             chores.map((chore) => {
               const category = chore.categoryId
                 ? managementOptions?.categories.find((item) => item.id === chore.categoryId)

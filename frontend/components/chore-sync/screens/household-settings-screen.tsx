@@ -62,6 +62,7 @@ export function HouseholdSettingsScreen() {
   const [invitationErrorHouseholdId, setInvitationErrorHouseholdId] = useState<string | null>(null)
   const settingsHouseholdIdRef = useRef<string | null>(null)
   const settingsRequestSequence = useRef(0)
+  const notificationStyleDrafts = useRef(new Map<string, NotificationStyle>())
   const invitationHouseholdIdRef = useRef<string | null>(null)
   const invitationRequestSequence = useRef(0)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -72,6 +73,9 @@ export function HouseholdSettingsScreen() {
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteError, setDeleteError] = useState("")
   const [revokeTargetId, setRevokeTargetId] = useState<string | null>(null)
+  const [revokeBusy, setRevokeBusy] = useState(false)
+  const [revokeError, setRevokeError] = useState("")
+  const revokeBusyRef = useRef(false)
   const hasPassword = user?.hasPassword ?? true
   const hasGoogle = user?.authProviders?.includes("GOOGLE") ?? false
 
@@ -122,7 +126,9 @@ export function HouseholdSettingsScreen() {
         setName(result.name)
         setDescription(result.description ?? "")
       }
-      setNotificationStyle(result.notificationStyle ?? "NORMAL")
+      setNotificationStyle(
+        notificationStyleDrafts.current.get(householdId) ?? result.notificationStyle ?? "NORMAL",
+      )
       setStatus("loaded")
     } catch (cause) {
       if (requestId !== settingsRequestSequence.current) return
@@ -205,12 +211,17 @@ export function HouseholdSettingsScreen() {
 
   const saveNotificationStyle = async () => {
     if (!household || busy) return
+    const savedHouseholdId = household.id
+    const styleToSave = notificationStyle
     setBusy(true)
     setStyleError("")
     setStyleSaved(false)
     try {
-      await notificationApi.setHouseholdStyle(household.id, notificationStyle)
+      await notificationApi.setHouseholdStyle(savedHouseholdId, styleToSave)
+      notificationStyleDrafts.current.delete(savedHouseholdId)
       setStyleSaved(true)
+      settingsRequestSequence.current += 1
+      await loadSettings()
     } catch (cause) {
       setStyleError(
         cause instanceof ApiError
@@ -223,16 +234,22 @@ export function HouseholdSettingsScreen() {
   }
 
   const revokeInvitation = async (invitationId: string) => {
-    if (!household) return
+    if (!household || revokeBusyRef.current) return
+    revokeBusyRef.current = true
+    setRevokeBusy(true)
     setInvitationError("")
-    setRevokeTargetId(null)
+    setRevokeError("")
     try {
       await householdApi.revokeInvitation(household.id, invitationId)
+      setRevokeTargetId(null)
       await loadInvitations()
     } catch (cause) {
-      setInvitationError(
+      setRevokeError(
         cause instanceof ApiError ? cause.message : "Unable to revoke this invitation.",
       )
+    } finally {
+      revokeBusyRef.current = false
+      setRevokeBusy(false)
     }
   }
 
@@ -442,8 +459,12 @@ export function HouseholdSettingsScreen() {
                   disabled={!canEditNotificationStyle || busy}
                   onChange={(event) => {
                     if (isNotificationStyle(event.target.value)) {
+                      if (householdId) {
+                        notificationStyleDrafts.current.set(householdId, event.target.value)
+                      }
                       setNotificationStyle(event.target.value)
                       setStyleSaved(false)
+                      setStyleError("")
                     }
                   }}
                   value={notificationStyle}
@@ -619,22 +640,26 @@ export function HouseholdSettingsScreen() {
             <div className="mt-5 flex gap-2">
               <button
                 className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700"
+                disabled={revokeBusy}
                 onClick={() => setRevokeTargetId(null)}
                 type="button"
               >
                 Cancel
               </button>
               <button
-                className="flex-1 rounded-xl bg-rose-600 px-3 py-2.5 text-sm font-bold text-white"
-                onClick={() => {
-                  void revokeInvitation(revokeTarget.id)
-                  setRevokeTargetId(null)
-                }}
+                className="flex-1 rounded-xl bg-rose-600 px-3 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={revokeBusy}
+                onClick={() => void revokeInvitation(revokeTarget.id)}
                 type="button"
               >
-                Confirm revoke
+                {revokeBusy ? "Revoking…" : revokeError ? "Try again" : "Confirm revoke"}
               </button>
             </div>
+            {revokeError && (
+              <p className="mt-3 text-sm text-rose-600" role="alert">
+                {revokeError}
+              </p>
+            )}
           </section>
         </div>
       )}
