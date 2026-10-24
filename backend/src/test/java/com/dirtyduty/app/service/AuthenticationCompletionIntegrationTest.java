@@ -404,6 +404,8 @@ class AuthenticationCompletionIntegrationTest {
     googleIdentityService.linkToPasswordAccount(
         "google-link-linked-" + UUID.randomUUID(), user.getEmail());
     assertThat(googleIdentityService.hasGoogleIdentity(user.getId())).isTrue();
+    assertThat(userRepository.findById(user.getId()).orElseThrow().getEmailVerifiedAt())
+        .isNotNull();
   }
 
   private User createUser(String prefix) {

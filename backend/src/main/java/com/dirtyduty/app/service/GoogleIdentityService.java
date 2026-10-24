@@ -122,6 +122,10 @@ public class GoogleIdentityService {
         user.getId(),
         subject,
         email);
+    if (user.getEmailVerifiedAt() == null) {
+      user.setEmailVerifiedAt(OffsetDateTime.now(ZoneOffset.UTC));
+      userRepository.saveAndFlush(user);
+    }
     return user;
   }
 

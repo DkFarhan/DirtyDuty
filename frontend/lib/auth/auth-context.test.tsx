@@ -230,9 +230,16 @@ describe("AuthProvider", () => {
     expect(api.get).toHaveBeenNthCalledWith(3, "/api/auth/me")
   })
 
-  it("registers without authenticating the new account", async () => {
-    vi.mocked(api.get).mockRejectedValueOnce(new ApiError("anonymous", 401, "unauthenticated"))
-    vi.mocked(api.post).mockResolvedValueOnce(undefined)
+  it("registers and refreshes the newly authenticated pending user", async () => {
+    vi.mocked(api.get)
+      .mockRejectedValueOnce(new ApiError("anonymous", 401, "unauthenticated"))
+      .mockResolvedValueOnce({ google: false, passwordReset: false })
+      .mockResolvedValueOnce(user)
+    vi.mocked(api.post).mockResolvedValueOnce(user)
+    vi.mocked(getCsrfToken).mockResolvedValueOnce({
+      token: "registration-token",
+      headerName: "X-CSRF-TOKEN",
+    })
 
     renderAuth()
     await waitFor(() => expect(screen.getByTestId("loading").textContent).toBe("false"))
@@ -246,7 +253,9 @@ describe("AuthProvider", () => {
       termsAccepted: true,
       privacyPolicyAcknowledged: true,
     })
-    expect(screen.getByTestId("authenticated").textContent).toBe("false")
+    expect(getCsrfToken).toHaveBeenCalledOnce()
+    expect(api.get).toHaveBeenNthCalledWith(3, "/api/auth/me")
+    expect(screen.getByTestId("authenticated").textContent).toBe("true")
   })
 
   it("submits affirmative legal acknowledgements without client-supplied versions", async () => {

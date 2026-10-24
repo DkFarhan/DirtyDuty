@@ -3,8 +3,12 @@ package com.dirtyduty.app.controller;
 import com.dirtyduty.app.config.AuthFeatureConfiguration;
 import com.dirtyduty.app.dto.auth.AuthProvidersResponse;
 import com.dirtyduty.app.dto.auth.ChangePasswordRequest;
+import com.dirtyduty.app.dto.auth.CompleteEmailVerificationRecoveryRequest;
+import com.dirtyduty.app.dto.auth.CorrectPendingEmailRequest;
 import com.dirtyduty.app.dto.auth.CsrfResponse;
 import com.dirtyduty.app.dto.auth.DeleteAccountRequest;
+import com.dirtyduty.app.dto.auth.EmailVerificationRecoveryRequest;
+import com.dirtyduty.app.dto.auth.EmailVerificationStatusResponse;
 import com.dirtyduty.app.dto.auth.GoogleLinkRequest;
 import com.dirtyduty.app.dto.auth.LegalAcceptanceRequest;
 import com.dirtyduty.app.dto.auth.LegalAcceptanceResponse;
@@ -14,10 +18,13 @@ import com.dirtyduty.app.dto.auth.PasswordResetConfirmRequest;
 import com.dirtyduty.app.dto.auth.PasswordResetRequest;
 import com.dirtyduty.app.dto.auth.RegisterRequest;
 import com.dirtyduty.app.dto.auth.RegisterResponse;
+import com.dirtyduty.app.dto.auth.VerifyEmailRequest;
 import com.dirtyduty.app.entity.User;
+import com.dirtyduty.app.exception.EmailVerificationRateLimitException;
 import com.dirtyduty.app.exception.PasswordResetSamePasswordException;
 import com.dirtyduty.app.repository.UserRepository;
 import com.dirtyduty.app.service.AuthService;
+import com.dirtyduty.app.service.EmailVerificationService;
 import com.dirtyduty.app.service.GoogleIdentityService;
 import com.dirtyduty.app.service.LegalAcceptanceService;
 import com.dirtyduty.app.service.PasswordLoginProtectionService;
@@ -65,6 +72,7 @@ public class AuthController {
   private final RecentReauthenticationService recentReauthenticationService;
   private final LegalAcceptanceService legalAcceptanceService;
   private final PasswordLoginProtectionService loginProtection;
+  private final EmailVerificationService emailVerificationService;
 
   public AuthController(
       AuthService authService,
@@ -77,7 +85,8 @@ public class AuthController {
       AuthFeatureConfiguration authFeatures,
       RecentReauthenticationService recentReauthenticationService,
       LegalAcceptanceService legalAcceptanceService,
-      PasswordLoginProtectionService loginProtection) {
+      PasswordLoginProtectionService loginProtection,
+      EmailVerificationService emailVerificationService) {
     this.authService = authService;
     this.authenticationManager = authenticationManager;
     this.securityContextRepository = securityContextRepository;
@@ -89,12 +98,38 @@ public class AuthController {
     this.recentReauthenticationService = recentReauthenticationService;
     this.legalAcceptanceService = legalAcceptanceService;
     this.loginProtection = loginProtection;
+    this.emailVerificationService = emailVerificationService;
   }
 
   @PostMapping("/register")
-  public ResponseEntity<RegisterResponse> register(@Valid @RequestBody RegisterRequest request) {
+  public ResponseEntity<RegisterResponse> register(
+      @Valid @RequestBody RegisterRequest request,
+      HttpServletRequest httpRequest,
+      HttpServletResponse httpResponse) {
     RegisterResponse response = authService.register(request);
-    return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    String deliveryState = null;
+    if (emailVerificationService.isEnabled()) {
+      try {
+        deliveryState =
+            emailVerificationService.sendInitial(response.userId(), httpRequest.getRemoteAddr());
+      } catch (EmailVerificationRateLimitException exception) {
+        deliveryState = "FAILED";
+      }
+    }
+    Authentication authentication =
+        authenticationManager.authenticate(
+            new UsernamePasswordAuthenticationToken(
+                request.email().trim().toLowerCase(Locale.ROOT), request.password()));
+    establishSession(authentication, httpRequest, httpResponse);
+    boolean verified = !emailVerificationService.isEnabled();
+    return ResponseEntity.status(HttpStatus.CREATED)
+        .body(
+            new RegisterResponse(
+                response.userId(),
+                response.displayName(),
+                response.email(),
+                verified,
+                deliveryState));
   }
 
   @GetMapping("/csrf")
@@ -111,7 +146,75 @@ public class AuthController {
   @GetMapping("/providers")
   public AuthProvidersResponse providers() {
     return new AuthProvidersResponse(
-        authFeatures.googleEnabled(), authFeatures.passwordResetEnabled());
+        authFeatures.googleEnabled(),
+        authFeatures.passwordResetEnabled(),
+        authFeatures.emailVerificationEnabled());
+  }
+
+  @GetMapping("/email-verification/status")
+  public EmailVerificationStatusResponse emailVerificationStatus(Authentication authentication) {
+    return emailVerificationService.status(authentication.getName());
+  }
+
+  @PostMapping("/email-verification/resend")
+  public EmailVerificationStatusResponse resendVerificationCode(
+      Authentication authentication, HttpServletRequest request) {
+    emailVerificationService.resend(authentication.getName(), request.getRemoteAddr());
+    return emailVerificationService.status(authentication.getName());
+  }
+
+  @PostMapping("/email-verification/verify")
+  public ResponseEntity<Void> verifyEmail(
+      @Valid @RequestBody VerifyEmailRequest request,
+      Authentication authentication,
+      HttpServletRequest httpRequest) {
+    if (!emailVerificationService.verify(
+        authentication.getName(), request.code(), httpRequest.getRemoteAddr())) {
+      throw new com.dirtyduty.app.exception.EmailVerificationInvalidCodeException();
+    }
+    return ResponseEntity.noContent().build();
+  }
+
+  @PostMapping("/email-verification/correct-email")
+  public ResponseEntity<Void> correctPendingEmail(
+      @Valid @RequestBody CorrectPendingEmailRequest request,
+      Authentication authentication,
+      HttpServletRequest httpRequest) {
+    authenticatePassword(authentication.getName(), request.password(), httpRequest.getRemoteAddr());
+    emailVerificationService.correctPendingEmail(authentication.getName(), request.email());
+    SecurityContextHolder.clearContext();
+    if (httpRequest.getSession(false) != null) httpRequest.getSession(false).invalidate();
+    return ResponseEntity.noContent().build();
+  }
+
+  @PostMapping("/email-verification/recovery/request")
+  public ResponseEntity<java.util.Map<String, String>> requestEmailVerificationRecovery(
+      @Valid @RequestBody EmailVerificationRecoveryRequest request,
+      HttpServletRequest httpRequest) {
+    emailVerificationService.requestRecovery(request.email(), httpRequest.getRemoteAddr());
+    return ResponseEntity.ok(
+        java.util.Map.of(
+            "message",
+            "If an eligible account exists for this email, a recovery code will be sent."));
+  }
+
+  @PostMapping("/email-verification/recovery/complete")
+  public ResponseEntity<LoginResponse> completeEmailVerificationRecovery(
+      @Valid @RequestBody CompleteEmailVerificationRecoveryRequest request,
+      HttpServletRequest httpRequest,
+      HttpServletResponse httpResponse) {
+    User user =
+        emailVerificationService.completeRecovery(
+            request.email(),
+            request.code(),
+            request.newPassword(),
+            request.displayName(),
+            httpRequest.getRemoteAddr());
+    Authentication authentication =
+        authenticationManager.authenticate(
+            new UsernamePasswordAuthenticationToken(user.getEmail(), request.newPassword()));
+    establishSession(authentication, httpRequest, httpResponse);
+    return ResponseEntity.ok(loginResponse(user));
   }
 
   @PostMapping("/password-reset/request")
@@ -209,17 +312,24 @@ public class AuthController {
     Authentication authentication =
         authenticatePassword(normalizedEmail, request.password(), httpRequest.getRemoteAddr());
 
-    sessionAuthenticationStrategy.onAuthentication(authentication, httpRequest, httpResponse);
-    SecurityContext context = SecurityContextHolder.createEmptyContext();
-    context.setAuthentication(authentication);
-    SecurityContextHolder.setContext(context);
-    securityContextRepository.saveContext(context, httpRequest, httpResponse);
+    establishSession(authentication, httpRequest, httpResponse);
 
     User user =
         userRepository
             .findByEmailIgnoreCase(normalizedEmail)
             .orElseThrow(() -> new IllegalStateException("Authenticated user is unavailable"));
     return loginResponse(user);
+  }
+
+  private void establishSession(
+      Authentication authentication,
+      HttpServletRequest httpRequest,
+      HttpServletResponse httpResponse) {
+    sessionAuthenticationStrategy.onAuthentication(authentication, httpRequest, httpResponse);
+    SecurityContext context = SecurityContextHolder.createEmptyContext();
+    context.setAuthentication(authentication);
+    SecurityContextHolder.setContext(context);
+    securityContextRepository.saveContext(context, httpRequest, httpResponse);
   }
 
   private Authentication authenticatePassword(String email, String password, String sourceIp) {

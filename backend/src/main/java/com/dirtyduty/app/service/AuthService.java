@@ -31,6 +31,7 @@ public class AuthService {
   private final HouseholdSettingsService householdSettingsService;
   private final LegalAcceptanceService legalAcceptanceService;
   private final PasswordLoginProtectionService loginProtection;
+  private final EmailVerificationService emailVerificationService;
 
   public AuthService(
       UserRepository userRepository,
@@ -39,7 +40,8 @@ public class AuthService {
       HouseholdMembershipRepository membershipRepository,
       HouseholdSettingsService householdSettingsService,
       LegalAcceptanceService legalAcceptanceService,
-      PasswordLoginProtectionService loginProtection) {
+      PasswordLoginProtectionService loginProtection,
+      EmailVerificationService emailVerificationService) {
     this.userRepository = userRepository;
     this.passwordEncoder = passwordEncoder;
     this.jdbcTemplate = jdbcTemplate;
@@ -47,6 +49,7 @@ public class AuthService {
     this.householdSettingsService = householdSettingsService;
     this.legalAcceptanceService = legalAcceptanceService;
     this.loginProtection = loginProtection;
+    this.emailVerificationService = emailVerificationService;
   }
 
   @Transactional
@@ -54,6 +57,7 @@ public class AuthService {
     String normalizedEmail = request.email().trim().toLowerCase(Locale.ROOT);
     String normalizedDisplayName = request.displayName().trim();
 
+    emailVerificationService.reclaimExpiredForEmail(normalizedEmail);
     if (userRepository.existsByEmailIgnoreCase(normalizedEmail)) {
       throw new DuplicateResourceException("A user with this email already exists.");
     }
@@ -64,7 +68,8 @@ public class AuthService {
     user.setPasswordHash(passwordEncoder.encode(request.password()));
     user.setTimezone("UTC");
     user.setAccountStatus(AccountStatus.ACTIVE);
-    user.setEmailVerifiedAt(null);
+    user.setEmailVerifiedAt(
+        emailVerificationService.isEnabled() ? null : java.time.OffsetDateTime.now());
     legalAcceptanceService.acceptForRegistration(user);
 
     try {

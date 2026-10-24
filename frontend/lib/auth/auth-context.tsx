@@ -18,6 +18,7 @@ export type AuthUser = {
 export type AuthFeatures = {
   google: boolean
   passwordReset: boolean
+  emailVerification?: boolean
 }
 
 type RegisterInput = {
@@ -28,15 +29,35 @@ type RegisterInput = {
   privacyPolicyAcknowledged: true
 }
 
+export type EmailVerificationStatus = {
+  email: string
+  emailVerified: boolean
+  codeExpiresAt: string | null
+  resendAvailableAt: string | null
+  deliveryState: "SENT" | "FAILED" | "NONE" | "PENDING"
+}
+
 type AuthContextValue = {
   user: AuthUser | null
   isAuthenticated: boolean
   isLoading: boolean
   authError: string | null
   authNotice: string | null
+  emailVerificationStatus: EmailVerificationStatus | null
   features: AuthFeatures
   dismissAuthNotice: () => void
-  register: (input: RegisterInput) => Promise<void>
+  register: (input: RegisterInput) => Promise<AuthUser>
+  refreshEmailVerificationStatus: () => Promise<EmailVerificationStatus>
+  verifyEmail: (code: string) => Promise<AuthUser>
+  resendVerificationCode: () => Promise<EmailVerificationStatus>
+  correctVerificationEmail: (email: string, password: string) => Promise<void>
+  requestEmailVerificationRecovery: (email: string) => Promise<void>
+  completeEmailVerificationRecovery: (input: {
+    email: string
+    code: string
+    newPassword: string
+    displayName: string
+  }) => Promise<AuthUser>
   completeLegalAcceptance: () => Promise<void>
   login: (email: string, password: string) => Promise<AuthUser>
   logout: () => Promise<void>
@@ -55,6 +76,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
   const [authError, setAuthError] = useState<string | null>(null)
   const [authNotice, setAuthNotice] = useState<string | null>(null)
+  const [emailVerificationStatus, setEmailVerificationStatus] =
+    useState<EmailVerificationStatus | null>(null)
   const [features, setFeatures] = useState<AuthFeatures>({
     google: false,
     passwordReset: false,
@@ -64,11 +87,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const currentUser = await api.get<AuthUser>("/api/auth/me")
       setUser(currentUser)
+      if (currentUser.emailVerified) setEmailVerificationStatus(null)
       setAuthError(null)
       return currentUser
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         setUser(null)
+        setEmailVerificationStatus(null)
         setAuthError(null)
         return null
       }
@@ -96,7 +121,63 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const register = async (input: RegisterInput) => {
-    await api.post("/api/auth/register", input)
+    await api.post<AuthUser>("/api/auth/register", input)
+    clearCsrfToken()
+    await getCsrfToken()
+    const authenticatedUser = await refreshUser()
+    if (!authenticatedUser) throw new Error("Unable to verify your session. Please try again.")
+    setAuthNotice(null)
+    return authenticatedUser
+  }
+
+  const refreshEmailVerificationStatus = async () => {
+    const status = await api.get<EmailVerificationStatus>("/api/auth/email-verification/status")
+    setEmailVerificationStatus(status)
+    return status
+  }
+
+  const verifyEmail = async (code: string) => {
+    await api.post<void>("/api/auth/email-verification/verify", { code })
+    const authenticatedUser = await refreshUser()
+    if (!authenticatedUser) throw new Error("Unable to verify your session. Please try again.")
+    setEmailVerificationStatus(null)
+    return authenticatedUser
+  }
+
+  const resendVerificationCode = async () => {
+    const status = await api.post<EmailVerificationStatus>("/api/auth/email-verification/resend")
+    setEmailVerificationStatus(status)
+    return status
+  }
+
+  const correctVerificationEmail = async (email: string, password: string) => {
+    await api.post<void>("/api/auth/email-verification/correct-email", { email, password })
+    setUser(null)
+    setEmailVerificationStatus(null)
+    clearCsrfToken()
+    setAuthNotice("Your email was updated. Sign in with your new email to continue.")
+  }
+
+  const requestEmailVerificationRecovery = async (email: string) => {
+    await api.post<void>("/api/auth/email-verification/recovery/request", { email })
+  }
+
+  const completeEmailVerificationRecovery = async (input: {
+    email: string
+    code: string
+    newPassword: string
+    displayName: string
+  }) => {
+    const recoveredUser = await api.post<AuthUser>(
+      "/api/auth/email-verification/recovery/complete",
+      input,
+    )
+    clearCsrfToken()
+    await getCsrfToken()
+    setUser(recoveredUser)
+    setEmailVerificationStatus(null)
+    setAuthNotice(null)
+    return recoveredUser
   }
 
   const completeLegalAcceptance = async () => {
@@ -135,12 +216,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     await api.post<void>("/api/auth/logout")
     setUser(null)
+    setEmailVerificationStatus(null)
     clearCsrfToken()
   }
 
   const changePassword = async (currentPassword: string, newPassword: string) => {
     await api.post<void>("/api/auth/change-password", { currentPassword, newPassword })
     setUser(null)
+    setEmailVerificationStatus(null)
     clearCsrfToken()
     setAuthNotice("Password changed successfully. Please sign in again.")
   }
@@ -148,6 +231,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const deleteAccount = async (password: string, email: string) => {
     await api.post<void>("/api/auth/delete-account", { password, email })
     setUser(null)
+    setEmailVerificationStatus(null)
     clearCsrfToken()
     setAuthNotice("Your account has been permanently deleted.")
   }
@@ -177,9 +261,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isLoading,
       authError,
       authNotice,
+      emailVerificationStatus,
       features,
       dismissAuthNotice,
       register,
+      refreshEmailVerificationStatus,
+      verifyEmail,
+      resendVerificationCode,
+      correctVerificationEmail,
+      requestEmailVerificationRecovery,
+      completeEmailVerificationRecovery,
       completeLegalAcceptance,
       login,
       logout,
@@ -190,7 +281,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       completeGoogleLink,
       refreshUser,
     }),
-    [authError, authNotice, features, isLoading, user],
+    [authError, authNotice, emailVerificationStatus, features, isLoading, user],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

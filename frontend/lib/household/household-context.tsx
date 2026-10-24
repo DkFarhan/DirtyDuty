@@ -34,6 +34,7 @@ function messageFor(error: unknown) {
 export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth()
   const userId = user?.userId ?? null
+  const isVerified = user?.emailVerified === true
   const [households, setHouseholds] = useState<Household[]>([])
   const [selectedHouseholdId, setSelectedHouseholdId] = useState<string | null>(null)
   const [status, setStatus] = useState<HouseholdStatus>("loading")
@@ -47,6 +48,20 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   const [createdHouseholdInvite, setCreatedHouseholdInvite] = useState<Household | null>(null)
 
   const refresh = useCallback(async () => {
+    if (!isAuthenticated || !isVerified) {
+      requestSequence.current += 1
+      householdsRef.current = []
+      loadedUserIdRef.current = null
+      setHouseholds([])
+      setSelectedHouseholdId(null)
+      setLoadedUserId(null)
+      setStatusUserId(userId)
+      setStatus("empty")
+      setError(null)
+      setIsRefreshing(false)
+      return []
+    }
+
     const requestId = ++requestSequence.current
     const requestUserId = userId
     const hasCurrentData = requestUserId !== null && loadedUserIdRef.current === requestUserId
@@ -80,7 +95,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     } finally {
       if (requestId === requestSequence.current) setIsRefreshing(false)
     }
-  }, [userId])
+  }, [isAuthenticated, isVerified, userId])
 
   useEffect(() => {
     if (isAuthLoading) return
@@ -94,13 +109,13 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     setStatusUserId(userId)
     setIsRefreshing(false)
     setError(null)
-    if (!isAuthenticated) {
+    if (!isAuthenticated || !isVerified) {
       setStatus("empty")
       return
     }
     setStatus("loading")
     void refresh().catch(() => undefined)
-  }, [isAuthenticated, isAuthLoading, refresh, userId])
+  }, [isAuthenticated, isAuthLoading, isVerified, refresh, userId])
 
   const create = useCallback(
     async (input: CreateHouseholdInput) => {
@@ -152,13 +167,15 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     return nextHouseholds
   }, [])
 
-  const visibleHouseholds = isAuthenticated && loadedUserId === userId ? households : []
+  const visibleHouseholds =
+    isAuthenticated && isVerified && loadedUserId === userId ? households : []
   const activeHousehold =
     visibleHouseholds.find((household) => household.id === selectedHouseholdId) ??
     visibleHouseholds[0] ??
     null
 
-  const visibleStatus = isAuthenticated && statusUserId !== userId ? "loading" : status
+  const visibleStatus =
+    isAuthenticated && isVerified && statusUserId !== userId ? "loading" : status
   const value = useMemo(
     () => ({
       households: visibleHouseholds,

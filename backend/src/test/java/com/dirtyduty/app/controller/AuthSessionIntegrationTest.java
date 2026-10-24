@@ -18,6 +18,7 @@ import com.dirtyduty.app.entity.User;
 import com.dirtyduty.app.entity.enums.AccountStatus;
 import com.dirtyduty.app.repository.UserRepository;
 import com.dirtyduty.app.service.AuthService;
+import com.dirtyduty.app.service.EmailVerificationMailer;
 import com.dirtyduty.app.service.GoogleIdentityService;
 import com.dirtyduty.app.service.LegalDocumentVersions;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -44,10 +45,21 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.web.authentication.session.ChangeSessionIdAuthenticationStrategy;
 import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
 import org.springframework.session.web.http.CookieSerializer;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
-@SpringBootTest
+@SpringBootTest(
+    properties = {
+      "app.auth.email-verification.enabled=true",
+      "app.auth.email-verification.delivery-enabled=true",
+      "app.auth.password-reset.rate-limit-hmac-secret=local-test-only-hmac-secret-minimum-32",
+      "app.base-url=https://dirtyduty.test",
+      "spring.mail.host=localhost",
+      "spring.mail.username=test-user",
+      "spring.mail.password=test-password",
+      "MAIL_FROM_ADDRESS=verify@dirtyduty.test"
+    })
 @AutoConfigureMockMvc
 class AuthSessionIntegrationTest {
 
@@ -71,6 +83,8 @@ class AuthSessionIntegrationTest {
   @Autowired private JdbcTemplate jdbcTemplate;
 
   @Autowired private SessionAuthenticationStrategy sessionAuthenticationStrategy;
+
+  @MockitoBean private EmailVerificationMailer emailVerificationMailer;
 
   @Value("${app.security.session-cookie-secure:true}")
   private boolean sessionCookieSecure;
@@ -147,7 +161,7 @@ class AuthSessionIntegrationTest {
         .perform(get("/api/auth/me").cookie(loginCookie))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.email").value(email))
-        .andExpect(jsonPath("$.emailVerified").value(false))
+        .andExpect(jsonPath("$.emailVerified").value(true))
         .andExpect(jsonPath("$.passwordHash").doesNotExist())
         .andExpect(jsonPath("$.legalAcceptanceRequired").value(false));
 
@@ -668,11 +682,12 @@ class AuthSessionIntegrationTest {
     RegisterResponse response =
         authService.register(new RegisterRequest("Test User", email, "StrongPassword123!"));
     testUserIds.add(response.userId());
+    User user = userRepository.findByEmailIgnoreCase(email).orElseThrow();
+    user.setEmailVerifiedAt(java.time.OffsetDateTime.now());
     if (status != AccountStatus.ACTIVE) {
-      User user = userRepository.findByEmailIgnoreCase(email).orElseThrow();
       user.setAccountStatus(status);
-      userRepository.saveAndFlush(user);
     }
+    userRepository.saveAndFlush(user);
   }
 
   private MvcResult csrf() throws Exception {

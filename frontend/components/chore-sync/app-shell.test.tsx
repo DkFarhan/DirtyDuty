@@ -36,7 +36,7 @@ const user = {
   userId: "user-1",
   displayName: "Browser User",
   email: "user@example.com",
-  emailVerified: false,
+  emailVerified: true,
   hasPassword: true,
   authProviders: ["PASSWORD"],
   legalAcceptanceRequired: false,
@@ -290,19 +290,31 @@ describe("authentication screens", () => {
     ).toBe(false)
   })
 
-  it("registers with CSRF and returns to login without authenticating", async () => {
+  it("registers, refreshes the authenticated user, and routes to verification", async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ message: "Authentication required" }, 401))
       .mockResolvedValueOnce(
         jsonResponse({ token: "registration-csrf", headerName: "X-CSRF-TOKEN" }),
       )
       .mockResolvedValueOnce(jsonResponse({ userId: "user-1" }, 201))
+      .mockResolvedValueOnce(jsonResponse({ token: "fresh-csrf", headerName: "X-CSRF-TOKEN" }))
+      .mockResolvedValueOnce(jsonResponse({ ...user, emailVerified: false }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          email: user.email,
+          emailVerified: false,
+          codeExpiresAt: null,
+          resendAvailableAt: null,
+          deliveryState: "SENT",
+        }),
+      )
 
     await openLogin()
     await fillAndSubmitRegistration()
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Sign In" })).toBeTruthy())
-    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(await screen.findByRole("heading", { name: "Verify your email" })).toBeTruthy()
+    expect(await screen.findByText(`A verification code was sent to ${user.email}.`)).toBeTruthy()
+    expect(fetchMock).toHaveBeenCalledTimes(6)
     expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:8080/api/auth/me")
     expect(fetchMock.mock.calls[1][0]).toBe("http://localhost:8080/api/auth/csrf")
     expect(fetchMock.mock.calls[2][0]).toBe("http://localhost:8080/api/auth/register")
@@ -319,6 +331,40 @@ describe("authentication screens", () => {
     )
     expect(new Headers(fetchMock.mock.calls[2][1]?.headers).get("X-CSRF-TOKEN")).toBe(
       "registration-csrf",
+    )
+    expect(fetchMock.mock.calls[3][0]).toBe("http://localhost:8080/api/auth/csrf")
+    expect(fetchMock.mock.calls[4][0]).toBe("http://localhost:8080/api/auth/me")
+    expect(fetchMock.mock.calls[5][0]).toBe(
+      "http://localhost:8080/api/auth/email-verification/status",
+    )
+  })
+
+  it("routes restored pending sessions to verification without loading households", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ ...user, emailVerified: false }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          email: user.email,
+          emailVerified: false,
+          codeExpiresAt: null,
+          resendAvailableAt: null,
+          deliveryState: "NONE",
+        }),
+      )
+
+    render(<AppShell />)
+
+    expect(
+      await screen.findByRole("heading", { name: "Verify your email" }, { timeout: 3_000 }),
+    ).toBeTruthy()
+    expect(
+      await screen.findByText(
+        "No verification code is available yet. Request one below to continue.",
+      ),
+    ).toBeTruthy()
+    expect(screen.queryByText(/A verification code was sent/)).toBeNull()
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/api/households"))).toBe(
+      false,
     )
   })
 

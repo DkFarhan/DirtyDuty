@@ -36,7 +36,7 @@ const user = {
   userId: "user-1",
   displayName: "Browser User",
   email: "user@example.com",
-  emailVerified: false,
+  emailVerified: true,
   hasPassword: true,
   authProviders: ["PASSWORD"],
 }

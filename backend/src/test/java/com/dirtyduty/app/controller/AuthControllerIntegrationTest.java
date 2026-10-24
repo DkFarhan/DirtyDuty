@@ -20,7 +20,17 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
-@SpringBootTest
+@SpringBootTest(
+    properties = {
+      "app.auth.email-verification.enabled=true",
+      "app.auth.email-verification.delivery-enabled=true",
+      "app.auth.password-reset.rate-limit-hmac-secret=local-test-only-hmac-secret-minimum-32",
+      "app.base-url=https://dirtyduty.test",
+      "spring.mail.host=localhost",
+      "spring.mail.username=test-user",
+      "spring.mail.password=test-password",
+      "MAIL_FROM_ADDRESS=verify@dirtyduty.test"
+    })
 class AuthControllerIntegrationTest {
 
   private final List<String> testEmails = new ArrayList<>();

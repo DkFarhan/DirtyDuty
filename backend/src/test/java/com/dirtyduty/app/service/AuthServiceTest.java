@@ -37,7 +37,8 @@ class AuthServiceTest {
             membershipRepository,
             householdSettingsService,
             new LegalAcceptanceService(userRepository),
-            org.mockito.Mockito.mock(PasswordLoginProtectionService.class));
+            org.mockito.Mockito.mock(PasswordLoginProtectionService.class),
+            org.mockito.Mockito.mock(EmailVerificationService.class));
 
     assertThatThrownBy(
             () ->
