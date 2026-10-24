@@ -17,6 +17,7 @@ import com.dirtyduty.app.repository.UserRepository;
 import com.dirtyduty.app.service.AuthService;
 import com.dirtyduty.app.service.GoogleIdentityService;
 import com.dirtyduty.app.service.LegalAcceptanceService;
+import com.dirtyduty.app.service.PasswordLoginProtectionService;
 import com.dirtyduty.app.service.PasswordResetService;
 import com.dirtyduty.app.service.RecentReauthenticationService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -47,6 +48,7 @@ class AuthControllerHttpTest {
   private AuthFeatureConfiguration authFeatures;
   private AuthenticationManager authenticationManager;
   private GoogleIdentityService googleIdentityService;
+  private PasswordLoginProtectionService loginProtection;
   private SessionAuthenticationStrategy sessionAuthenticationStrategy;
   private MockMvc mockMvc;
 
@@ -61,6 +63,7 @@ class AuthControllerHttpTest {
     authFeatures = org.mockito.Mockito.mock(AuthFeatureConfiguration.class);
     authenticationManager = org.mockito.Mockito.mock(AuthenticationManager.class);
     googleIdentityService = org.mockito.Mockito.mock(GoogleIdentityService.class);
+    loginProtection = org.mockito.Mockito.mock(PasswordLoginProtectionService.class);
     sessionAuthenticationStrategy = org.mockito.Mockito.mock(SessionAuthenticationStrategy.class);
     AuthController controller =
         new AuthController(
@@ -73,7 +76,8 @@ class AuthControllerHttpTest {
             org.mockito.Mockito.mock(PasswordResetService.class),
             authFeatures,
             org.mockito.Mockito.mock(RecentReauthenticationService.class),
-            org.mockito.Mockito.mock(LegalAcceptanceService.class));
+            org.mockito.Mockito.mock(LegalAcceptanceService.class),
+            loginProtection);
     LocalValidatorFactoryBean validator = new LocalValidatorFactoryBean();
     validator.afterPropertiesSet();
     mockMvc =
@@ -253,7 +257,34 @@ class AuthControllerHttpTest {
 
     org.mockito.Mockito.verify(authenticationManager)
         .authenticate(org.mockito.ArgumentMatchers.any(Authentication.class));
+    org.mockito.Mockito.verify(loginProtection)
+        .recordFailure(
+            org.mockito.ArgumentMatchers.eq("person@example.com"),
+            org.mockito.ArgumentMatchers.any(String.class));
     org.mockito.Mockito.verifyNoInteractions(googleIdentityService);
+  }
+
+  @Test
+  void temporarilyThrottledGoogleLinkUsesGenericThrottleResponseWithoutPasswordAuthentication()
+      throws Exception {
+    org.mockito.Mockito.doThrow(
+            new com.dirtyduty.app.exception.LoginTemporarilyThrottledException(
+                "Too many sign-in attempts. Please wait and try again, or reset your password."))
+        .when(loginProtection)
+        .assertAllowed(
+            org.mockito.ArgumentMatchers.eq("person@example.com"),
+            org.mockito.ArgumentMatchers.any(String.class),
+            org.mockito.ArgumentMatchers.eq("WrongPassword123!"));
+
+    mockMvc
+        .perform(
+            post("/api/auth/google/link")
+                .session(pendingGoogleLinkSession(Instant.now().toEpochMilli()))
+                .contentType(APPLICATION_JSON)
+                .content("{\"password\":\"WrongPassword123!\"}"))
+        .andExpect(status().isTooManyRequests());
+
+    org.mockito.Mockito.verifyNoInteractions(authenticationManager, googleIdentityService);
   }
 
   @Test

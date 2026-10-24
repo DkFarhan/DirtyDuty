@@ -36,7 +36,8 @@ class AuthServiceTest {
             jdbcTemplate,
             membershipRepository,
             householdSettingsService,
-            new LegalAcceptanceService(userRepository));
+            new LegalAcceptanceService(userRepository),
+            org.mockito.Mockito.mock(PasswordLoginProtectionService.class));
 
     assertThatThrownBy(
             () ->

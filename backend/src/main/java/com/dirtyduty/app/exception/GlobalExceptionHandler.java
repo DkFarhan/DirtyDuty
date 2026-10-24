@@ -101,6 +101,16 @@ public class GlobalExceptionHandler {
         request.getRequestURI());
   }
 
+  @ExceptionHandler(LoginTemporarilyThrottledException.class)
+  public ResponseEntity<ApiErrorResponse> handleLoginTemporarilyThrottled(
+      LoginTemporarilyThrottledException ex, HttpServletRequest request) {
+    return buildResponse(
+        HttpStatus.TOO_MANY_REQUESTS,
+        "Too Many Requests",
+        ex.getMessage(),
+        request.getRequestURI());
+  }
+
   @ExceptionHandler(MethodArgumentNotValidException.class)
   public ResponseEntity<ApiErrorResponse> handleMethodArgumentNotValid(
       MethodArgumentNotValidException ex, HttpServletRequest request) {

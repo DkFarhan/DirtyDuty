@@ -405,6 +405,24 @@ describe("authentication screens", () => {
     expect(screen.queryByText(/private backend exception/)).toBeNull()
   })
 
+  it("shows useful guidance when password sign-in is temporarily throttled", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({}, 401))
+      .mockResolvedValueOnce(jsonResponse({ token: "csrf", headerName: "X-CSRF-TOKEN" }))
+      .mockResolvedValueOnce(jsonResponse({ message: "private throttle details" }, 429))
+
+    await openLogin()
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: user.email } })
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "wrong" } })
+    fireEvent.click(screen.getByRole("button", { name: "Sign In" }))
+
+    expect(await screen.findByRole("alert")).toHaveProperty(
+      "textContent",
+      "Too many sign-in attempts. Please wait and try again, or reset your password.",
+    )
+    expect(screen.queryByText(/private throttle details/)).toBeNull()
+  })
+
   it("shows a network error instead of invalid credentials when login cannot reach the backend", async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse({}, 401))
@@ -543,6 +561,36 @@ describe("authentication screens", () => {
     expect(await screen.findByRole("alert")).toHaveProperty(
       "textContent",
       "This reset link is invalid or expired. Request a new one.",
+    )
+    window.history.replaceState({}, "", "/")
+  })
+
+  it("shows the distinct same-password reset validation response", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({}, 401))
+      .mockResolvedValueOnce(jsonResponse({ token: "reset-csrf", headerName: "X-CSRF-TOKEN" }))
+      .mockResolvedValueOnce(
+        jsonResponse(
+          { message: "Your new password must be different from your current password." },
+          400,
+        ),
+      )
+    window.history.replaceState({}, "", "/reset-password#token=still-valid-token")
+    stubAuthFeatures(fetchMock)
+
+    render(<AppShell initialScreen="reset-password" />)
+    await screen.findByRole("button", { name: "Update password" }, { timeout: 3_000 })
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "CurrentPassword123!" },
+    })
+    fireEvent.change(screen.getByLabelText("Confirm new password"), {
+      target: { value: "CurrentPassword123!" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Update password" }))
+
+    expect(await screen.findByRole("alert")).toHaveProperty(
+      "textContent",
+      "Your new password must be different from your current password.",
     )
     window.history.replaceState({}, "", "/")
   })

@@ -2,6 +2,7 @@ package com.dirtyduty.app.service;
 
 import com.dirtyduty.app.entity.User;
 import com.dirtyduty.app.entity.enums.AccountStatus;
+import com.dirtyduty.app.exception.PasswordResetSamePasswordException;
 import com.dirtyduty.app.repository.UserRepository;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -33,6 +34,7 @@ public class PasswordResetService {
   private final PasswordEncoder passwordEncoder;
   private final ApplicationEventPublisher events;
   private final PersistentAuthRateLimiter rateLimiter;
+  private final PasswordLoginProtectionService loginProtection;
   private final FindByIndexNameSessionRepository<? extends Session> sessions;
   private final boolean enabled;
   private final Duration ttl;
@@ -46,6 +48,7 @@ public class PasswordResetService {
       PasswordEncoder passwordEncoder,
       ApplicationEventPublisher events,
       PersistentAuthRateLimiter rateLimiter,
+      PasswordLoginProtectionService loginProtection,
       FindByIndexNameSessionRepository<? extends Session> sessions,
       @Value("${app.auth.password-reset.enabled:false}") boolean enabled,
       @Value("${app.auth.password-reset.token-ttl:30m}") Duration ttl,
@@ -57,6 +60,7 @@ public class PasswordResetService {
     this.passwordEncoder = passwordEncoder;
     this.events = events;
     this.rateLimiter = rateLimiter;
+    this.loginProtection = loginProtection;
     this.sessions = sessions;
     this.enabled = enabled;
     this.ttl = ttl;
@@ -139,6 +143,11 @@ public class PasswordResetService {
             .orElse(null);
     if (user == null) return false;
 
+    if (user.getPasswordHash() != null
+        && passwordEncoder.matches(newPassword, user.getPasswordHash())) {
+      throw new PasswordResetSamePasswordException();
+    }
+
     try {
       jdbc.queryForObject(
           """
@@ -159,6 +168,7 @@ public class PasswordResetService {
 
     user.setPasswordHash(passwordEncoder.encode(newPassword));
     userRepository.saveAndFlush(user);
+    loginProtection.clearAccountFailures(user.getEmail());
     jdbc.update(
         "UPDATE password_reset_token SET used_at = COALESCE(used_at, NOW()) WHERE user_id = ?",
         userId);

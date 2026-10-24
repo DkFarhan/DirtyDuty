@@ -30,6 +30,7 @@ public class AuthService {
   private final HouseholdMembershipRepository membershipRepository;
   private final HouseholdSettingsService householdSettingsService;
   private final LegalAcceptanceService legalAcceptanceService;
+  private final PasswordLoginProtectionService loginProtection;
 
   public AuthService(
       UserRepository userRepository,
@@ -37,13 +38,15 @@ public class AuthService {
       JdbcTemplate jdbcTemplate,
       HouseholdMembershipRepository membershipRepository,
       HouseholdSettingsService householdSettingsService,
-      LegalAcceptanceService legalAcceptanceService) {
+      LegalAcceptanceService legalAcceptanceService,
+      PasswordLoginProtectionService loginProtection) {
     this.userRepository = userRepository;
     this.passwordEncoder = passwordEncoder;
     this.jdbcTemplate = jdbcTemplate;
     this.membershipRepository = membershipRepository;
     this.householdSettingsService = householdSettingsService;
     this.legalAcceptanceService = legalAcceptanceService;
+    this.loginProtection = loginProtection;
   }
 
   @Transactional
@@ -98,6 +101,7 @@ public class AuthService {
 
     user.setPasswordHash(passwordEncoder.encode(newPassword));
     userRepository.saveAndFlush(user);
+    loginProtection.clearAccountFailures(user.getEmail());
     invalidateAllSessionsForUser(email);
   }
 

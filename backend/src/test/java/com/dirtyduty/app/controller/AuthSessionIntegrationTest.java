@@ -152,6 +152,56 @@ class AuthSessionIntegrationTest {
   }
 
   @Test
+  void failedPasswordAttemptsArePersistedGenericallyAndEventuallyThrottledForKnownAndUnknownEmails()
+      throws Exception {
+    String email = uniqueEmail("throttled");
+    register(email, AccountStatus.ACTIVE);
+    String unknownEmail = "missing-" + UUID.randomUUID() + "@example.com";
+    MvcResult knownFailure = null;
+    MvcResult unknownFailure = null;
+    for (int attempt = 0; attempt < 5; attempt++) {
+      knownFailure = performLogin(email, "WrongPassword123!", csrf());
+      unknownFailure = performLogin(unknownEmail, "WrongPassword123!", csrf());
+    }
+    assertThat(knownFailure.getResponse().getStatus()).isEqualTo(401);
+    assertThat(unknownFailure.getResponse().getStatus()).isEqualTo(401);
+    assertThat(knownFailure.getResponse().getContentAsString())
+        .contains("Invalid email or password");
+    assertThat(unknownFailure.getResponse().getContentAsString())
+        .contains("Invalid email or password");
+
+    knownFailure = performLogin(email, "WrongPassword123!", csrf());
+    unknownFailure = performLogin(unknownEmail, "WrongPassword123!", csrf());
+    assertThat(knownFailure.getResponse().getStatus()).isEqualTo(429);
+    assertThat(unknownFailure.getResponse().getStatus()).isEqualTo(429);
+    assertThat(knownFailure.getResponse().getContentAsString())
+        .contains("Too many sign-in attempts")
+        .doesNotContain(email, unknownEmail);
+    assertThat(unknownFailure.getResponse().getContentAsString())
+        .contains("Too many sign-in attempts")
+        .doesNotContain(email, unknownEmail);
+  }
+
+  @Test
+  void successfulPasswordLoginResetsConsecutiveFailureCounter() throws Exception {
+    String email = uniqueEmail("counter-reset");
+    register(email, AccountStatus.ACTIVE);
+    for (int attempt = 0; attempt < 4; attempt++) {
+      assertThat(performLogin(email, "WrongPassword123!", csrf()).getResponse().getStatus())
+          .isEqualTo(401);
+    }
+    assertThat(performLogin(email, "StrongPassword123!", csrf()).getResponse().getStatus())
+        .isEqualTo(200);
+
+    for (int attempt = 0; attempt < 5; attempt++) {
+      assertThat(performLogin(email, "WrongPassword123!", csrf()).getResponse().getStatus())
+          .isEqualTo(401);
+    }
+    assertThat(performLogin(email, "WrongPassword123!", csrf()).getResponse().getStatus())
+        .isEqualTo(429);
+  }
+
+  @Test
   void normalAuthenticatedAccessSlidesServerSessionExpiry() throws Exception {
     String email = uniqueEmail("sliding-session");
     register(email, AccountStatus.ACTIVE);

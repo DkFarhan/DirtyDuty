@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { ApiError } from "@/lib/auth/api"
 import { useAuth } from "@/lib/auth/auth-context"
 import { useChoreSync } from "@/lib/chore-sync/store"
@@ -14,18 +14,38 @@ export function ForgotPasswordScreen({ initialEmail = "" }: { initialEmail?: str
   const { navigate } = useChoreSync()
   const { requestPasswordReset } = useAuth()
   const [email, setEmail] = useState(initialEmail)
-  const [message, setMessage] = useState("")
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
+  const [confirmationEmail, setConfirmationEmail] = useState("")
+  const [cooldown, setCooldown] = useState(0)
+  const [cooldownUntil, setCooldownUntil] = useState<number | null>(null)
+  const inFlight = useRef(false)
 
-  const submit = async () => {
-    if (busy) return
+  useEffect(() => {
+    if (cooldownUntil === null) {
+      setCooldown(0)
+      return
+    }
+    const updateCountdown = () => {
+      const remaining = Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000))
+      setCooldown(remaining)
+      if (remaining === 0) setCooldownUntil(null)
+    }
+    updateCountdown()
+    const interval = window.setInterval(updateCountdown, 1000)
+    return () => window.clearInterval(interval)
+  }, [cooldownUntil])
+
+  const sendResetRequest = async (resend: boolean) => {
+    if (inFlight.current || !email.trim()) return
+    inFlight.current = true
     setBusy(true)
     setError("")
-    setMessage("")
+    if (resend) setCooldownUntil(Date.now() + 60_000)
     try {
       await requestPasswordReset(email)
-      setMessage("If an account exists for that email, password reset instructions will be sent.")
+      setConfirmationEmail(email.trim())
+      setCooldownUntil(Date.now() + 60_000)
     } catch (cause) {
       setError(
         cause instanceof ApiError
@@ -33,8 +53,17 @@ export function ForgotPasswordScreen({ initialEmail = "" }: { initialEmail?: str
           : "Unable to request a password reset. Please try again.",
       )
     } finally {
+      inFlight.current = false
       setBusy(false)
     }
+  }
+
+  const useDifferentEmail = () => {
+    setConfirmationEmail("")
+    setEmail("")
+    setCooldownUntil(null)
+    setCooldown(0)
+    setError("")
   }
 
   return (
@@ -48,39 +77,88 @@ export function ForgotPasswordScreen({ initialEmail = "" }: { initialEmail?: str
         <span className="text-sm font-medium">Back to sign in</span>
       </button>
       <ProductLogo className="mb-8 h-auto w-44 max-w-full" />
-      <h1 className="mb-2 text-2xl font-black text-slate-900">Reset your password</h1>
-      <p className="mb-6 text-sm text-slate-500">
-        Enter your email and we&apos;ll send reset instructions if an account is registered.
-      </p>
-      <label htmlFor="reset-request-email" className="mb-1.5 text-sm font-semibold text-slate-700">
-        Email
-      </label>
-      <input
-        autoComplete="email"
-        className={inputClass}
-        id="reset-request-email"
-        onChange={(event) => setEmail(event.target.value)}
-        type="email"
-        value={email}
-      />
-      {message && (
-        <p className="mt-4 text-sm text-teal-700" role="status">
-          {message}
-        </p>
+      {confirmationEmail ? (
+        <section
+          aria-labelledby="reset-email-confirmation-title"
+          className="rounded-2xl border border-teal-100 bg-teal-50/70 p-5"
+        >
+          <h1 className="text-2xl font-black text-slate-900" id="reset-email-confirmation-title">
+            Check your email
+          </h1>
+          <p className="mt-3 text-sm leading-relaxed text-slate-700" role="status">
+            If an account exists for this email, we&apos;ll send you a password reset link.
+          </p>
+          <p className="mt-2 break-all text-sm font-semibold text-slate-800">{confirmationEmail}</p>
+          <p className="mt-3 text-sm leading-relaxed text-slate-600">
+            Check your inbox and spam folder. The reset link expires after 30 minutes.
+          </p>
+
+          <div className="mt-6 border-t border-teal-100 pt-4">
+            <p className="text-sm font-semibold text-slate-700">Didn&apos;t receive an email?</p>
+            {cooldown > 0 ? (
+              <p className="mt-1 text-sm text-slate-500" role="timer">
+                Resend available in {cooldown} seconds.
+              </p>
+            ) : (
+              <button
+                className="mt-2 min-h-10 font-bold text-teal-700 disabled:opacity-60"
+                disabled={busy}
+                onClick={() => void sendResetRequest(true)}
+                type="button"
+              >
+                {busy ? "Sending..." : "Resend email"}
+              </button>
+            )}
+          </div>
+          {error && (
+            <p className="mt-3 text-sm text-rose-600" role="alert">
+              {error}
+            </p>
+          )}
+          <button
+            className="mt-5 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-4 py-2 font-bold text-slate-700"
+            disabled={busy}
+            onClick={useDifferentEmail}
+            type="button"
+          >
+            Use a different email
+          </button>
+        </section>
+      ) : (
+        <>
+          <h1 className="mb-2 text-2xl font-black text-slate-900">Reset your password</h1>
+          <p className="mb-6 text-sm text-slate-500">
+            Enter your email and we&apos;ll send reset instructions if an account is registered.
+          </p>
+          <label
+            htmlFor="reset-request-email"
+            className="mb-1.5 text-sm font-semibold text-slate-700"
+          >
+            Email
+          </label>
+          <input
+            autoComplete="email"
+            className={inputClass}
+            id="reset-request-email"
+            onChange={(event) => setEmail(event.target.value)}
+            type="email"
+            value={email}
+          />
+          {error && (
+            <p className="mt-4 text-sm text-rose-600" role="alert">
+              {error}
+            </p>
+          )}
+          <button
+            className="mt-6 min-h-12 w-full rounded-xl bg-teal-600 py-3 font-bold text-white disabled:opacity-60"
+            disabled={busy || !email.trim()}
+            onClick={() => void sendResetRequest(false)}
+            type="button"
+          >
+            {busy ? "Sending..." : "Send reset instructions"}
+          </button>
+        </>
       )}
-      {error && (
-        <p className="mt-4 text-sm text-rose-600" role="alert">
-          {error}
-        </p>
-      )}
-      <button
-        className="mt-6 min-h-12 w-full rounded-xl bg-teal-600 py-3 font-bold text-white disabled:opacity-60"
-        disabled={busy || !email.trim()}
-        onClick={() => void submit()}
-        type="button"
-      >
-        {busy ? "Sending..." : "Send reset instructions"}
-      </button>
     </main>
   )
 }

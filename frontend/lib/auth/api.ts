@@ -45,7 +45,20 @@ function errorKind(status: number): ApiErrorKind {
   return "server"
 }
 
-function messageFor(status: number, path: string): string {
+function messageFor(status: number, path: string, payload?: unknown): string {
+  if (status === 429 && (path === "/api/auth/login" || path === "/api/auth/google/link")) {
+    return "Too many sign-in attempts. Please wait and try again, or reset your password."
+  }
+  if (
+    status === 400 &&
+    path === "/api/auth/password-reset/confirm" &&
+    payload !== null &&
+    typeof payload === "object" &&
+    "message" in payload &&
+    payload.message === "Your new password must be different from your current password."
+  ) {
+    return payload.message
+  }
   if (status === 401 && path === "/api/auth/login") return "Invalid email or password"
   if (status === 401 && path === "/api/auth/logout") {
     return "Unable to confirm sign out. Your session may still be active."
@@ -117,7 +130,7 @@ async function request<T>(path: string, options: ApiRequestOptions = {}): Promis
     if (response.status === 403) csrfState = null
     const payload = await readPayload(response)
     throw new ApiError(
-      messageFor(response.status, path),
+      messageFor(response.status, path, payload),
       response.status,
       errorKind(response.status),
       payload,

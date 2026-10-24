@@ -90,7 +90,8 @@ Configure an SMTP provider that supports STARTTLS, set `MAIL_HOST`, `MAIL_PORT`,
 - `PASSWORD_RESET_ENABLED=true`
 - `APP_BASE_URL=https://YOUR_DOMAIN`
 - `AUTH_RATE_LIMIT_HMAC_SECRET` to a private, randomly generated value of at
-  least 32 characters
+  least 32 bytes; this key is required for login throttling even while password
+  reset is disabled, and must remain stable across deployments
 - optionally `PASSWORD_RESET_TTL` (default 30 minutes; maximum two hours)
 
 Reset requests have the same response whether an account exists or not. Tokens
@@ -100,6 +101,17 @@ Email delivery runs only after the reset-token transaction commits, avoiding
 SMTP-dependent response delays; delivery failures revoke the token.
 Request and confirmation limits are persisted in PostgreSQL; the HMAC key used
 for pseudonymous rate-limit identifiers must remain private and stable.
+
+Password sign-in failures are also recorded as HMAC-pseudonymized account and
+source-IP counters. Five failures in 15 minutes begin a 30-second cooldown;
+continued failures increase this to 2, 5, and 15 minutes. After 100 consecutive
+account failures, password sign-in is paused for 24 hours; successful sign-in,
+password change, or reset clears the account counter. Password recovery remains
+available during a login cooldown. IP-level cooldowns start at 60 failures in
+15 minutes to reduce impact on shared networks. Production Caddy overwrites
+`X-Forwarded-For` with the connecting client address, and the backend is only
+exposed on the private Compose network; do not publish the backend port or put
+an untrusted proxy in front of Caddy.
 
 ### Manual verification after enabling
 
