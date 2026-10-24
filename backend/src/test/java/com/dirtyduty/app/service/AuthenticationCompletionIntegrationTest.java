@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.dirtyduty.app.dto.auth.CsrfResponse;
+import com.dirtyduty.app.dto.auth.RegisterRequest;
 import com.dirtyduty.app.entity.User;
 import com.dirtyduty.app.entity.enums.AccountStatus;
 import com.dirtyduty.app.repository.UserRepository;
@@ -62,6 +63,10 @@ class AuthenticationCompletionIntegrationTest {
 
   @Autowired private PasswordResetService passwordResetService;
 
+  @Autowired private AccountRecoveryService accountRecoveryService;
+
+  @Autowired private EmailVerificationService emailVerificationService;
+
   @Autowired private PasswordLoginProtectionService loginProtection;
 
   @Autowired private GoogleIdentityService googleIdentityService;
@@ -83,6 +88,68 @@ class AuthenticationCompletionIntegrationTest {
   @MockitoBean private PasswordResetMailer mailer;
 
   @MockitoBean private EmailVerificationMailer emailVerificationMailer;
+
+  @Test
+  void unifiedRecoveryRoutesOnlyToTheEligibleAccountFlow() {
+    String generic = passwordResetService.genericResponse();
+    String unknownResponse =
+        accountRecoveryService.requestInstructions(
+            "unknown-" + UUID.randomUUID() + "@example.com", uniqueTestIp());
+    assertThat(unknownResponse).isEqualTo(generic);
+
+    User verified = createUser("unified-verified");
+    assertThat(accountRecoveryService.requestInstructions(verified.getEmail(), uniqueTestIp()))
+        .isEqualTo(generic);
+    verify(mailer, org.mockito.Mockito.timeout(2000))
+        .sendReset(eq(verified.getEmail()), any(String.class), any(Duration.class));
+
+    String pendingIp = uniqueTestIp();
+    var registration =
+        authService.register(
+            new RegisterRequest(
+                "Pending Registration",
+                "unified-pending-" + UUID.randomUUID() + "@example.com",
+                "OriginalPassword123!"),
+            pendingIp);
+    User pending = userRepository.findById(registration.userId()).orElseThrow();
+    testUsers.add(pending);
+    String existingDisplayName = pending.getDisplayName();
+    emailVerificationService.sendReservedInitial(pending.getId());
+    var codeCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
+    verify(emailVerificationMailer, org.mockito.Mockito.timeout(2000))
+        .sendVerificationCode(eq(pending.getEmail()), codeCaptor.capture());
+    assertThat(accountRecoveryService.requestInstructions(pending.getEmail(), uniqueTestIp()))
+        .isEqualTo(generic);
+    verify(emailVerificationMailer)
+        .sendVerificationCode(eq(pending.getEmail()), eq(codeCaptor.getValue()));
+
+    emailVerificationService.completeRecovery(
+        pending.getEmail(), codeCaptor.getValue(), "RecoveredPassword123!", uniqueTestIp());
+    User recovered = userRepository.findById(pending.getId()).orElseThrow();
+    assertThat(recovered.getEmailVerifiedAt()).isNotNull();
+    assertThat(recovered.getDisplayName()).isEqualTo(existingDisplayName);
+    assertThat(passwordEncoder.matches("RecoveredPassword123!", recovered.getPasswordHash()))
+        .isTrue();
+
+    User protectedPending = createUser("unified-protected");
+    protectedPending.setEmailVerifiedAt(null);
+    userRepository.saveAndFlush(protectedPending);
+    jdbc.update(
+        "INSERT INTO households(id, name, timezone, created_by_user_id) VALUES (?, 'Protected', 'UTC', ?)",
+        UUID.randomUUID(),
+        protectedPending.getId());
+    assertThat(
+            accountRecoveryService.requestInstructions(protectedPending.getEmail(), uniqueTestIp()))
+        .isEqualTo(generic);
+    verify(emailVerificationMailer, org.mockito.Mockito.never())
+        .sendVerificationCode(eq(protectedPending.getEmail()), any(String.class));
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT COUNT(*) FROM password_reset_token WHERE user_id = ?",
+                Integer.class,
+                protectedPending.getId()))
+        .isZero();
+  }
 
   @AfterEach
   void cleanUp() {

@@ -7,7 +7,6 @@ import com.dirtyduty.app.dto.auth.CompleteEmailVerificationRecoveryRequest;
 import com.dirtyduty.app.dto.auth.CorrectPendingEmailRequest;
 import com.dirtyduty.app.dto.auth.CsrfResponse;
 import com.dirtyduty.app.dto.auth.DeleteAccountRequest;
-import com.dirtyduty.app.dto.auth.EmailVerificationRecoveryRequest;
 import com.dirtyduty.app.dto.auth.EmailVerificationStatusResponse;
 import com.dirtyduty.app.dto.auth.GoogleLinkRequest;
 import com.dirtyduty.app.dto.auth.LegalAcceptanceRequest;
@@ -22,6 +21,7 @@ import com.dirtyduty.app.dto.auth.VerifyEmailRequest;
 import com.dirtyduty.app.entity.User;
 import com.dirtyduty.app.exception.PasswordResetSamePasswordException;
 import com.dirtyduty.app.repository.UserRepository;
+import com.dirtyduty.app.service.AccountRecoveryService;
 import com.dirtyduty.app.service.AuthService;
 import com.dirtyduty.app.service.EmailVerificationService;
 import com.dirtyduty.app.service.GoogleIdentityService;
@@ -67,6 +67,7 @@ public class AuthController {
   private final UserRepository userRepository;
   private final GoogleIdentityService googleIdentityService;
   private final PasswordResetService passwordResetService;
+  private final AccountRecoveryService accountRecoveryService;
   private final AuthFeatureConfiguration authFeatures;
   private final RecentReauthenticationService recentReauthenticationService;
   private final LegalAcceptanceService legalAcceptanceService;
@@ -81,6 +82,7 @@ public class AuthController {
       UserRepository userRepository,
       GoogleIdentityService googleIdentityService,
       PasswordResetService passwordResetService,
+      AccountRecoveryService accountRecoveryService,
       AuthFeatureConfiguration authFeatures,
       RecentReauthenticationService recentReauthenticationService,
       LegalAcceptanceService legalAcceptanceService,
@@ -93,6 +95,7 @@ public class AuthController {
     this.userRepository = userRepository;
     this.googleIdentityService = googleIdentityService;
     this.passwordResetService = passwordResetService;
+    this.accountRecoveryService = accountRecoveryService;
     this.authFeatures = authFeatures;
     this.recentReauthenticationService = recentReauthenticationService;
     this.legalAcceptanceService = legalAcceptanceService;
@@ -176,17 +179,6 @@ public class AuthController {
     return ResponseEntity.noContent().build();
   }
 
-  @PostMapping("/email-verification/recovery/request")
-  public ResponseEntity<java.util.Map<String, String>> requestEmailVerificationRecovery(
-      @Valid @RequestBody EmailVerificationRecoveryRequest request,
-      HttpServletRequest httpRequest) {
-    emailVerificationService.requestRecovery(request.email(), httpRequest.getRemoteAddr());
-    return ResponseEntity.ok(
-        java.util.Map.of(
-            "message",
-            "If an eligible account exists for this email, a recovery code will be sent."));
-  }
-
   @PostMapping("/email-verification/recovery/complete")
   public ResponseEntity<LoginResponse> completeEmailVerificationRecovery(
       @Valid @RequestBody CompleteEmailVerificationRecoveryRequest request,
@@ -194,11 +186,7 @@ public class AuthController {
       HttpServletResponse httpResponse) {
     User user =
         emailVerificationService.completeRecovery(
-            request.email(),
-            request.code(),
-            request.newPassword(),
-            request.displayName(),
-            httpRequest.getRemoteAddr());
+            request.email(), request.code(), request.newPassword(), httpRequest.getRemoteAddr());
     Authentication authentication =
         authenticationManager.authenticate(
             new UsernamePasswordAuthenticationToken(user.getEmail(), request.newPassword()));
@@ -209,7 +197,8 @@ public class AuthController {
   @PostMapping("/password-reset/request")
   public ResponseEntity<java.util.Map<String, String>> requestPasswordReset(
       @Valid @RequestBody PasswordResetRequest request, HttpServletRequest httpRequest) {
-    String message = passwordResetService.request(request.email(), httpRequest.getRemoteAddr());
+    String message =
+        accountRecoveryService.requestInstructions(request.email(), httpRequest.getRemoteAddr());
     return ResponseEntity.ok(java.util.Map.of("message", message));
   }
 

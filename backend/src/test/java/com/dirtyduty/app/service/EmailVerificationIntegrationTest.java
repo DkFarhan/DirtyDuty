@@ -5,14 +5,17 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.verify;
 
+import com.dirtyduty.app.dto.auth.RegisterRequest;
 import com.dirtyduty.app.entity.User;
 import com.dirtyduty.app.entity.enums.AccountStatus;
+import com.dirtyduty.app.exception.DuplicateResourceException;
 import com.dirtyduty.app.exception.EmailVerificationInvalidCodeException;
 import com.dirtyduty.app.exception.EmailVerificationRateLimitException;
 import com.dirtyduty.app.repository.UserRepository;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -40,6 +43,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
     })
 @ActiveProfiles("ci")
 class EmailVerificationIntegrationTest {
+  @Autowired private AuthService authService;
   @Autowired private EmailVerificationService verificationService;
   @Autowired private UserRepository users;
   @Autowired private JdbcTemplate jdbc;
@@ -154,11 +158,11 @@ class EmailVerificationIntegrationTest {
     User user = createUser("recovery");
     verificationService.sendInitial(user.getId(), uniqueIp());
     verificationService.completeRecovery(
-        user.getEmail(), latestCode.get(), "RecoveredPassword123!", "Recovered User", uniqueIp());
+        user.getEmail(), latestCode.get(), "RecoveredPassword123!", uniqueIp());
 
     User recovered = users.findById(user.getId()).orElseThrow();
     assertThat(recovered.getEmailVerifiedAt()).isNotNull();
-    assertThat(recovered.getDisplayName()).isEqualTo("Recovered User");
+    assertThat(recovered.getDisplayName()).isEqualTo("Verification Test");
     assertThat(passwordEncoder.matches("RecoveredPassword123!", recovered.getPasswordHash()))
         .isTrue();
     assertThat(
@@ -167,6 +171,11 @@ class EmailVerificationIntegrationTest {
                 Integer.class,
                 user.getId()))
         .isZero();
+    assertThatThrownBy(
+            () ->
+                verificationService.completeRecovery(
+                    user.getEmail(), latestCode.get(), "AnotherPassword123!", uniqueIp()))
+        .isInstanceOf(EmailVerificationInvalidCodeException.class);
   }
 
   @Test
@@ -180,8 +189,47 @@ class EmailVerificationIntegrationTest {
                     user.getEmail(),
                     latestCode.get().equals("000000") ? "000001" : "000000",
                     "RecoveredPassword123!",
-                    "Recovered User",
                     uniqueIp()))
+        .isInstanceOf(EmailVerificationInvalidCodeException.class);
+    assertThat(users.findById(user.getId()).orElseThrow().getEmailVerifiedAt()).isNull();
+  }
+
+  @Test
+  void expiredRecoveryCodeCannotVerifyOrChangeThePassword() {
+    User user = createUser("expired-recovery");
+    verificationService.sendInitial(user.getId(), uniqueIp());
+    jdbc.update(
+        "UPDATE email_verification SET expires_at = NOW() - INTERVAL '1 second' WHERE user_id = ?",
+        user.getId());
+
+    assertThatThrownBy(
+            () ->
+                verificationService.completeRecovery(
+                    user.getEmail(), latestCode.get(), "RecoveredPassword123!", uniqueIp()))
+        .isInstanceOf(EmailVerificationInvalidCodeException.class);
+    User unchanged = users.findById(user.getId()).orElseThrow();
+    assertThat(unchanged.getEmailVerifiedAt()).isNull();
+    assertThat(passwordEncoder.matches("RecoveredPassword123!", unchanged.getPasswordHash()))
+        .isFalse();
+  }
+
+  @Test
+  void exhaustedRecoveryCodeCannotBeRedeemedEvenWhenTheCodeIsCorrect() {
+    User user = createUser("exhausted-recovery");
+    verificationService.sendInitial(user.getId(), uniqueIp());
+    String incorrectCode = latestCode.get().equals("000000") ? "000001" : "000000";
+    for (int attempt = 0; attempt < 5; attempt++) {
+      assertThatThrownBy(
+              () ->
+                  verificationService.completeRecovery(
+                      user.getEmail(), incorrectCode, "RecoveredPassword123!", uniqueIp()))
+          .isInstanceOf(EmailVerificationInvalidCodeException.class);
+    }
+
+    assertThatThrownBy(
+            () ->
+                verificationService.completeRecovery(
+                    user.getEmail(), latestCode.get(), "RecoveredPassword123!", uniqueIp()))
         .isInstanceOf(EmailVerificationInvalidCodeException.class);
     assertThat(users.findById(user.getId()).orElseThrow().getEmailVerifiedAt()).isNull();
   }
@@ -204,7 +252,7 @@ class EmailVerificationIntegrationTest {
 
     verificationService.requestRecovery(user.getEmail(), uniqueIp());
     verificationService.completeRecovery(
-        user.getEmail(), latestCode.get(), "RecoveredPassword123!", "Recovered User", uniqueIp());
+        user.getEmail(), latestCode.get(), "RecoveredPassword123!", uniqueIp());
     assertThat(users.findById(user.getId()).orElseThrow().getEmailVerifiedAt()).isNotNull();
   }
 
@@ -233,7 +281,7 @@ class EmailVerificationIntegrationTest {
         user.getId());
     verificationService.requestRecovery(newEmail, uniqueIp());
     verificationService.completeRecovery(
-        newEmail, latestCode.get(), "RecoveredPassword123!", "Recovered User", uniqueIp());
+        newEmail, latestCode.get(), "RecoveredPassword123!", uniqueIp());
 
     assertThat(users.findById(user.getId()).orElseThrow().getEmailVerifiedAt()).isNotNull();
   }
@@ -312,18 +360,140 @@ class EmailVerificationIntegrationTest {
         withNotification.getId(),
         UUID.randomUUID().toString());
 
+    User withIdentity = createUser("identity-retained");
+    verificationService.sendInitial(withIdentity.getId(), uniqueIp());
+    ageRegistration(withIdentity);
+    jdbc.update(
+        """
+        INSERT INTO external_auth_identity(
+            id, user_id, provider, provider_subject, provider_email_at_link_time
+        ) VALUES (?, ?, 'GOOGLE', ?, ?)
+        """,
+        UUID.randomUUID(),
+        withIdentity.getId(),
+        "cleanup-" + UUID.randomUUID(),
+        withIdentity.getEmail());
+
+    User verified = createUser("verified-retained");
+    verificationService.sendInitial(verified.getId(), uniqueIp());
+    verified.setEmailVerifiedAt(java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC));
+    users.saveAndFlush(verified);
+    ageRegistration(verified);
+
     verificationService.cleanupExpiredCodesAndAbandonedRegistrations();
 
     assertThat(users.findById(abandoned.getId())).isEmpty();
     assertThat(users.findById(withSession.getId())).isPresent();
     assertThat(users.findById(withHousehold.getId())).isPresent();
     assertThat(users.findById(withNotification.getId())).isPresent();
+    assertThat(users.findById(withIdentity.getId())).isPresent();
+    assertThat(users.findById(verified.getId())).isPresent();
     assertThat(
             jdbc.queryForObject(
                 "SELECT COUNT(*) FROM spring_session WHERE primary_id = ?",
                 Integer.class,
                 sessionId))
         .isEqualTo(1);
+
+    User reusedEmail = new User();
+    reusedEmail.setEmail(abandoned.getEmail());
+    reusedEmail.setDisplayName("Reused Email");
+    reusedEmail.setPasswordHash(passwordEncoder.encode("StrongPassword123!"));
+    reusedEmail.setTimezone("UTC");
+    reusedEmail.setAccountStatus(AccountStatus.ACTIVE);
+    testUserIds.add(users.saveAndFlush(reusedEmail).getId());
+  }
+
+  @Test
+  void concurrentRegistrationAndAbandonedCleanupKeepAtMostOneAccount() throws Exception {
+    User abandoned = createUser("concurrent-reclaim");
+    verificationService.sendInitial(abandoned.getId(), uniqueIp());
+    ageRegistration(abandoned);
+    String email = abandoned.getEmail();
+    CountDownLatch start = new CountDownLatch(1);
+
+    try (var executor = Executors.newFixedThreadPool(2)) {
+      Future<?> cleanup =
+          executor.submit(
+              () -> {
+                start.await();
+                verificationService.cleanupExpiredCodesAndAbandonedRegistrations();
+                return null;
+              });
+      Future<UUID> registration =
+          executor.submit(
+              () -> {
+                start.await();
+                try {
+                  return authService
+                      .register(
+                          new RegisterRequest(
+                              "Recovered Registration", email, "StrongPassword123!"),
+                          uniqueIp())
+                      .userId();
+                } catch (DuplicateResourceException exception) {
+                  return null;
+                }
+              });
+      start.countDown();
+      cleanup.get();
+      UUID registeredUserId = registration.get();
+      assertThat(
+              jdbc.queryForObject(
+                  "SELECT COUNT(*) FROM users WHERE LOWER(email) = LOWER(?)", Integer.class, email))
+          .isLessThanOrEqualTo(1);
+      if (registeredUserId != null) {
+        assertThat(users.findByEmailIgnoreCase(email).orElseThrow().getId())
+            .isEqualTo(registeredUserId);
+        testUserIds.add(registeredUserId);
+      }
+    }
+  }
+
+  @Test
+  void disabledAndDeletedAccountsCannotRecoverOrBeReclaimed() {
+    for (AccountStatus status : List.of(AccountStatus.DISABLED, AccountStatus.DELETED)) {
+      User user = createUser(status.name().toLowerCase() + "-pending");
+      verificationService.sendInitial(user.getId(), uniqueIp());
+      String originalPasswordHash = user.getPasswordHash();
+      user.setAccountStatus(status);
+      users.saveAndFlush(user);
+      jdbc.update(
+          """
+          UPDATE email_verification
+          SET issued_at = NOW() - INTERVAL '61 seconds',
+              expires_at = NOW() + INTERVAL '10 minutes'
+          WHERE user_id = ?
+          """,
+          user.getId());
+
+      verificationService.requestRecovery(user.getEmail(), uniqueIp());
+      assertThatThrownBy(
+              () ->
+                  verificationService.completeRecovery(
+                      user.getEmail(), latestCode.get(), "RecoveredPassword123!", uniqueIp()))
+          .isInstanceOf(EmailVerificationInvalidCodeException.class);
+      verify(mailer)
+          .sendVerificationCode(
+              org.mockito.ArgumentMatchers.eq(user.getEmail()),
+              org.mockito.ArgumentMatchers.anyString());
+
+      ageRegistration(user);
+
+      verificationService.reclaimExpiredForEmail(user.getEmail());
+      verificationService.cleanupExpiredCodesAndAbandonedRegistrations();
+
+      User unchanged = users.findById(user.getId()).orElseThrow();
+      assertThat(unchanged.getAccountStatus()).isEqualTo(status);
+      assertThat(unchanged.getEmailVerifiedAt()).isNull();
+      assertThat(unchanged.getPasswordHash()).isEqualTo(originalPasswordHash);
+      assertThat(
+              jdbc.queryForObject(
+                  "SELECT COUNT(*) FROM email_verification WHERE user_id = ?",
+                  Integer.class,
+                  user.getId()))
+          .isEqualTo(1);
+    }
   }
 
   private User createUser(String label) {

@@ -2,6 +2,7 @@ package com.dirtyduty.app.service;
 
 import com.dirtyduty.app.dto.auth.EmailVerificationStatusResponse;
 import com.dirtyduty.app.entity.User;
+import com.dirtyduty.app.entity.enums.AccountStatus;
 import com.dirtyduty.app.exception.DuplicateResourceException;
 import com.dirtyduty.app.exception.EmailVerificationInvalidCodeException;
 import com.dirtyduty.app.exception.EmailVerificationRateLimitException;
@@ -233,8 +234,7 @@ public class EmailVerificationService {
     }
   }
 
-  public User completeRecovery(
-      String email, String code, String newPassword, String displayName, String sourceIp) {
+  public User completeRecovery(String email, String code, String newPassword, String sourceIp) {
     if (!enabled) throw new EmailVerificationInvalidCodeException();
     String normalizedEmail = normalizeEmail(email);
     enforceAttemptLimits(normalizedEmail, sourceIp);
@@ -257,7 +257,6 @@ public class EmailVerificationService {
               }
               current.setEmailVerifiedAt(OffsetDateTime.now(ZoneOffset.UTC));
               current.setPasswordHash(passwordEncoder.encode(newPassword));
-              current.setDisplayName(displayName.trim());
               User saved = users.saveAndFlush(current);
               jdbc.update("DELETE FROM email_verification WHERE user_id = ?", current.getId());
               invalidateSessions(normalizedEmail);
@@ -278,6 +277,7 @@ public class EmailVerificationService {
           acquireUserLock(existing.getId());
           User user = users.findByIdForUpdate(existing.getId()).orElse(null);
           if (user != null
+              && user.getAccountStatus() == AccountStatus.ACTIVE
               && user.getEmailVerifiedAt() == null
               && hasReclaimableRegistration(user)
               && !hasAnyBusinessData(user.getId())
@@ -299,6 +299,7 @@ public class EmailVerificationService {
               USING email_verification v
               WHERE v.user_id = u.id
                 AND v.reclaimable = TRUE
+                AND u.account_status = 'ACTIVE'
                 AND u.email_verified_at IS NULL
                 AND u.created_at < NOW() - INTERVAL '30 days'
                 AND NOT EXISTS (SELECT 1 FROM household_memberships m WHERE m.user_id = u.id)
@@ -533,6 +534,7 @@ public class EmailVerificationService {
 
   private boolean isEligibleForMailboxRecovery(User user) {
     return user != null
+        && user.getAccountStatus() == AccountStatus.ACTIVE
         && hasReclaimableRegistration(user)
         && !hasAnyBusinessData(user.getId())
         && !user.getCreatedAt().isBefore(OffsetDateTime.now(ZoneOffset.UTC).minus(RECOVERY_WINDOW));

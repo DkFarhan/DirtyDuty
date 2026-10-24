@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   requestPasswordReset: vi.fn(),
+  completeEmailVerificationRecovery: vi.fn(),
 }))
 
 vi.mock("@/lib/chore-sync/store", () => ({
@@ -13,7 +14,10 @@ vi.mock("@/lib/chore-sync/store", () => ({
 }))
 
 vi.mock("@/lib/auth/auth-context", () => ({
-  useAuth: () => ({ requestPasswordReset: mocks.requestPasswordReset }),
+  useAuth: () => ({
+    requestPasswordReset: mocks.requestPasswordReset,
+    completeEmailVerificationRecovery: mocks.completeEmailVerificationRecovery,
+  }),
 }))
 
 import { ForgotPasswordScreen } from "./forgot-password-screen"
@@ -22,6 +26,7 @@ describe("forgot password screen", () => {
   beforeEach(() => {
     mocks.navigate.mockReset()
     mocks.requestPasswordReset.mockReset()
+    mocks.completeEmailVerificationRecovery.mockReset()
   })
 
   afterEach(() => {
@@ -37,15 +42,63 @@ describe("forgot password screen", () => {
 
     expect(await screen.findByRole("heading", { name: "Check your email" })).toBeTruthy()
     expect(screen.getByRole("status").textContent).toBe(
-      "If an account exists for this email, we'll send you a password reset link.",
+      "If your account is eligible for recovery, we'll send instructions to your email.",
     )
     expect(
       screen.getByText(
-        "Check your inbox and spam folder. The reset link expires after 30 minutes.",
+        "Check your inbox and spam folder. Password reset links expire after 30 minutes; recovery codes expire after 10 minutes.",
       ),
     ).toBeTruthy()
     expect(screen.queryByLabelText("Email")).toBeNull()
     expect(mocks.requestPasswordReset).toHaveBeenCalledWith("person@example.com")
+  })
+
+  it("reveals the pending-registration code form and completes recovery", async () => {
+    mocks.requestPasswordReset.mockResolvedValueOnce(undefined)
+    mocks.completeEmailVerificationRecovery.mockResolvedValueOnce({})
+    render(<ForgotPasswordScreen initialEmail="pending@example.com" />)
+    fireEvent.click(screen.getByRole("button", { name: "Send reset instructions" }))
+    await screen.findByRole("heading", { name: "Check your email" })
+    fireEvent.click(screen.getByRole("button", { name: "Received a recovery code?" }))
+    fireEvent.change(screen.getByLabelText("Six-digit recovery code"), {
+      target: { value: "123456" },
+    })
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "RecoveredPassword123!" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Verify code and continue" }))
+
+    await waitFor(() =>
+      expect(mocks.completeEmailVerificationRecovery).toHaveBeenCalledWith({
+        email: "pending@example.com",
+        code: "123456",
+        newPassword: "RecoveredPassword123!",
+      }),
+    )
+    expect(mocks.navigate).toHaveBeenCalledWith("welcome")
+  })
+
+  it("keeps the recovery code form available after a completion failure for retry", async () => {
+    mocks.requestPasswordReset.mockResolvedValueOnce(undefined)
+    mocks.completeEmailVerificationRecovery
+      .mockRejectedValueOnce(new TypeError("offline"))
+      .mockResolvedValueOnce({})
+    render(<ForgotPasswordScreen initialEmail="pending@example.com" />)
+    fireEvent.click(screen.getByRole("button", { name: "Send reset instructions" }))
+    await screen.findByRole("heading", { name: "Check your email" })
+    fireEvent.click(screen.getByRole("button", { name: "Received a recovery code?" }))
+    fireEvent.change(screen.getByLabelText("Six-digit recovery code"), {
+      target: { value: "123456" },
+    })
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "RecoveredPassword123!" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Verify code and continue" }))
+    expect(await screen.findByRole("alert")).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("button", { name: "Verify code and continue" }))
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith("welcome"))
+    expect(mocks.completeEmailVerificationRecovery).toHaveBeenCalledTimes(2)
   })
 
   it("requires the full cooldown before enabling resend, then starts a new cooldown", async () => {

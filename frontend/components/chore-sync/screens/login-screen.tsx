@@ -13,15 +13,7 @@ const inputClass =
 
 export function LoginScreen() {
   const { navigate } = useChoreSync()
-  const {
-    login,
-    authNotice,
-    dismissAuthNotice,
-    features,
-    completeGoogleLink,
-    requestEmailVerificationRecovery,
-    completeEmailVerificationRecovery,
-  } = useAuth()
+  const { login, authNotice, dismissAuthNotice, features, completeGoogleLink } = useAuth()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
@@ -29,15 +21,13 @@ export function LoginScreen() {
   const [googleLinkRequired, setGoogleLinkRequired] = useState(false)
   const [oauthMessage, setOauthMessage] = useState("")
   const [linkBusy, setLinkBusy] = useState(false)
-  const [recoveringRegistration, setRecoveringRegistration] = useState(false)
-  const [recoveryRequested, setRecoveryRequested] = useState(false)
-  const [recoveryCode, setRecoveryCode] = useState("")
-  const [recoveryDisplayName, setRecoveryDisplayName] = useState("")
-  const [recoveryPassword, setRecoveryPassword] = useState("")
-  const [recoveryMessage, setRecoveryMessage] = useState("")
-  const [recoveryBusy, setRecoveryBusy] = useState(false)
 
   useEffect(() => {
+    const prefillEmail = window.sessionStorage.getItem("auth-prefill-email")
+    if (prefillEmail) {
+      setEmail(prefillEmail)
+      window.sessionStorage.removeItem("auth-prefill-email")
+    }
     const params = new URLSearchParams(window.location.search)
     const authResult = params.get("auth")
     if (authResult === "google-link-required") {
@@ -93,164 +83,6 @@ export function LoginScreen() {
     } finally {
       setIsSubmitting(false)
     }
-  }
-
-  const requestRegistrationRecovery = async () => {
-    if (recoveryBusy || !email.trim()) return
-    setRecoveryBusy(true)
-    setError("")
-    setRecoveryMessage("")
-    try {
-      await requestEmailVerificationRecovery(email.trim())
-      setRecoveryRequested(true)
-      setRecoveryMessage(
-        "If an eligible account exists for this email, a recovery code will be sent.",
-      )
-    } catch (cause) {
-      setError(
-        cause instanceof ApiError
-          ? cause.message
-          : "Unable to request account recovery. Please try again.",
-      )
-    } finally {
-      setRecoveryBusy(false)
-    }
-  }
-
-  const completeRegistrationRecovery = async () => {
-    if (
-      recoveryBusy ||
-      recoveryCode.length !== 6 ||
-      recoveryPassword.length < 12 ||
-      recoveryDisplayName.trim().length < 2
-    ) {
-      return
-    }
-    setRecoveryBusy(true)
-    setError("")
-    try {
-      await completeEmailVerificationRecovery({
-        email: email.trim(),
-        code: recoveryCode,
-        newPassword: recoveryPassword,
-        displayName: recoveryDisplayName.trim(),
-      })
-      navigate("welcome")
-    } catch (cause) {
-      setError(
-        cause instanceof ApiError
-          ? cause.message
-          : "Unable to recover this account. Please try again.",
-      )
-    } finally {
-      setRecoveryBusy(false)
-    }
-  }
-
-  if (recoveringRegistration) {
-    return (
-      <main className="flex min-h-screen flex-col bg-white px-6 pb-10 pt-16">
-        <button
-          className="mb-8 min-h-10 w-fit text-sm font-medium text-slate-500"
-          onClick={() => {
-            setRecoveringRegistration(false)
-            setRecoveryRequested(false)
-            setError("")
-          }}
-          type="button"
-        >
-          Back to sign in
-        </button>
-        <ProductLogo className="mb-6 h-auto w-44 max-w-full" />
-        <h1 className="mb-2 text-2xl font-black text-slate-900">Recover pending signup</h1>
-        <p className="mb-6 text-sm leading-relaxed text-slate-600">
-          Prove you own the email address to finish a recent signup that has not created household
-          data.
-        </p>
-        {!recoveryRequested ? (
-          <>
-            <label className="mb-1.5 text-sm font-semibold text-slate-700" htmlFor="recovery-email">
-              Email
-            </label>
-            <input
-              autoComplete="email"
-              className={inputClass}
-              id="recovery-email"
-              onChange={(event) => setEmail(event.target.value)}
-              type="email"
-              value={email}
-            />
-            <button
-              className="mt-5 w-full rounded-xl bg-teal-600 py-4 text-sm font-bold text-white disabled:opacity-60"
-              disabled={recoveryBusy || !email.trim()}
-              onClick={() => void requestRegistrationRecovery()}
-              type="button"
-            >
-              {recoveryBusy ? "Requesting code…" : "Send recovery code"}
-            </button>
-          </>
-        ) : (
-          <div className="flex flex-col gap-4">
-            <p className="rounded-xl border border-teal-100 bg-teal-50 px-4 py-3 text-sm text-teal-800">
-              {recoveryMessage} Check your inbox and spam folder.
-            </p>
-            <label className="text-sm font-semibold text-slate-700" htmlFor="recovery-code">
-              Six-digit code
-            </label>
-            <input
-              autoComplete="one-time-code"
-              className={inputClass}
-              id="recovery-code"
-              inputMode="numeric"
-              maxLength={6}
-              onChange={(event) =>
-                setRecoveryCode(event.target.value.replace(/\D/g, "").slice(0, 6))
-              }
-              value={recoveryCode}
-            />
-            <label className="text-sm font-semibold text-slate-700" htmlFor="recovery-name">
-              Full name
-            </label>
-            <input
-              autoComplete="name"
-              className={inputClass}
-              id="recovery-name"
-              onChange={(event) => setRecoveryDisplayName(event.target.value)}
-              value={recoveryDisplayName}
-            />
-            <label className="text-sm font-semibold text-slate-700" htmlFor="recovery-password">
-              New password
-            </label>
-            <PasswordInput
-              autoComplete="new-password"
-              className={inputClass}
-              id="recovery-password"
-              name="recovery-password"
-              onChange={(event) => setRecoveryPassword(event.target.value)}
-              value={recoveryPassword}
-            />
-            <button
-              className="w-full rounded-xl bg-teal-600 py-4 text-sm font-bold text-white disabled:opacity-60"
-              disabled={
-                recoveryBusy ||
-                recoveryCode.length !== 6 ||
-                recoveryDisplayName.trim().length < 2 ||
-                recoveryPassword.length < 12
-              }
-              onClick={() => void completeRegistrationRecovery()}
-              type="button"
-            >
-              {recoveryBusy ? "Recovering account…" : "Verify and recover account"}
-            </button>
-          </div>
-        )}
-        {error && (
-          <p className="mt-4 text-sm text-rose-600" role="alert">
-            {error}
-          </p>
-        )}
-      </main>
-    )
   }
 
   return (
@@ -320,26 +152,13 @@ export function LoginScreen() {
             className={inputClass}
           />
         </div>
-        {features.passwordReset && (
+        {(features.passwordReset || features.emailVerification) && (
           <button
             className="-mt-2 min-h-10 self-end text-right text-sm font-semibold text-teal-600"
             onClick={() => navigate("forgot-password")}
             type="button"
           >
             Forgot password?
-          </button>
-        )}
-        {features.emailVerification && (
-          <button
-            className="-mt-3 min-h-10 self-end text-right text-sm font-semibold text-teal-600"
-            onClick={() => {
-              setRecoveringRegistration(true)
-              setRecoveryRequested(false)
-              setError("")
-            }}
-            type="button"
-          >
-            Recover a pending signup
           </button>
         )}
       </div>
