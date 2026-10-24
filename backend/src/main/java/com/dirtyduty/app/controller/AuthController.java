@@ -15,10 +15,12 @@ import com.dirtyduty.app.dto.auth.PasswordResetRequest;
 import com.dirtyduty.app.dto.auth.RegisterRequest;
 import com.dirtyduty.app.dto.auth.RegisterResponse;
 import com.dirtyduty.app.entity.User;
+import com.dirtyduty.app.exception.PasswordResetSamePasswordException;
 import com.dirtyduty.app.repository.UserRepository;
 import com.dirtyduty.app.service.AuthService;
 import com.dirtyduty.app.service.GoogleIdentityService;
 import com.dirtyduty.app.service.LegalAcceptanceService;
+import com.dirtyduty.app.service.PasswordLoginProtectionService;
 import com.dirtyduty.app.service.PasswordResetService;
 import com.dirtyduty.app.service.RecentReauthenticationService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -62,6 +64,7 @@ public class AuthController {
   private final AuthFeatureConfiguration authFeatures;
   private final RecentReauthenticationService recentReauthenticationService;
   private final LegalAcceptanceService legalAcceptanceService;
+  private final PasswordLoginProtectionService loginProtection;
 
   public AuthController(
       AuthService authService,
@@ -73,7 +76,8 @@ public class AuthController {
       PasswordResetService passwordResetService,
       AuthFeatureConfiguration authFeatures,
       RecentReauthenticationService recentReauthenticationService,
-      LegalAcceptanceService legalAcceptanceService) {
+      LegalAcceptanceService legalAcceptanceService,
+      PasswordLoginProtectionService loginProtection) {
     this.authService = authService;
     this.authenticationManager = authenticationManager;
     this.securityContextRepository = securityContextRepository;
@@ -84,6 +88,7 @@ public class AuthController {
     this.authFeatures = authFeatures;
     this.recentReauthenticationService = recentReauthenticationService;
     this.legalAcceptanceService = legalAcceptanceService;
+    this.loginProtection = loginProtection;
   }
 
   @PostMapping("/register")
@@ -119,9 +124,14 @@ public class AuthController {
   @PostMapping("/password-reset/confirm")
   public ResponseEntity<java.util.Map<String, String>> confirmPasswordReset(
       @Valid @RequestBody PasswordResetConfirmRequest request, HttpServletRequest httpRequest) {
-    boolean changed =
-        passwordResetService.confirm(
-            request.token(), request.newPassword(), httpRequest.getRemoteAddr());
+    boolean changed;
+    try {
+      changed =
+          passwordResetService.confirm(
+              request.token(), request.newPassword(), httpRequest.getRemoteAddr());
+    } catch (PasswordResetSamePasswordException exception) {
+      return ResponseEntity.badRequest().body(java.util.Map.of("message", exception.getMessage()));
+    }
     if (!changed) {
       return ResponseEntity.badRequest()
           .body(java.util.Map.of("message", "This reset link is invalid or expired."));
@@ -149,8 +159,7 @@ public class AuthController {
 
     try {
       Authentication authentication =
-          authenticationManager.authenticate(
-              new UsernamePasswordAuthenticationToken(verifiedEmail, request.password()));
+          authenticatePassword(verifiedEmail, request.password(), httpRequest.getRemoteAddr());
       googleIdentityService.linkToPasswordAccount(providerSubject, verifiedEmail);
       sessionAuthenticationStrategy.onAuthentication(authentication, httpRequest, httpResponse);
       session.removeAttribute(GoogleIdentityService.PENDING_SUBJECT);
@@ -198,8 +207,7 @@ public class AuthController {
       HttpServletResponse httpResponse) {
     String normalizedEmail = request.email().trim().toLowerCase(Locale.ROOT);
     Authentication authentication =
-        authenticationManager.authenticate(
-            new UsernamePasswordAuthenticationToken(normalizedEmail, request.password()));
+        authenticatePassword(normalizedEmail, request.password(), httpRequest.getRemoteAddr());
 
     sessionAuthenticationStrategy.onAuthentication(authentication, httpRequest, httpResponse);
     SecurityContext context = SecurityContextHolder.createEmptyContext();
@@ -213,6 +221,33 @@ public class AuthController {
             .orElseThrow(() -> new IllegalStateException("Authenticated user is unavailable"));
     return loginResponse(user);
   }
+
+  private Authentication authenticatePassword(String email, String password, String sourceIp) {
+    PasswordAuthenticationResult result =
+        loginProtection.withAdmissionLock(
+            email,
+            sourceIp,
+            () -> {
+              loginProtection.assertAllowed(email, sourceIp);
+              try {
+                Authentication authentication =
+                    authenticationManager.authenticate(
+                        new UsernamePasswordAuthenticationToken(email, password));
+                loginProtection.clearAccountFailures(email);
+                return new PasswordAuthenticationResult(authentication, null);
+              } catch (BadCredentialsException exception) {
+                loginProtection.recordFailure(email, sourceIp);
+                return new PasswordAuthenticationResult(null, exception);
+              }
+            });
+    if (result.failure() != null) {
+      throw result.failure();
+    }
+    return result.authentication();
+  }
+
+  private record PasswordAuthenticationResult(
+      Authentication authentication, BadCredentialsException failure) {}
 
   @GetMapping("/me")
   public LoginResponse me(Authentication authentication) {

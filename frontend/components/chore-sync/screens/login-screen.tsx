@@ -53,7 +53,11 @@ export function LoginScreen() {
       navigate("welcome")
     } catch (cause) {
       setError(
-        cause instanceof ApiError ? cause.message : "Unable to link Google. Please try again.",
+        cause instanceof ApiError && cause.status === 429
+          ? "Too many sign-in attempts. Please wait and try again, or reset your password."
+          : cause instanceof ApiError
+            ? cause.message
+            : "Unable to link Google. Please try again.",
       )
     } finally {
       setLinkBusy(false)

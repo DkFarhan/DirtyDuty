@@ -15,6 +15,9 @@ spring:
       initialize-schema: never
 
 app:
+  auth:
+    password-reset:
+      rate-limit-hmac-secret: ${AUTH_RATE_LIMIT_HMAC_SECRET:local-ci-only-hmac-key-not-for-production}
   frontend:
     origins: ${FRONTEND_ORIGINS:http://localhost:3000}
   households:

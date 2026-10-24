@@ -48,7 +48,7 @@ app:
     password-reset:
       enabled: ${PASSWORD_RESET_ENABLED:false}
       token-ttl: ${PASSWORD_RESET_TTL:30m}
-      rate-limit-hmac-secret: ${AUTH_RATE_LIMIT_HMAC_SECRET:}
+      rate-limit-hmac-secret: ${AUTH_RATE_LIMIT_HMAC_SECRET:local-development-only-hmac-key-change-before-production}
       request-email-limit: ${PASSWORD_RESET_EMAIL_LIMIT:3}
       request-ip-limit: ${PASSWORD_RESET_IP_LIMIT:5}
       confirm-ip-limit: ${PASSWORD_RESET_CONFIRM_IP_LIMIT:10}

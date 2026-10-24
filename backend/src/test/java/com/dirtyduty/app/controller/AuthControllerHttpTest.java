@@ -17,12 +17,14 @@ import com.dirtyduty.app.repository.UserRepository;
 import com.dirtyduty.app.service.AuthService;
 import com.dirtyduty.app.service.GoogleIdentityService;
 import com.dirtyduty.app.service.LegalAcceptanceService;
+import com.dirtyduty.app.service.PasswordLoginProtectionService;
 import com.dirtyduty.app.service.PasswordResetService;
 import com.dirtyduty.app.service.RecentReauthenticationService;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -32,6 +34,7 @@ import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.InsufficientAuthenticationException;
+import org.springframework.security.authentication.InternalAuthenticationServiceException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
@@ -47,6 +50,7 @@ class AuthControllerHttpTest {
   private AuthFeatureConfiguration authFeatures;
   private AuthenticationManager authenticationManager;
   private GoogleIdentityService googleIdentityService;
+  private PasswordLoginProtectionService loginProtection;
   private SessionAuthenticationStrategy sessionAuthenticationStrategy;
   private MockMvc mockMvc;
 
@@ -61,6 +65,13 @@ class AuthControllerHttpTest {
     authFeatures = org.mockito.Mockito.mock(AuthFeatureConfiguration.class);
     authenticationManager = org.mockito.Mockito.mock(AuthenticationManager.class);
     googleIdentityService = org.mockito.Mockito.mock(GoogleIdentityService.class);
+    loginProtection = org.mockito.Mockito.mock(PasswordLoginProtectionService.class);
+    org.mockito.Mockito.doAnswer(invocation -> ((Supplier<?>) invocation.getArgument(2)).get())
+        .when(loginProtection)
+        .withAdmissionLock(
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.<Supplier<?>>any());
     sessionAuthenticationStrategy = org.mockito.Mockito.mock(SessionAuthenticationStrategy.class);
     AuthController controller =
         new AuthController(
@@ -73,7 +84,8 @@ class AuthControllerHttpTest {
             org.mockito.Mockito.mock(PasswordResetService.class),
             authFeatures,
             org.mockito.Mockito.mock(RecentReauthenticationService.class),
-            org.mockito.Mockito.mock(LegalAcceptanceService.class));
+            org.mockito.Mockito.mock(LegalAcceptanceService.class),
+            loginProtection);
     LocalValidatorFactoryBean validator = new LocalValidatorFactoryBean();
     validator.afterPropertiesSet();
     mockMvc =
@@ -253,7 +265,62 @@ class AuthControllerHttpTest {
 
     org.mockito.Mockito.verify(authenticationManager)
         .authenticate(org.mockito.ArgumentMatchers.any(Authentication.class));
+    org.mockito.Mockito.verify(loginProtection)
+        .recordFailure(
+            org.mockito.ArgumentMatchers.eq("person@example.com"),
+            org.mockito.ArgumentMatchers.any(String.class));
     org.mockito.Mockito.verifyNoInteractions(googleIdentityService);
+  }
+
+  @Test
+  void authenticationProviderFailureDoesNotRecordBadPasswordAndRemainsGeneric() throws Exception {
+    org.mockito.Mockito.when(
+            authenticationManager.authenticate(
+                org.mockito.ArgumentMatchers.any(Authentication.class)))
+        .thenThrow(new InternalAuthenticationServiceException("database unavailable"));
+
+    mockMvc
+        .perform(
+            post("/api/auth/login")
+                .contentType(APPLICATION_JSON)
+                .content(
+                    """
+                        {"email":"person@example.com","password":"WrongPassword123!"}
+                        """))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.message").value("Invalid email or password"))
+        .andExpect(
+            content()
+                .string(
+                    org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("database unavailable"))));
+
+    org.mockito.Mockito.verify(loginProtection).assertAllowed("person@example.com", "127.0.0.1");
+    org.mockito.Mockito.verify(loginProtection, org.mockito.Mockito.never())
+        .recordFailure(
+            org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString());
+  }
+
+  @Test
+  void temporarilyThrottledGoogleLinkUsesGenericThrottleResponseWithoutPasswordAuthentication()
+      throws Exception {
+    org.mockito.Mockito.doThrow(
+            new com.dirtyduty.app.exception.LoginTemporarilyThrottledException(
+                "Too many sign-in attempts. Please wait and try again, or reset your password."))
+        .when(loginProtection)
+        .assertAllowed(
+            org.mockito.ArgumentMatchers.eq("person@example.com"),
+            org.mockito.ArgumentMatchers.any(String.class));
+
+    mockMvc
+        .perform(
+            post("/api/auth/google/link")
+                .session(pendingGoogleLinkSession(Instant.now().toEpochMilli()))
+                .contentType(APPLICATION_JSON)
+                .content("{\"password\":\"WrongPassword123!\"}"))
+        .andExpect(status().isTooManyRequests());
+
+    org.mockito.Mockito.verifyNoInteractions(authenticationManager, googleIdentityService);
   }
 
   @Test

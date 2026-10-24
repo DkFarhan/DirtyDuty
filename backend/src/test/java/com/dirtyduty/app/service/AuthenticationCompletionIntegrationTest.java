@@ -60,6 +60,8 @@ class AuthenticationCompletionIntegrationTest {
 
   @Autowired private PasswordResetService passwordResetService;
 
+  @Autowired private PasswordLoginProtectionService loginProtection;
+
   @Autowired private GoogleIdentityService googleIdentityService;
 
   @Autowired private UserRepository userRepository;
@@ -131,6 +133,12 @@ class AuthenticationCompletionIntegrationTest {
     String sourceIp = uniqueTestIp();
     assertThat(passwordResetService.confirm(token, "NewStrongPassword123!", sourceIp)).isTrue();
     assertThat(
+            jdbc.queryForObject(
+                "SELECT COUNT(*) FROM auth_login_failure WHERE scope = 'ACCOUNT' AND subject_hash = ?",
+                Integer.class,
+                hmac("ACCOUNT", user.getEmail())))
+        .isZero();
+    assertThat(
             passwordEncoder.matches(
                 "NewStrongPassword123!",
                 userRepository.findById(user.getId()).orElseThrow().getPasswordHash()))
@@ -163,6 +171,55 @@ class AuthenticationCompletionIntegrationTest {
   }
 
   @Test
+  void resetRejectsCurrentPasswordWithoutConsumingTokenAndAllowsDifferentPasswordRetry() {
+    User user = createUser("same-password");
+    String token = issueResetToken(user);
+
+    assertThatThrownBy(
+            () -> passwordResetService.confirm(token, "OldStrongPassword123!", uniqueTestIp()))
+        .isInstanceOf(com.dirtyduty.app.exception.PasswordResetSamePasswordException.class)
+        .hasMessage("Your new password must be different from your current password.");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT used_at FROM password_reset_token WHERE user_id = ?",
+                java.time.OffsetDateTime.class,
+                user.getId()))
+        .isNull();
+
+    assertThat(passwordResetService.confirm(token, "NewStrongPassword123!", uniqueTestIp()))
+        .isTrue();
+    assertThat(
+            passwordEncoder.matches(
+                "NewStrongPassword123!",
+                userRepository.findById(user.getId()).orElseThrow().getPasswordHash()))
+        .isTrue();
+  }
+
+  @Test
+  void resetEndpointReturnsSafeDistinctSamePasswordValidationAndLeavesTokenUsable()
+      throws Exception {
+    User user = createUser("same-password-http");
+    String token = issueResetToken(user);
+    MvcResult csrf = csrf(null);
+    mockMvc
+        .perform(
+            post("/api/auth/password-reset/confirm")
+                .cookie(csrf.getResponse().getCookie("SESSION"))
+                .header("X-CSRF-TOKEN", readCsrf(csrf).token())
+                .contentType(APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        java.util.Map.of("token", token, "newPassword", "OldStrongPassword123!"))))
+        .andExpect(status().isBadRequest())
+        .andExpect(
+            org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.message")
+                .value("Your new password must be different from your current password."));
+
+    assertThat(passwordResetService.confirm(token, "NewStrongPassword123!", uniqueTestIp()))
+        .isTrue();
+  }
+
+  @Test
   void resetRequestsHaveGenericResponsesAndPersistentEmailRateLimits() {
     User user = createUser("limited");
     String generic = passwordResetService.request("missing@example.com", uniqueTestIp());
@@ -173,6 +230,19 @@ class AuthenticationCompletionIntegrationTest {
     assertThat(passwordResetService.request(user.getEmail(), sourceIp)).isEqualTo(generic);
 
     verify(mailer, org.mockito.Mockito.timeout(2000).times(3))
+        .sendReset(eq(user.getEmail()), any(String.class), any(Duration.class));
+  }
+
+  @Test
+  void passwordRecoveryRemainsAvailableDuringLoginCooldown() {
+    User user = createUser("login-cooldown-recovery");
+    String sourceIp = uniqueTestIp();
+    for (int attempt = 0; attempt < 5; attempt++) {
+      loginProtection.recordFailure(user.getEmail(), sourceIp);
+    }
+    assertThat(passwordResetService.request(user.getEmail(), sourceIp))
+        .isEqualTo(passwordResetService.genericResponse());
+    verify(mailer, org.mockito.Mockito.timeout(2000))
         .sendReset(eq(user.getEmail()), any(String.class), any(Duration.class));
   }
 
@@ -403,5 +473,19 @@ class AuthenticationCompletionIntegrationTest {
     int first = UUID.randomUUID().hashCode() & 0xff;
     int second = UUID.randomUUID().hashCode() & 0xff;
     return "198.51." + first + "." + second;
+  }
+
+  private String hmac(String scope, String identifier) {
+    try {
+      var mac = javax.crypto.Mac.getInstance("HmacSHA256");
+      mac.init(
+          new javax.crypto.spec.SecretKeySpec(
+              "local-test-only-hmac-secret-minimum-32".getBytes(StandardCharsets.UTF_8),
+              "HmacSHA256"));
+      return HexFormat.of()
+          .formatHex(mac.doFinal((scope + ":" + identifier).getBytes(StandardCharsets.UTF_8)));
+    } catch (java.security.GeneralSecurityException exception) {
+      throw new IllegalStateException(exception);
+    }
   }
 }
