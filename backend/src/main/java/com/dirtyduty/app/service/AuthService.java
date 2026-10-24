@@ -68,11 +68,13 @@ public class AuthService {
     String normalizedDisplayName = request.displayName().trim();
 
     boolean emailHourlyAllowed =
-        rateLimiter.allow("REGISTER_EMAIL", normalizedEmail, 5, Duration.ofHours(1));
+        rateLimiter.allow("REGISTER_EMAIL_HOURLY", normalizedEmail, 5, Duration.ofHours(1));
     boolean emailDailyAllowed =
-        rateLimiter.allow("REGISTER_EMAIL", normalizedEmail, 10, Duration.ofDays(1));
-    boolean ipHourlyAllowed = rateLimiter.allow("REGISTER_IP", sourceIp, 60, Duration.ofHours(1));
-    boolean ipDailyAllowed = rateLimiter.allow("REGISTER_IP", sourceIp, 200, Duration.ofDays(1));
+        rateLimiter.allow("REGISTER_EMAIL_DAILY", normalizedEmail, 10, Duration.ofDays(1));
+    boolean ipHourlyAllowed =
+        rateLimiter.allow("REGISTER_IP_HOURLY", sourceIp, 60, Duration.ofHours(1));
+    boolean ipDailyAllowed =
+        rateLimiter.allow("REGISTER_IP_DAILY", sourceIp, 200, Duration.ofDays(1));
     if (!emailHourlyAllowed || !emailDailyAllowed || !ipHourlyAllowed || !ipDailyAllowed) {
       throw new EmailVerificationRateLimitException();
     }

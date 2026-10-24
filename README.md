@@ -140,6 +140,11 @@ recovery will not transfer or reclaim an account that may own household data;
 those cases require a controlled support process. Correcting a mistyped
 registration email additionally requires the current password and is limited
 to a recent, data-free pending registration. It invalidates existing sessions.
+Password-reset email is also withheld from accounts that remain unverified
+while email verification is enabled. Legacy unverified accounts with household
+or other business data therefore require support-led ownership verification;
+mailbox-only recovery or password reset must not transfer access to those
+accounts.
 The V14 migration adds verification-state and pseudonymous rate-event tables;
 it does not rewrite or delete existing user or household data.
 

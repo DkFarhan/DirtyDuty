@@ -62,6 +62,14 @@ class AuthServiceTest {
 
     assertThat(response.emailVerified()).isFalse();
     assertThat(capturedUser.getValue().getEmailVerifiedAt()).isNull();
+    org.mockito.Mockito.verify(rateLimiter)
+        .allow("REGISTER_EMAIL_HOURLY", "new@example.com", 5, java.time.Duration.ofHours(1));
+    org.mockito.Mockito.verify(rateLimiter)
+        .allow("REGISTER_EMAIL_DAILY", "new@example.com", 10, java.time.Duration.ofDays(1));
+    org.mockito.Mockito.verify(rateLimiter)
+        .allow("REGISTER_IP_HOURLY", "198.51.100.22", 60, java.time.Duration.ofHours(1));
+    org.mockito.Mockito.verify(rateLimiter)
+        .allow("REGISTER_IP_DAILY", "198.51.100.22", 200, java.time.Duration.ofDays(1));
   }
 
   @Test

@@ -209,6 +209,36 @@ class EmailVerificationIntegrationTest {
   }
 
   @Test
+  void correctedEmailInvalidatesOldCodeAndPreservesRecoveryThroughResend() {
+    User user = createUser("corrected-recovery");
+    String oldEmail = user.getEmail();
+    verificationService.sendInitial(user.getId(), uniqueIp());
+    String oldCode = latestCode.get();
+    String newEmail = "corrected-" + UUID.randomUUID() + "@example.com";
+
+    assertThat(verificationService.correctPendingEmail(oldEmail, newEmail)).isEqualTo(newEmail);
+    assertThat(verificationService.verify(newEmail, oldCode, uniqueIp())).isFalse();
+
+    assertThat(verificationService.status(newEmail).deliveryState()).isEqualTo("PENDING");
+    assertThat(verificationService.resend(newEmail, uniqueIp())).isEqualTo("SENT");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT reclaimable FROM email_verification WHERE user_id = ?",
+                Boolean.class,
+                user.getId()))
+        .isTrue();
+
+    jdbc.update(
+        "UPDATE email_verification SET issued_at = NOW() - INTERVAL '2 minutes' WHERE user_id = ?",
+        user.getId());
+    verificationService.requestRecovery(newEmail, uniqueIp());
+    verificationService.completeRecovery(
+        newEmail, latestCode.get(), "RecoveredPassword123!", "Recovered User", uniqueIp());
+
+    assertThat(users.findById(user.getId()).orElseThrow().getEmailVerifiedAt()).isNotNull();
+  }
+
+  @Test
   void concurrentOverLimitRecoveryRequestsDoNotAddRateEventRows() throws Exception {
     String email = "rate-" + UUID.randomUUID() + "@example.com";
     String ip = uniqueIp();

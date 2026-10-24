@@ -198,7 +198,20 @@ public class EmailVerificationService {
           }
           current.setEmail(normalizedEmail);
           users.saveAndFlush(current);
-          jdbc.update("DELETE FROM email_verification WHERE user_id = ?", current.getId());
+          jdbc.update(
+              """
+              UPDATE email_verification
+              SET email = ?,
+                  code_hash = ?,
+                  issued_at = NOW() - INTERVAL '61 seconds',
+                  expires_at = NOW(),
+                  attempt_count = 5,
+                  delivery_state = 'PENDING'
+              WHERE user_id = ?
+              """,
+              normalizedEmail,
+              codeHash(current.getId(), normalizedEmail, UUID.randomUUID().toString()),
+              current.getId());
           invalidateSessions(currentEmail);
           return normalizedEmail;
         });
