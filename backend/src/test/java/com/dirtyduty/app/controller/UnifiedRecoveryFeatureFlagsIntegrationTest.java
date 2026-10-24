@@ -59,7 +59,7 @@ class UnifiedRecoveryFeatureFlagsIntegrationTest {
   @Autowired private EmailVerificationService emailVerificationService;
   @Autowired private UserRepository userRepository;
   @Autowired private JdbcTemplate jdbc;
-  @Autowired private ObjectMapper objectMapper;
+  private final ObjectMapper objectMapper = new ObjectMapper();
 
   @MockitoBean private EmailVerificationMailer emailVerificationMailer;
   @MockitoBean private PasswordResetMailer passwordResetMailer;
