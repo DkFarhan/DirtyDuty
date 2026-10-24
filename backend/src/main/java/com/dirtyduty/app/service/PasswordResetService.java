@@ -147,6 +147,17 @@ public class PasswordResetService {
             .filter(found -> found.getAccountStatus() == AccountStatus.ACTIVE)
             .orElse(null);
     if (user == null) return false;
+    if (emailVerificationEnabled && user.getEmailVerifiedAt() == null) {
+      jdbc.update(
+          """
+          UPDATE password_reset_token
+          SET used_at = NOW()
+          WHERE token_hash = ? AND user_id = ? AND used_at IS NULL
+          """,
+          tokenHash(token),
+          userId);
+      return false;
+    }
 
     if (user.getPasswordHash() != null
         && passwordEncoder.matches(newPassword, user.getPasswordHash())) {

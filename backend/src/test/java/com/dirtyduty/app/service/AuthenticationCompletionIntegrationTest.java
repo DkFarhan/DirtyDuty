@@ -177,6 +177,26 @@ class AuthenticationCompletionIntegrationTest {
   }
 
   @Test
+  void previouslyIssuedResetTokenCannotBeRedeemedAfterAccountBecomesUnverified() {
+    User user = createUser("reset-unverified");
+    String token = issueResetToken(user);
+    String originalPasswordHash = user.getPasswordHash();
+    user.setEmailVerifiedAt(null);
+    userRepository.saveAndFlush(user);
+
+    assertThat(passwordResetService.confirm(token, "NewStrongPassword123!", uniqueTestIp()))
+        .isFalse();
+    assertThat(userRepository.findById(user.getId()).orElseThrow().getPasswordHash())
+        .isEqualTo(originalPasswordHash);
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT used_at FROM password_reset_token WHERE user_id = ?",
+                java.time.OffsetDateTime.class,
+                user.getId()))
+        .isNotNull();
+  }
+
+  @Test
   void resetRejectsCurrentPasswordWithoutConsumingTokenAndAllowsDifferentPasswordRetry() {
     User user = createUser("same-password");
     String token = issueResetToken(user);
