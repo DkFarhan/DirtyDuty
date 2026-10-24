@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.dirtyduty.app.dto.auth.CsrfResponse;
+import com.dirtyduty.app.dto.auth.RegisterRequest;
 import com.dirtyduty.app.entity.User;
 import com.dirtyduty.app.entity.enums.AccountStatus;
 import com.dirtyduty.app.repository.UserRepository;
@@ -102,15 +103,25 @@ class AuthenticationCompletionIntegrationTest {
     verify(mailer, org.mockito.Mockito.timeout(2000))
         .sendReset(eq(verified.getEmail()), any(String.class), any(Duration.class));
 
-    User pending = createUser("unified-pending");
+    String pendingIp = uniqueTestIp();
+    var registration =
+        authService.register(
+            new RegisterRequest(
+                "Pending Registration",
+                "unified-pending-" + UUID.randomUUID() + "@example.com",
+                "OriginalPassword123!"),
+            pendingIp);
+    User pending = userRepository.findById(registration.userId()).orElseThrow();
+    testUsers.add(pending);
     String existingDisplayName = pending.getDisplayName();
-    pending.setEmailVerifiedAt(null);
-    userRepository.saveAndFlush(pending);
-    assertThat(accountRecoveryService.requestInstructions(pending.getEmail(), uniqueTestIp()))
-        .isEqualTo(generic);
+    emailVerificationService.sendReservedInitial(pending.getId());
     var codeCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
     verify(emailVerificationMailer, org.mockito.Mockito.timeout(2000))
         .sendVerificationCode(eq(pending.getEmail()), codeCaptor.capture());
+    assertThat(accountRecoveryService.requestInstructions(pending.getEmail(), uniqueTestIp()))
+        .isEqualTo(generic);
+    verify(emailVerificationMailer)
+        .sendVerificationCode(eq(pending.getEmail()), codeCaptor.getValue());
 
     emailVerificationService.completeRecovery(
         pending.getEmail(), codeCaptor.getValue(), "RecoveredPassword123!", uniqueTestIp());

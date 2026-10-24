@@ -450,6 +450,52 @@ class EmailVerificationIntegrationTest {
     }
   }
 
+  @Test
+  void disabledAndDeletedAccountsCannotRecoverOrBeReclaimed() {
+    for (AccountStatus status : List.of(AccountStatus.DISABLED, AccountStatus.DELETED)) {
+      User user = createUser(status.name().toLowerCase() + "-pending");
+      verificationService.sendInitial(user.getId(), uniqueIp());
+      String originalPasswordHash = user.getPasswordHash();
+      user.setAccountStatus(status);
+      users.saveAndFlush(user);
+      jdbc.update(
+          """
+          UPDATE email_verification
+          SET issued_at = NOW() - INTERVAL '61 seconds',
+              expires_at = NOW() + INTERVAL '10 minutes'
+          WHERE user_id = ?
+          """,
+          user.getId());
+
+      verificationService.requestRecovery(user.getEmail(), uniqueIp());
+      assertThatThrownBy(
+              () ->
+                  verificationService.completeRecovery(
+                      user.getEmail(), latestCode.get(), "RecoveredPassword123!", uniqueIp()))
+          .isInstanceOf(EmailVerificationInvalidCodeException.class);
+      verify(mailer)
+          .sendVerificationCode(
+              org.mockito.ArgumentMatchers.eq(user.getEmail()),
+              org.mockito.ArgumentMatchers.anyString());
+
+      ageRegistration(user);
+
+      verificationService.reclaimExpiredForEmail(user.getEmail());
+      verificationService.cleanupExpiredCodesAndAbandonedRegistrations();
+
+      User unchanged = users.findById(user.getId()).orElseThrow();
+      assertThat(unchanged.getAccountStatus()).isEqualTo(status);
+      assertThat(unchanged.getEmailVerifiedAt()).isNull();
+      assertThat(unchanged.getPasswordHash()).isEqualTo(originalPasswordHash);
+      assertThat(
+              jdbc.queryForObject(
+                  "SELECT COUNT(*) FROM email_verification WHERE user_id = ?",
+                  Integer.class,
+                  user.getId()))
+          .isEqualTo(1);
+    }
+  }
+
   private User createUser(String label) {
     User user = new User();
     user.setEmail(label + "-" + UUID.randomUUID() + "@example.com");
