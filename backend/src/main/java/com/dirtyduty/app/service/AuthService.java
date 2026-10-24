@@ -10,10 +10,12 @@ import com.dirtyduty.app.entity.enums.HouseholdRole;
 import com.dirtyduty.app.entity.enums.MembershipStatus;
 import com.dirtyduty.app.exception.AccountDeletionConflictException;
 import com.dirtyduty.app.exception.DuplicateResourceException;
+import com.dirtyduty.app.exception.EmailVerificationRateLimitException;
 import com.dirtyduty.app.exception.InvalidCredentialsException;
 import com.dirtyduty.app.repository.HouseholdMembershipRepository;
 import com.dirtyduty.app.repository.UserRepository;
 import jakarta.transaction.Transactional;
+import java.time.Duration;
 import java.util.Locale;
 import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -32,6 +34,7 @@ public class AuthService {
   private final LegalAcceptanceService legalAcceptanceService;
   private final PasswordLoginProtectionService loginProtection;
   private final EmailVerificationService emailVerificationService;
+  private final PersistentAuthRateLimiter rateLimiter;
 
   public AuthService(
       UserRepository userRepository,
@@ -41,7 +44,8 @@ public class AuthService {
       HouseholdSettingsService householdSettingsService,
       LegalAcceptanceService legalAcceptanceService,
       PasswordLoginProtectionService loginProtection,
-      EmailVerificationService emailVerificationService) {
+      EmailVerificationService emailVerificationService,
+      PersistentAuthRateLimiter rateLimiter) {
     this.userRepository = userRepository;
     this.passwordEncoder = passwordEncoder;
     this.jdbcTemplate = jdbcTemplate;
@@ -50,17 +54,34 @@ public class AuthService {
     this.legalAcceptanceService = legalAcceptanceService;
     this.loginProtection = loginProtection;
     this.emailVerificationService = emailVerificationService;
+    this.rateLimiter = rateLimiter;
   }
 
   @Transactional
   public RegisterResponse register(RegisterRequest request) {
+    return register(request, "direct-service:" + request.email());
+  }
+
+  @Transactional
+  public RegisterResponse register(RegisterRequest request, String sourceIp) {
     String normalizedEmail = request.email().trim().toLowerCase(Locale.ROOT);
     String normalizedDisplayName = request.displayName().trim();
+
+    boolean emailHourlyAllowed =
+        rateLimiter.allow("REGISTER_EMAIL", normalizedEmail, 5, Duration.ofHours(1));
+    boolean emailDailyAllowed =
+        rateLimiter.allow("REGISTER_EMAIL", normalizedEmail, 10, Duration.ofDays(1));
+    boolean ipHourlyAllowed = rateLimiter.allow("REGISTER_IP", sourceIp, 60, Duration.ofHours(1));
+    boolean ipDailyAllowed = rateLimiter.allow("REGISTER_IP", sourceIp, 200, Duration.ofDays(1));
+    if (!emailHourlyAllowed || !emailDailyAllowed || !ipHourlyAllowed || !ipDailyAllowed) {
+      throw new EmailVerificationRateLimitException();
+    }
 
     emailVerificationService.reclaimExpiredForEmail(normalizedEmail);
     if (userRepository.existsByEmailIgnoreCase(normalizedEmail)) {
       throw new DuplicateResourceException("A user with this email already exists.");
     }
+    emailVerificationService.reserveInitialDelivery(normalizedEmail);
 
     User user = new User();
     user.setDisplayName(normalizedDisplayName);
@@ -68,8 +89,7 @@ public class AuthService {
     user.setPasswordHash(passwordEncoder.encode(request.password()));
     user.setTimezone("UTC");
     user.setAccountStatus(AccountStatus.ACTIVE);
-    user.setEmailVerifiedAt(
-        emailVerificationService.isEnabled() ? null : java.time.OffsetDateTime.now());
+    user.setEmailVerifiedAt(null);
     legalAcceptanceService.acceptForRegistration(user);
 
     try {

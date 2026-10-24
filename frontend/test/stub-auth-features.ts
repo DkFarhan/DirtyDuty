@@ -2,7 +2,7 @@ import { vi } from "vitest"
 
 export function stubAuthFeatures(
   fetchMock: typeof fetch,
-  features = { google: false, passwordReset: false },
+  features = { google: false, passwordReset: false, emailVerification: false },
 ) {
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
     if (String(input).endsWith("/api/auth/providers")) {

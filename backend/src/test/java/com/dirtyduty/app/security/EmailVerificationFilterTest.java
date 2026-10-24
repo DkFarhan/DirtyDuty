@@ -60,4 +60,33 @@ class EmailVerificationFilterTest {
     verify(chain).doFilter(request, response);
     verifyNoInteractions(verification);
   }
+
+  @Test
+  void disabledVerificationDoesNotBlockAnUnverifiedExistingAccount() throws Exception {
+    EmailVerificationService disabledVerification =
+        new EmailVerificationService(
+            org.mockito.Mockito.mock(org.springframework.jdbc.core.JdbcTemplate.class),
+            org.mockito.Mockito.mock(com.dirtyduty.app.repository.UserRepository.class),
+            org.mockito.Mockito.mock(com.dirtyduty.app.service.EmailVerificationMailer.class),
+            org.mockito.Mockito.mock(
+                org.springframework.security.crypto.password.PasswordEncoder.class),
+            org.mockito.Mockito.mock(
+                org.springframework.transaction.PlatformTransactionManager.class),
+            "",
+            false);
+    EmailVerificationFilter disabledFilter =
+        new EmailVerificationFilter(disabledVerification, JsonMapper.builder().build());
+    SecurityContextHolder.getContext()
+        .setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(
+                "legacy@example.com", null, java.util.List.of()));
+    MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/households");
+    MockHttpServletResponse response = new MockHttpServletResponse();
+    FilterChain chain = org.mockito.Mockito.mock(FilterChain.class);
+
+    disabledFilter.doFilter(request, response, chain);
+
+    verify(chain).doFilter(request, response);
+    assertThat(response.getStatus()).isEqualTo(200);
+  }
 }

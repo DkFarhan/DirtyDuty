@@ -18,7 +18,7 @@ export type AuthUser = {
 export type AuthFeatures = {
   google: boolean
   passwordReset: boolean
-  emailVerification?: boolean
+  emailVerification: boolean
 }
 
 type RegisterInput = {
@@ -81,6 +81,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [features, setFeatures] = useState<AuthFeatures>({
     google: false,
     passwordReset: false,
+    emailVerification: false,
   })
 
   const refreshUser = async () => {
@@ -103,21 +104,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
-    refreshUser()
-      .catch(() => undefined)
-      .finally(() => {
+    Promise.allSettled([refreshUser(), api.get<AuthFeatures>("/api/auth/providers")]).then(
+      ([userResult, featuresResult]) => {
+        if (userResult.status === "rejected") {
+          setAuthError("Unable to verify your session. Please try again.")
+        }
+        if (featuresResult.status === "fulfilled") {
+          setFeatures(featuresResult.value)
+        } else {
+          console.warn(
+            "Unable to load authentication features; email verification is required until the server confirms otherwise.",
+            featuresResult.reason,
+          )
+          setFeatures({ google: false, passwordReset: false, emailVerification: true })
+        }
         setIsLoading(false)
-        api
-          .get<AuthFeatures>("/api/auth/providers")
-          .then(setFeatures)
-          .catch((cause: unknown) => {
-            console.warn(
-              "Unable to load optional authentication features; password sign-in remains available.",
-              cause,
-            )
-            setFeatures({ google: false, passwordReset: false })
-          })
-      })
+      },
+    )
   }, [])
 
   const register = async (input: RegisterInput) => {

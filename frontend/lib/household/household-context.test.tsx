@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
       userId: string
       emailVerified: boolean
     } | null,
+    features: { emailVerification: true },
     isAuthenticated: true,
     isLoading: false,
   },
@@ -16,7 +17,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock("@/lib/auth/auth-context", () => ({
-  useAuth: () => mocks.auth,
+  useAuth: () => ({ ...mocks.auth, features: mocks.auth.features }),
 }))
 
 vi.mock("./api", () => ({
@@ -75,6 +76,7 @@ describe("household context refresh", () => {
     mocks.auth.user = { userId: "user-1", emailVerified: true }
     mocks.auth.isAuthenticated = true
     mocks.auth.isLoading = false
+    mocks.auth.features = { emailVerification: true }
     mocks.list.mockReset()
   })
 
@@ -160,5 +162,15 @@ describe("household context refresh", () => {
     expect(mocks.list).not.toHaveBeenCalled()
     expect(screen.getByTestId("households").textContent).toBe("")
     view.unmount()
+  })
+
+  it("loads existing household data for unverified users when verification is disabled", async () => {
+    mocks.auth.user = { userId: "pending-user", emailVerified: false }
+    mocks.auth.features = { emailVerification: false }
+    mocks.list.mockResolvedValueOnce([firstHousehold])
+    renderProvider()
+
+    expect(await screen.findByText("First user's home")).toBeTruthy()
+    expect(mocks.list).toHaveBeenCalledTimes(1)
   })
 })

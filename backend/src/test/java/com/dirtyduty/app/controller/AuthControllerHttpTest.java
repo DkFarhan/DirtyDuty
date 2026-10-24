@@ -131,7 +131,9 @@ class AuthControllerHttpTest {
 
   @Test
   void register_returns201AndNeverReturnsPasswordFields() throws Exception {
-    org.mockito.Mockito.when(authService.register(org.mockito.ArgumentMatchers.any()))
+    org.mockito.Mockito.when(
+            authService.register(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyString()))
         .thenReturn(new RegisterResponse(UUID.randomUUID(), "Alice Smith", "alice@example.com"));
 
     mockMvc
@@ -164,10 +166,12 @@ class AuthControllerHttpTest {
   void registerCreatesLimitedSessionAndReportsDeliveryFailureWithoutClaimingVerification()
       throws Exception {
     UUID userId = UUID.randomUUID();
-    org.mockito.Mockito.when(authService.register(org.mockito.ArgumentMatchers.any()))
+    org.mockito.Mockito.when(
+            authService.register(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyString()))
         .thenReturn(new RegisterResponse(userId, "Alice Smith", "alice@example.com"));
     org.mockito.Mockito.when(emailVerificationService.isEnabled()).thenReturn(true);
-    org.mockito.Mockito.when(emailVerificationService.sendInitial(userId, "127.0.0.1"))
+    org.mockito.Mockito.when(emailVerificationService.sendReservedInitial(userId))
         .thenReturn("FAILED");
 
     mockMvc

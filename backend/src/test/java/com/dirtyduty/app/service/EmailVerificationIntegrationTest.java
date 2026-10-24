@@ -65,7 +65,26 @@ class EmailVerificationIntegrationTest {
 
   @AfterEach
   void cleanUp() {
-    for (UUID userId : testUserIds) users.findById(userId).ifPresent(users::delete);
+    for (UUID userId : testUserIds) {
+      users
+          .findById(userId)
+          .ifPresent(
+              user -> {
+                jdbc.update(
+                    "DELETE FROM spring_session_attributes WHERE session_primary_id IN (SELECT primary_id FROM spring_session WHERE principal_name = ?)",
+                    user.getEmail());
+                jdbc.update("DELETE FROM spring_session WHERE principal_name = ?", user.getEmail());
+                jdbc.update("DELETE FROM notifications WHERE recipient_user_id = ?", userId);
+                jdbc.update("DELETE FROM notification_preferences WHERE user_id = ?", userId);
+                jdbc.update("DELETE FROM push_subscriptions WHERE user_id = ?", userId);
+                jdbc.update("DELETE FROM external_auth_identity WHERE user_id = ?", userId);
+                jdbc.update("DELETE FROM password_reset_token WHERE user_id = ?", userId);
+                jdbc.update("DELETE FROM notification_events WHERE actor_user_id = ?", userId);
+                jdbc.update("DELETE FROM household_memberships WHERE user_id = ?", userId);
+                jdbc.update("DELETE FROM households WHERE created_by_user_id = ?", userId);
+                users.delete(user);
+              });
+    }
     testUserIds.clear();
   }
 
@@ -167,6 +186,116 @@ class EmailVerificationIntegrationTest {
     assertThat(users.findById(user.getId()).orElseThrow().getEmailVerifiedAt()).isNull();
   }
 
+  @Test
+  void recoveryEligibilitySurvivesAnOrdinaryCodeResend() {
+    User user = createUser("resend-recovery");
+    verificationService.sendInitial(user.getId(), uniqueIp());
+    jdbc.update(
+        "UPDATE email_verification SET issued_at = NOW() - INTERVAL '2 minutes' WHERE user_id = ?",
+        user.getId());
+
+    assertThat(verificationService.resend(user.getEmail(), uniqueIp())).isEqualTo("SENT");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT reclaimable FROM email_verification WHERE user_id = ?",
+                Boolean.class,
+                user.getId()))
+        .isTrue();
+
+    verificationService.requestRecovery(user.getEmail(), uniqueIp());
+    verificationService.completeRecovery(
+        user.getEmail(), latestCode.get(), "RecoveredPassword123!", "Recovered User", uniqueIp());
+    assertThat(users.findById(user.getId()).orElseThrow().getEmailVerifiedAt()).isNotNull();
+  }
+
+  @Test
+  void concurrentOverLimitRecoveryRequestsDoNotAddRateEventRows() throws Exception {
+    String email = "rate-" + UUID.randomUUID() + "@example.com";
+    String ip = uniqueIp();
+    int before =
+        jdbc.queryForObject("SELECT COUNT(*) FROM email_verification_rate_event", Integer.class);
+
+    try (var executor = Executors.newFixedThreadPool(10)) {
+      List<Future<?>> requests = new ArrayList<>();
+      for (int index = 0; index < 12; index++) {
+        requests.add(executor.submit(() -> verificationService.requestRecovery(email, ip)));
+      }
+      for (Future<?> request : requests) request.get();
+    }
+
+    int inserted =
+        jdbc.queryForObject("SELECT COUNT(*) FROM email_verification_rate_event", Integer.class)
+            - before;
+    assertThat(inserted).isEqualTo(20);
+  }
+
+  @Test
+  void cleanupDeletesOnlyExpiredDataFreeAbandonedRegistrations() {
+    User abandoned = createUser("abandoned");
+    verificationService.sendInitial(abandoned.getId(), uniqueIp());
+    ageRegistration(abandoned);
+
+    User withSession = createUser("session-retained");
+    verificationService.sendInitial(withSession.getId(), uniqueIp());
+    ageRegistration(withSession);
+    String sessionId = UUID.randomUUID().toString();
+    jdbc.update(
+        """
+        INSERT INTO spring_session(
+            primary_id, session_id, creation_time, last_access_time,
+            max_inactive_interval, expiry_time, principal_name
+        ) VALUES (?, ?, ?, ?, 86400, ?, ?)
+        """,
+        sessionId,
+        sessionId,
+        System.currentTimeMillis(),
+        System.currentTimeMillis(),
+        System.currentTimeMillis() + 86_400_000,
+        withSession.getEmail());
+
+    User withHousehold = createUser("household-retained");
+    verificationService.sendInitial(withHousehold.getId(), uniqueIp());
+    ageRegistration(withHousehold);
+    UUID householdId = UUID.randomUUID();
+    jdbc.update(
+        "INSERT INTO households(id, name, timezone, created_by_user_id) VALUES (?, 'Protected', 'UTC', ?)",
+        householdId,
+        withHousehold.getId());
+    jdbc.update(
+        """
+        INSERT INTO household_memberships(id, household_id, user_id, role, status)
+        VALUES (?, ?, ?, 'OWNER', 'ACTIVE')
+        """,
+        UUID.randomUUID(),
+        householdId,
+        withHousehold.getId());
+
+    User withNotification = createUser("notification-retained");
+    verificationService.sendInitial(withNotification.getId(), uniqueIp());
+    ageRegistration(withNotification);
+    jdbc.update(
+        """
+        INSERT INTO notifications(
+            recipient_user_id, type, category, title, message, deduplication_key
+        ) VALUES (?, 'TEST', 'TEST', 'Protected', 'Protected', ?)
+        """,
+        withNotification.getId(),
+        UUID.randomUUID().toString());
+
+    verificationService.cleanupExpiredCodesAndAbandonedRegistrations();
+
+    assertThat(users.findById(abandoned.getId())).isEmpty();
+    assertThat(users.findById(withSession.getId())).isPresent();
+    assertThat(users.findById(withHousehold.getId())).isPresent();
+    assertThat(users.findById(withNotification.getId())).isPresent();
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT COUNT(*) FROM spring_session WHERE primary_id = ?",
+                Integer.class,
+                sessionId))
+        .isEqualTo(1);
+  }
+
   private User createUser(String label) {
     User user = new User();
     user.setEmail(label + "-" + UUID.randomUUID() + "@example.com");
@@ -180,7 +309,17 @@ class EmailVerificationIntegrationTest {
     return saved;
   }
 
+  private void ageRegistration(User user) {
+    jdbc.update(
+        "UPDATE users SET created_at = NOW() - INTERVAL '31 days' WHERE id = ?", user.getId());
+    jdbc.update(
+        "UPDATE email_verification SET expires_at = NOW() - INTERVAL '2 days' WHERE user_id = ?",
+        user.getId());
+  }
+
   private String uniqueIp() {
-    return "198.51.100." + ipCounter.incrementAndGet();
+    int thirdOctet = UUID.randomUUID().hashCode() & 0xff;
+    int fourthOctet = ipCounter.incrementAndGet() & 0xff;
+    return "198.51." + thirdOctet + "." + fourthOctet;
   }
 }

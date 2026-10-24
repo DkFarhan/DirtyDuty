@@ -16,6 +16,7 @@ public class AuthFeatureConfiguration {
   private final boolean passwordResetEnabled;
   private final boolean emailVerificationEnabled;
   private final boolean emailVerificationDeliveryEnabled;
+  private final boolean emailVerificationRequiredForRegistration;
   private final Duration resetTtl;
   private final String rateLimitSecret;
   private final String appBaseUrl;
@@ -36,6 +37,8 @@ public class AuthFeatureConfiguration {
       @Value("${app.auth.email-verification.enabled:false}") boolean emailVerificationEnabled,
       @Value("${app.auth.email-verification.delivery-enabled:false}")
           boolean emailVerificationDeliveryEnabled,
+      @Value("${app.auth.email-verification.require-for-registration:false}")
+          boolean emailVerificationRequiredForRegistration,
       @Value("${app.auth.password-reset.token-ttl:30m}") Duration resetTtl,
       @Value("${app.auth.password-reset.rate-limit-hmac-secret:}") String rateLimitSecret,
       @Value("${app.base-url}") String appBaseUrl,
@@ -55,6 +58,7 @@ public class AuthFeatureConfiguration {
     this.passwordResetEnabled = passwordResetEnabled;
     this.emailVerificationEnabled = emailVerificationEnabled;
     this.emailVerificationDeliveryEnabled = emailVerificationDeliveryEnabled;
+    this.emailVerificationRequiredForRegistration = emailVerificationRequiredForRegistration;
     this.resetTtl = resetTtl;
     this.rateLimitSecret = rateLimitSecret;
     this.appBaseUrl = appBaseUrl;
@@ -70,6 +74,10 @@ public class AuthFeatureConfiguration {
 
   @PostConstruct
   void validate() {
+    if (emailVerificationRequiredForRegistration && !emailVerificationEnabled) {
+      throw new IllegalStateException(
+          "Production email/password registration requires email verification.");
+    }
     if (googleEnabled && (googleClientId.isBlank() || googleClientSecret.isBlank())) {
       throw new IllegalStateException(
           "Google authentication requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.");

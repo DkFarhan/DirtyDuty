@@ -42,6 +42,7 @@ public class EmailVerificationService {
   private final EmailVerificationMailer mailer;
   private final PasswordEncoder passwordEncoder;
   private final TransactionTemplate transactions;
+  private final TransactionTemplate reservationTransactions;
   private final byte[] secret;
   private final boolean enabled;
 
@@ -58,6 +59,9 @@ public class EmailVerificationService {
     this.mailer = mailer;
     this.passwordEncoder = passwordEncoder;
     this.transactions = new TransactionTemplate(transactionManager);
+    this.reservationTransactions = new TransactionTemplate(transactionManager);
+    this.reservationTransactions.setPropagationBehavior(
+        org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     this.secret = secret.getBytes(StandardCharsets.UTF_8);
     this.enabled = enabled;
   }
@@ -76,6 +80,22 @@ public class EmailVerificationService {
 
   public String sendInitial(UUID userId, String sourceIp) {
     return issueCode(userId, sourceIp, true);
+  }
+
+  public void reserveInitialDelivery(String email) {
+    if (enabled) {
+      java.util.List<RateLimit> limits =
+          java.util.List.of(
+              new RateLimit("SEND_EMAIL", normalizeEmail(email), 5, Duration.ofHours(1)),
+              new RateLimit("SEND_EMAIL", normalizeEmail(email), 10, Duration.ofDays(1)));
+      if (!applyRollingLimits(limits, reservationTransactions)) {
+        throw new EmailVerificationRateLimitException();
+      }
+    }
+  }
+
+  public String sendReservedInitial(UUID userId) {
+    return issueCode(userId, null, true, false);
   }
 
   public String resend(String email, String sourceIp) {
@@ -194,7 +214,7 @@ public class EmailVerificationService {
     }
     if (!applyRollingLimits(sendLimits(normalizedEmail, sourceIp))) return;
     try {
-      createAndSend(user.getId(), normalizedEmail, sourceIp, false, true);
+      createAndSend(user.getId(), normalizedEmail, false, true);
     } catch (EmailVerificationRateLimitException ignored) {
       // Recovery requests are intentionally indistinguishable for eligible and ineligible emails.
     }
@@ -248,6 +268,7 @@ public class EmailVerificationService {
               && user.getEmailVerifiedAt() == null
               && hasReclaimableRegistration(user)
               && !hasAnyBusinessData(user.getId())
+              && !hasAnySession(user.getEmail())
               && user.getCreatedAt()
                   .isBefore(OffsetDateTime.now(ZoneOffset.UTC).minus(RECOVERY_WINDOW))) {
             deletePendingUser(user);
@@ -259,37 +280,6 @@ public class EmailVerificationService {
   public void cleanupExpiredCodesAndAbandonedRegistrations() {
     transactions.executeWithoutResult(
         transaction -> {
-          jdbc.update("DELETE FROM email_verification WHERE expires_at < NOW() - INTERVAL '1 day'");
-          jdbc.update(
-              "DELETE FROM email_verification_rate_event WHERE requested_at < NOW() - INTERVAL '2 days'");
-          jdbc.update(
-              """
-              DELETE FROM spring_session_attributes
-              WHERE session_primary_id IN (
-                  SELECT s.primary_id FROM spring_session s
-                  JOIN users u ON u.email = s.principal_name
-                  JOIN email_verification v ON v.user_id = u.id
-                  WHERE v.reclaimable = TRUE
-                    AND u.email_verified_at IS NULL
-                    AND u.created_at < NOW() - INTERVAL '30 days'
-                    AND NOT EXISTS (SELECT 1 FROM household_memberships m WHERE m.user_id = u.id)
-                    AND NOT EXISTS (SELECT 1 FROM households h WHERE h.created_by_user_id = u.id)
-                    AND NOT EXISTS (SELECT 1 FROM external_auth_identity x WHERE x.user_id = u.id)
-              )
-              """);
-          jdbc.update(
-              """
-              DELETE FROM spring_session s
-              USING users u, email_verification v
-              WHERE s.principal_name = u.email
-                AND v.user_id = u.id
-                AND v.reclaimable = TRUE
-                AND u.email_verified_at IS NULL
-                AND u.created_at < NOW() - INTERVAL '30 days'
-                AND NOT EXISTS (SELECT 1 FROM household_memberships m WHERE m.user_id = u.id)
-                AND NOT EXISTS (SELECT 1 FROM households h WHERE h.created_by_user_id = u.id)
-                AND NOT EXISTS (SELECT 1 FROM external_auth_identity x WHERE x.user_id = u.id)
-              """);
           jdbc.update(
               """
               DELETE FROM users u
@@ -301,19 +291,32 @@ public class EmailVerificationService {
                 AND NOT EXISTS (SELECT 1 FROM household_memberships m WHERE m.user_id = u.id)
                 AND NOT EXISTS (SELECT 1 FROM households h WHERE h.created_by_user_id = u.id)
                 AND NOT EXISTS (SELECT 1 FROM external_auth_identity x WHERE x.user_id = u.id)
+                AND NOT EXISTS (SELECT 1 FROM notifications n WHERE n.recipient_user_id = u.id)
+                AND NOT EXISTS (SELECT 1 FROM notification_events e WHERE e.actor_user_id = u.id)
+                AND NOT EXISTS (SELECT 1 FROM notification_preferences p WHERE p.user_id = u.id)
+                AND NOT EXISTS (SELECT 1 FROM push_subscriptions p WHERE p.user_id = u.id)
+                AND NOT EXISTS (SELECT 1 FROM password_reset_token p WHERE p.user_id = u.id)
+                AND NOT EXISTS (SELECT 1 FROM spring_session s WHERE LOWER(s.principal_name) = LOWER(u.email))
               """);
+          jdbc.update(
+              "DELETE FROM email_verification WHERE expires_at < NOW() - INTERVAL '1 day' AND reclaimable = FALSE");
+          jdbc.update(
+              "DELETE FROM email_verification_rate_event WHERE requested_at < NOW() - INTERVAL '2 days'");
         });
   }
 
   private String issueCode(UUID userId, String sourceIp, boolean initial) {
-    User user =
-        users.findById(userId).orElseThrow(() -> new IllegalStateException("User is unavailable."));
-    enforceRollingLimits(sendLimits(user.getEmail(), sourceIp));
-    return createAndSend(userId, user.getEmail(), sourceIp, initial, initial);
+    return issueCode(userId, sourceIp, initial, true);
   }
 
-  private String createAndSend(
-      UUID userId, String email, String sourceIp, boolean initial, boolean recovery) {
+  private String issueCode(UUID userId, String sourceIp, boolean initial, boolean enforceLimits) {
+    User user =
+        users.findById(userId).orElseThrow(() -> new IllegalStateException("User is unavailable."));
+    if (enforceLimits) enforceRollingLimits(sendLimits(user.getEmail(), sourceIp));
+    return createAndSend(userId, user.getEmail(), initial, initial);
+  }
+
+  private String createAndSend(UUID userId, String email, boolean initial, boolean recovery) {
     String normalizedEmail = normalizeEmail(email);
     String code = String.format(Locale.ROOT, "%06d", RANDOM.nextInt(1_000_000));
     String codeHash = codeHash(userId, normalizedEmail, code);
@@ -343,7 +346,7 @@ public class EmailVerificationService {
                       expires_at = EXCLUDED.expires_at,
                       attempt_count = 0,
                       delivery_state = 'PENDING',
-                      reclaimable = EXCLUDED.reclaimable
+                      reclaimable = email_verification.reclaimable OR EXCLUDED.reclaimable
                   """,
                   userId,
                   normalizedEmail,
@@ -392,8 +395,13 @@ public class EmailVerificationService {
   }
 
   private boolean applyRollingLimits(java.util.List<RateLimit> limits) {
+    return applyRollingLimits(limits, transactions);
+  }
+
+  private boolean applyRollingLimits(
+      java.util.List<RateLimit> limits, TransactionTemplate transactionTemplate) {
     return Boolean.TRUE.equals(
-        transactions.execute(
+        transactionTemplate.execute(
             transaction -> {
               long[] lockKeys =
                   limits.stream()
@@ -423,16 +431,20 @@ public class EmailVerificationService {
                         subjectHash,
                         now.minus(limit.window()));
                 allowed &= count < limit.maximum();
-                jdbc.update(
-                    """
-                    INSERT INTO email_verification_rate_event(
-                        scope, subject_hash, window_seconds, requested_at
-                    ) VALUES (?, ?, ?, ?)
-                    """,
-                    limit.scope(),
-                    subjectHash,
-                    Math.toIntExact(limit.window().toSeconds()),
-                    now);
+              }
+              if (allowed) {
+                for (RateLimit limit : limits) {
+                  jdbc.update(
+                      """
+                      INSERT INTO email_verification_rate_event(
+                          scope, subject_hash, window_seconds, requested_at
+                      ) VALUES (?, ?, ?, ?)
+                      """,
+                      limit.scope(),
+                      rateHash(limit.scope(), limit.identifier()),
+                      Math.toIntExact(limit.window().toSeconds()),
+                      now);
+                }
               }
               return allowed;
             }));
@@ -529,9 +541,15 @@ public class EmailVerificationService {
                 OR EXISTS (SELECT 1 FROM households WHERE created_by_user_id = ?)
                 OR EXISTS (SELECT 1 FROM external_auth_identity WHERE user_id = ?)
                 OR EXISTS (SELECT 1 FROM notifications WHERE recipient_user_id = ?)
+                OR EXISTS (SELECT 1 FROM notification_events WHERE actor_user_id = ?)
+                OR EXISTS (SELECT 1 FROM notification_preferences WHERE user_id = ?)
                 OR EXISTS (SELECT 1 FROM push_subscriptions WHERE user_id = ?)
+                OR EXISTS (SELECT 1 FROM password_reset_token WHERE user_id = ?)
             """,
             Boolean.class,
+            userId,
+            userId,
+            userId,
             userId,
             userId,
             userId,
@@ -541,17 +559,16 @@ public class EmailVerificationService {
   }
 
   private void deletePendingUser(User user) {
-    jdbc.update(
-        """
-        DELETE FROM spring_session_attributes
-        WHERE session_primary_id IN (
-            SELECT primary_id FROM spring_session WHERE principal_name = ?
-        )
-        """,
-        user.getEmail());
-    jdbc.update("DELETE FROM spring_session WHERE principal_name = ?", user.getEmail());
     jdbc.update("DELETE FROM email_verification WHERE user_id = ?", user.getId());
     users.delete(user);
+  }
+
+  private boolean hasAnySession(String email) {
+    return Boolean.TRUE.equals(
+        jdbc.queryForObject(
+            "SELECT EXISTS (SELECT 1 FROM spring_session WHERE LOWER(principal_name) = LOWER(?))",
+            Boolean.class,
+            email));
   }
 
   private void invalidateSessions(String email) {

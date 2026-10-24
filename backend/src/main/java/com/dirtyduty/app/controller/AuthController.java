@@ -20,7 +20,6 @@ import com.dirtyduty.app.dto.auth.RegisterRequest;
 import com.dirtyduty.app.dto.auth.RegisterResponse;
 import com.dirtyduty.app.dto.auth.VerifyEmailRequest;
 import com.dirtyduty.app.entity.User;
-import com.dirtyduty.app.exception.EmailVerificationRateLimitException;
 import com.dirtyduty.app.exception.PasswordResetSamePasswordException;
 import com.dirtyduty.app.repository.UserRepository;
 import com.dirtyduty.app.service.AuthService;
@@ -106,30 +105,20 @@ public class AuthController {
       @Valid @RequestBody RegisterRequest request,
       HttpServletRequest httpRequest,
       HttpServletResponse httpResponse) {
-    RegisterResponse response = authService.register(request);
+    RegisterResponse response = authService.register(request, httpRequest.getRemoteAddr());
     String deliveryState = null;
     if (emailVerificationService.isEnabled()) {
-      try {
-        deliveryState =
-            emailVerificationService.sendInitial(response.userId(), httpRequest.getRemoteAddr());
-      } catch (EmailVerificationRateLimitException exception) {
-        deliveryState = "FAILED";
-      }
+      deliveryState = emailVerificationService.sendReservedInitial(response.userId());
     }
     Authentication authentication =
         authenticationManager.authenticate(
             new UsernamePasswordAuthenticationToken(
                 request.email().trim().toLowerCase(Locale.ROOT), request.password()));
     establishSession(authentication, httpRequest, httpResponse);
-    boolean verified = !emailVerificationService.isEnabled();
     return ResponseEntity.status(HttpStatus.CREATED)
         .body(
             new RegisterResponse(
-                response.userId(),
-                response.displayName(),
-                response.email(),
-                verified,
-                deliveryState));
+                response.userId(), response.displayName(), response.email(), false, deliveryState));
   }
 
   @GetMapping("/csrf")

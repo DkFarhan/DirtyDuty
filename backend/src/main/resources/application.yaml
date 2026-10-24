@@ -55,6 +55,7 @@ app:
     email-verification:
       enabled: ${EMAIL_VERIFICATION_ENABLED:false}
       delivery-enabled: ${EMAIL_VERIFICATION_DELIVERY_ENABLED:false}
+      require-for-registration: false
   frontend:
     origins: ${FRONTEND_ORIGINS:http://localhost:3000}
   households:

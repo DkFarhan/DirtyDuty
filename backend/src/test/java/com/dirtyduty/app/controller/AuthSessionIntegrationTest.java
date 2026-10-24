@@ -19,7 +19,9 @@ import com.dirtyduty.app.entity.enums.AccountStatus;
 import com.dirtyduty.app.repository.UserRepository;
 import com.dirtyduty.app.service.AuthService;
 import com.dirtyduty.app.service.EmailVerificationMailer;
+import com.dirtyduty.app.service.EmailVerificationService;
 import com.dirtyduty.app.service.GoogleIdentityService;
+import com.dirtyduty.app.service.LegalAcceptanceService;
 import com.dirtyduty.app.service.LegalDocumentVersions;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.Cookie;
@@ -76,6 +78,10 @@ class AuthSessionIntegrationTest {
 
   @Autowired private GoogleIdentityService googleIdentityService;
 
+  @Autowired private LegalAcceptanceService legalAcceptanceService;
+
+  @Autowired private EmailVerificationService emailVerificationService;
+
   @Autowired private UserRepository userRepository;
 
   private final ObjectMapper objectMapper = new ObjectMapper();
@@ -128,6 +134,178 @@ class AuthSessionIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.google").isBoolean())
         .andExpect(jsonPath("$.passwordReset").isBoolean());
+  }
+
+  @Test
+  void unverifiedExistingSessionCannotReachBusinessApisButVerificationRecoveryCsrfAndLogoutWork()
+      throws Exception {
+    String email = uniqueEmail("verification-boundary");
+    register(email, AccountStatus.ACTIVE);
+    MvcResult csrfBeforeLogin = csrf();
+    Cookie session =
+        performLogin(email, "StrongPassword123!", csrfBeforeLogin)
+            .getResponse()
+            .getCookie("SESSION");
+    assertThat(session).isNotNull();
+
+    User user = userRepository.findByEmailIgnoreCase(email).orElseThrow();
+    user.setEmailVerifiedAt(null);
+    userRepository.saveAndFlush(user);
+
+    for (String path :
+        List.of(
+            "/api/households",
+            "/api/households/" + UUID.randomUUID() + "/chores",
+            "/api/profile",
+            "/api/notifications")) {
+      mockMvc
+          .perform(get(path).cookie(session))
+          .andExpect(status().isForbidden())
+          .andExpect(jsonPath("$.code").value("EMAIL_VERIFICATION_REQUIRED"));
+    }
+    mockMvc
+        .perform(get("/api/auth/me").cookie(session))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.emailVerified").value(false));
+    mockMvc
+        .perform(get("/api/auth/email-verification/status").cookie(session))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.emailVerified").value(false));
+
+    MvcResult csrfForSession = csrfWithCookie(session);
+    CsrfResponse token = readCsrf(csrfForSession);
+    mockMvc
+        .perform(
+            post("/api/auth/email-verification/verify")
+                .cookie(session)
+                .contentType(APPLICATION_JSON)
+                .header(token.headerName(), token.token())
+                .content("{\"code\":\"000000\"}"))
+        .andExpect(status().isBadRequest());
+    mockMvc
+        .perform(
+            post("/api/auth/email-verification/recovery/request")
+                .cookie(session)
+                .contentType(APPLICATION_JSON)
+                .content("{\"email\":\"" + email + "\"}"))
+        .andExpect(status().isForbidden());
+    mockMvc
+        .perform(
+            post("/api/auth/email-verification/recovery/request")
+                .cookie(session)
+                .contentType(APPLICATION_JSON)
+                .header(token.headerName(), token.token())
+                .content("{\"email\":\"" + email + "\"}"))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(post("/api/auth/logout").cookie(session).header(token.headerName(), token.token()))
+        .andExpect(status().isNoContent());
+  }
+
+  @Test
+  void verifiedPasswordAndGoogleAccountsCanReachAuthorizedFeatures() throws Exception {
+    String passwordEmail = uniqueEmail("verified-password");
+    register(passwordEmail, AccountStatus.ACTIVE);
+    mockMvc.perform(get("/api/households").with(user(passwordEmail))).andExpect(status().isOk());
+
+    String linkedEmail = uniqueEmail("verified-linked-google");
+    register(linkedEmail, AccountStatus.ACTIVE);
+    googleIdentityService.linkToPasswordAccount("linked-" + UUID.randomUUID(), linkedEmail);
+    mockMvc.perform(get("/api/households").with(user(linkedEmail))).andExpect(status().isOk());
+
+    String googleEmail = uniqueEmail("verified-google-only");
+    User googleUser =
+        googleIdentityService
+            .authenticateVerifiedIdentity(
+                "google-" + UUID.randomUUID(), googleEmail, "Google User", true)
+            .user();
+    testUserIds.add(googleUser.getId());
+    legalAcceptanceService.acceptCurrentVersions(googleEmail);
+    mockMvc.perform(get("/api/households").with(user(googleEmail))).andExpect(status().isOk());
+  }
+
+  @Test
+  void registrationLimitsRepeatedSignupAttemptsBeforeCreatingDuplicateAccounts() throws Exception {
+    String email = uniqueEmail("registration-limit");
+    String ip = uniqueTestIp();
+    int created = 0;
+    int duplicates = 0;
+    int tooManyRequests = 0;
+    for (int attempt = 0; attempt < 6; attempt++) {
+      MvcResult csrf = csrf();
+      CsrfResponse token = readCsrf(csrf);
+      int statusCode =
+          mockMvc
+              .perform(
+                  post("/api/auth/register")
+                      .with(
+                          request -> {
+                            request.setRemoteAddr(ip);
+                            return request;
+                          })
+                      .cookie(csrf.getResponse().getCookie("SESSION"))
+                      .contentType(APPLICATION_JSON)
+                      .header(token.headerName(), token.token())
+                      .content(
+                          """
+                          {
+                            "displayName": "Registration User",
+                            "email": "%s",
+                            "password": "StrongPassword123!",
+                            "termsAccepted": true,
+                            "privacyPolicyAcknowledged": true
+                          }
+                          """
+                              .formatted(email)))
+              .andReturn()
+              .getResponse()
+              .getStatus();
+      if (statusCode == 201) created++;
+      if (statusCode == 409) duplicates++;
+      if (statusCode == 429) tooManyRequests++;
+    }
+
+    assertThat(created).isEqualTo(1);
+    assertThat(duplicates).isEqualTo(4);
+    assertThat(tooManyRequests).isEqualTo(1);
+    assertThat(userRepository.findAll().stream().filter(user -> user.getEmail().equals(email)))
+        .hasSize(1);
+  }
+
+  @Test
+  void exhaustedVerificationEmailLimitRejectsSignupBeforeAccountCreation() throws Exception {
+    String email = uniqueEmail("registration-delivery-limit");
+    for (int attempt = 0; attempt < 5; attempt++) {
+      emailVerificationService.requestRecovery(email, uniqueTestIp());
+    }
+
+    MvcResult csrf = csrf();
+    CsrfResponse token = readCsrf(csrf);
+    mockMvc
+        .perform(
+            post("/api/auth/register")
+                .with(
+                    request -> {
+                      request.setRemoteAddr(uniqueTestIp());
+                      return request;
+                    })
+                .cookie(csrf.getResponse().getCookie("SESSION"))
+                .contentType(APPLICATION_JSON)
+                .header(token.headerName(), token.token())
+                .content(
+                    """
+                    {
+                      "displayName": "Registration User",
+                      "email": "%s",
+                      "password": "StrongPassword123!",
+                      "termsAccepted": true,
+                      "privacyPolicyAcknowledged": true
+                    }
+                    """
+                        .formatted(email)))
+        .andExpect(status().isTooManyRequests());
+
+    assertThat(userRepository.existsByEmailIgnoreCase(email)).isFalse();
   }
 
   @Test

@@ -291,6 +291,11 @@ describe("authentication screens", () => {
   })
 
   it("registers, refreshes the authenticated user, and routes to verification", async () => {
+    stubAuthFeatures(fetchMock, {
+      google: false,
+      passwordReset: false,
+      emailVerification: true,
+    })
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ message: "Authentication required" }, 401))
       .mockResolvedValueOnce(
@@ -340,6 +345,11 @@ describe("authentication screens", () => {
   })
 
   it("routes restored pending sessions to verification without loading households", async () => {
+    stubAuthFeatures(fetchMock, {
+      google: false,
+      passwordReset: false,
+      emailVerification: true,
+    })
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ ...user, emailVerified: false }))
       .mockResolvedValueOnce(
@@ -366,6 +376,33 @@ describe("authentication screens", () => {
     expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/api/households"))).toBe(
       false,
     )
+  })
+
+  it("allows existing unverified users to load household data when verification is disabled", async () => {
+    fetchMock.mockImplementation(async (input) => {
+      if (String(input).endsWith("/api/auth/me"))
+        return jsonResponse({ ...user, emailVerified: false })
+      if (String(input).endsWith("/api/households"))
+        return jsonResponse([
+          {
+            id: "existing-household",
+            name: "Existing Home",
+            timezone: "UTC",
+            currentUserRole: "OWNER",
+            createdAt: "2026-10-01T00:00:00Z",
+          },
+        ])
+      return jsonResponse({}, 404)
+    })
+
+    render(<AppShell />)
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/api/households"))).toBe(
+        true,
+      )
+    })
+    expect(screen.queryByRole("heading", { name: "Verify your email" })).toBeNull()
   })
 
   it("shows a safe duplicate-registration message", async () => {
@@ -489,7 +526,11 @@ describe("authentication screens", () => {
 
   it("shows only enabled provider and password-reset options", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({}, 401))
-    stubAuthFeatures(fetchMock, { google: true, passwordReset: true })
+    stubAuthFeatures(fetchMock, {
+      google: true,
+      passwordReset: true,
+      emailVerification: false,
+    })
     await openLogin()
 
     expect(screen.getByRole("button", { name: "Continue with Google" })).toBeTruthy()
@@ -499,7 +540,11 @@ describe("authentication screens", () => {
 
   it("shows Google sign-in on registration when the provider is enabled", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({}, 401))
-    stubAuthFeatures(fetchMock, { google: true, passwordReset: false })
+    stubAuthFeatures(fetchMock, {
+      google: true,
+      passwordReset: false,
+      emailVerification: false,
+    })
     await openLogin()
 
     fireEvent.click(screen.getByRole("button", { name: "Sign up" }))
@@ -515,7 +560,11 @@ describe("authentication screens", () => {
       .mockResolvedValueOnce(jsonResponse(user))
       .mockResolvedValueOnce(jsonResponse([]))
     window.history.replaceState({}, "", "/?auth=google-link-required")
-    stubAuthFeatures(fetchMock, { google: true, passwordReset: false })
+    stubAuthFeatures(fetchMock, {
+      google: true,
+      passwordReset: false,
+      emailVerification: false,
+    })
 
     render(<AppShell />)
     expect(

@@ -56,7 +56,7 @@ const screenTargets = new Map<string, Screen>([
 
 function ScreenRouter() {
   const { screen, adminTab, navigate, setCurrentUser } = useChoreSync()
-  const { user, isAuthenticated, isLoading, authError, refreshUser } = useAuth()
+  const { user, isAuthenticated, isLoading, authError, refreshUser, features } = useAuth()
   const { setPresentationLight } = useTheme()
   const skipNextRouteGuard = useRef(false)
   const {
@@ -65,14 +65,18 @@ function ScreenRouter() {
     error: householdError,
     refresh: refreshHouseholds,
   } = useHouseholds()
+  const verificationEnabled = features.emailVerification !== false
+  const emailVerified = !verificationEnabled || user?.emailVerified === true
+  const requiresEmailVerification =
+    isAuthenticated && verificationEnabled && user?.emailVerified === false
 
   useLayoutEffect(() => {
     setPresentationLight(
       authenticationScreens.has(screen) ||
-        (isAuthenticated && user?.emailVerified === false) ||
+        requiresEmailVerification ||
         (!isAuthenticated && !isLoading),
     )
-  }, [isAuthenticated, isLoading, screen, setPresentationLight, user?.emailVerified])
+  }, [isAuthenticated, isLoading, requiresEmailVerification, screen, setPresentationLight])
 
   useEffect(() => {
     if (isLoading) return
@@ -111,10 +115,10 @@ function ScreenRouter() {
       return
     }
 
-    const authRedirect = getAuthRedirect(screen, isAuthenticated, isLoading, user?.emailVerified)
+    const authRedirect = getAuthRedirect(screen, isAuthenticated, isLoading, emailVerified)
     const redirect =
       authRedirect ??
-      (isAuthenticated && user?.emailVerified
+      (isAuthenticated && emailVerified
         ? getHouseholdRedirect(screen, true, householdStatus, households.length)
         : null)
     if (redirect) navigate(redirect)
@@ -125,7 +129,7 @@ function ScreenRouter() {
     isLoading,
     navigate,
     screen,
-    user?.emailVerified,
+    emailVerified,
   ])
 
   useEffect(() => {
@@ -143,11 +147,11 @@ function ScreenRouter() {
   }
 
   if (isAuthenticated && user?.legalAcceptanceRequired) {
-    if (!user.emailVerified) return <EmailVerificationScreen />
+    if (!emailVerified) return <EmailVerificationScreen />
     return <LegalAcceptanceScreen />
   }
 
-  if (isAuthenticated && user && !user.emailVerified) return <EmailVerificationScreen />
+  if (isAuthenticated && user && !emailVerified) return <EmailVerificationScreen />
 
   if (authError) {
     return (
@@ -193,11 +197,7 @@ function ScreenRouter() {
     case "register":
       return <RegisterScreen />
     case "verify-email":
-      return isAuthenticated && user?.emailVerified === false ? (
-        <EmailVerificationScreen />
-      ) : (
-        <WelcomeScreen />
-      )
+      return isAuthenticated && !emailVerified ? <EmailVerificationScreen /> : <WelcomeScreen />
     case "forgot-password":
       return <ForgotPasswordScreen initialEmail={user?.email ?? ""} />
     case "reset-password":

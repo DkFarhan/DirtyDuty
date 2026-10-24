@@ -110,6 +110,11 @@ a limited authenticated session, but business APIs and household loading remain
 blocked until the address is verified. Configure `MAIL_HOST`, `MAIL_PORT`,
 `MAIL_USERNAME`, `MAIL_PASSWORD`, and `MAIL_FROM_ADDRESS` with verified SMTP
 credentials and keep mandatory STARTTLS and server-identity validation enabled.
+Production refuses to start if email verification is disabled, preventing new
+password registrations from being accepted without email ownership proof.
+Outside production, disabling verification leaves new accounts explicitly
+unverified; the feature flag disables verification gating without fabricating
+email ownership.
 `AUTH_RATE_LIMIT_HMAC_SECRET` must be a private, stable value of at least 32
 bytes; the production application fails to start when verification is enabled
 without its secret or delivery configuration.
@@ -122,6 +127,10 @@ HMAC-derived identifiers. A successful Google sign-in with a verified Google
 email remains verified. A Google email matching a password account is still
 not linked automatically; only a successful password-authenticated linking
 flow may verify that account.
+Registration is limited to 5 attempts per email per hour and 10 per day, plus
+60 per source IP per hour and 200 per day. Initial email delivery capacity is
+reserved before password hashing and account creation; repeated rejected
+requests do not add verification rate-event rows.
 
 An abandoned password registration can be recovered using mailbox proof only
 for a recent account that has no household or other business data. Recovery

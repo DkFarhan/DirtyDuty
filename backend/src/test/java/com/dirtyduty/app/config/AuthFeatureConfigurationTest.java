@@ -8,6 +8,34 @@ import org.junit.jupiter.api.Test;
 
 class AuthFeatureConfigurationTest {
   @Test
+  void productionRegistrationCannotRunWithoutEmailVerification() {
+    AuthFeatureConfiguration productionRegistration =
+        new AuthFeatureConfiguration(
+            false,
+            "",
+            "",
+            false,
+            false,
+            false,
+            true,
+            Duration.ofMinutes(30),
+            "",
+            "https://dirtyduty.test",
+            "",
+            "",
+            "",
+            "",
+            false,
+            true,
+            true,
+            true);
+
+    assertThatThrownBy(productionRegistration::validate)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("requires email verification");
+  }
+
+  @Test
   void passwordResetRequiresMandatoryStartTlsAndServerIdentityValidation() {
     assertThatThrownBy(() -> configuration(true, true, false, true).validate())
         .isInstanceOf(IllegalStateException.class)
@@ -28,6 +56,7 @@ class AuthFeatureConfigurationTest {
                         false,
                         "",
                         "",
+                        false,
                         false,
                         false,
                         false,
@@ -63,6 +92,7 @@ class AuthFeatureConfigurationTest {
             false,
             true,
             true,
+            false,
             Duration.ofMinutes(30),
             "",
             "https://dirtyduty.test",
@@ -87,6 +117,7 @@ class AuthFeatureConfigurationTest {
             false,
             true,
             true,
+            false,
             Duration.ofMinutes(30),
             "test-only-hmac-secret-with-at-least-32-characters",
             "https://dirtyduty.test",
@@ -110,6 +141,7 @@ class AuthFeatureConfigurationTest {
             true,
             "google-client-id",
             "google-client-secret",
+            false,
             false,
             false,
             false,
@@ -140,6 +172,7 @@ class AuthFeatureConfigurationTest {
         "",
         "",
         resetEnabled,
+        false,
         false,
         false,
         Duration.ofMinutes(30),

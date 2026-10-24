@@ -32,9 +32,9 @@ function messageFor(error: unknown) {
 }
 
 export function HouseholdProvider({ children }: { children: React.ReactNode }) {
-  const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth()
+  const { user, isAuthenticated, isLoading: isAuthLoading, features } = useAuth()
   const userId = user?.userId ?? null
-  const isVerified = user?.emailVerified === true
+  const isVerified = features.emailVerification === false || user?.emailVerified === true
   const [households, setHouseholds] = useState<Household[]>([])
   const [selectedHouseholdId, setSelectedHouseholdId] = useState<string | null>(null)
   const [status, setStatus] = useState<HouseholdStatus>("loading")
