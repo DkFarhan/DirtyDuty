@@ -27,7 +27,7 @@ public class PasswordResetService {
   private static final SecureRandom SECURE_RANDOM = new SecureRandom();
   private static final Duration RATE_WINDOW = Duration.ofMinutes(15);
   private static final String GENERIC_RESPONSE =
-      "If an account exists for that email, we've sent password reset instructions.";
+      "If your account is eligible for recovery, we'll send instructions to your email.";
 
   private final UserRepository userRepository;
   private final JdbcTemplate jdbc;

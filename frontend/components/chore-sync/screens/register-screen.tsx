@@ -27,10 +27,12 @@ export function RegisterScreen() {
   const [termsAccepted, setTermsAccepted] = useState(false)
   const [termsError, setTermsError] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [duplicateRegistration, setDuplicateRegistration] = useState(false)
 
   const handleSubmit = async () => {
     if (isSubmitting) return
     setError("")
+    setDuplicateRegistration(false)
 
     if (!termsAccepted) {
       setTermsError(
@@ -56,8 +58,10 @@ export function RegisterScreen() {
       })
       navigate(authenticatedUser.emailVerified ? "welcome" : "verify-email")
     } catch (error) {
-      if (error instanceof ApiError) setError(error.message)
-      else setError("Unable to create your account. Please try again.")
+      if (error instanceof ApiError) {
+        setError(error.message)
+        setDuplicateRegistration(error.status === 409)
+      } else setError("Unable to create your account. Please try again.")
     } finally {
       setIsSubmitting(false)
     }
@@ -122,9 +126,31 @@ export function RegisterScreen() {
       </div>
 
       {error && (
-        <p className="mb-4 text-sm text-rose-600" role="alert">
-          {error}
-        </p>
+        <div className="mb-4" role="alert">
+          <p className="text-sm text-rose-600">{error}</p>
+          {duplicateRegistration && (
+            <div className="mt-2 flex gap-4 text-sm font-semibold text-teal-700">
+              <button
+                onClick={() => {
+                  window.sessionStorage.setItem("auth-prefill-email", form.email.trim())
+                  navigate("login")
+                }}
+                type="button"
+              >
+                Sign In
+              </button>
+              <button
+                onClick={() => {
+                  window.sessionStorage.setItem("auth-prefill-email", form.email.trim())
+                  navigate("forgot-password")
+                }}
+                type="button"
+              >
+                Forgot Password
+              </button>
+            </div>
+          )}
+        </div>
       )}
 
       <div className="mb-4">

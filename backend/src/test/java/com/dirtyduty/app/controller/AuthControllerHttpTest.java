@@ -14,6 +14,7 @@ import com.dirtyduty.app.dto.auth.RegisterResponse;
 import com.dirtyduty.app.exception.DuplicateResourceException;
 import com.dirtyduty.app.exception.GlobalExceptionHandler;
 import com.dirtyduty.app.repository.UserRepository;
+import com.dirtyduty.app.service.AccountRecoveryService;
 import com.dirtyduty.app.service.AuthService;
 import com.dirtyduty.app.service.EmailVerificationService;
 import com.dirtyduty.app.service.GoogleIdentityService;
@@ -53,6 +54,8 @@ class AuthControllerHttpTest {
   private GoogleIdentityService googleIdentityService;
   private PasswordLoginProtectionService loginProtection;
   private EmailVerificationService emailVerificationService;
+  private PasswordResetService passwordResetService;
+  private AccountRecoveryService accountRecoveryService;
   private SessionAuthenticationStrategy sessionAuthenticationStrategy;
   private MockMvc mockMvc;
 
@@ -69,6 +72,13 @@ class AuthControllerHttpTest {
     googleIdentityService = org.mockito.Mockito.mock(GoogleIdentityService.class);
     loginProtection = org.mockito.Mockito.mock(PasswordLoginProtectionService.class);
     emailVerificationService = org.mockito.Mockito.mock(EmailVerificationService.class);
+    passwordResetService = org.mockito.Mockito.mock(PasswordResetService.class);
+    accountRecoveryService = org.mockito.Mockito.mock(AccountRecoveryService.class);
+    org.mockito.Mockito.when(
+            accountRecoveryService.requestInstructions(
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+        .thenReturn(
+            "If your account is eligible for recovery, we'll send instructions to your email.");
     org.mockito.Mockito.doAnswer(invocation -> ((Supplier<?>) invocation.getArgument(2)).get())
         .when(loginProtection)
         .withAdmissionLock(
@@ -93,7 +103,8 @@ class AuthControllerHttpTest {
             sessionAuthenticationStrategy,
             org.mockito.Mockito.mock(UserRepository.class),
             googleIdentityService,
-            org.mockito.Mockito.mock(PasswordResetService.class),
+            passwordResetService,
+            accountRecoveryService,
             authFeatures,
             org.mockito.Mockito.mock(RecentReauthenticationService.class),
             org.mockito.Mockito.mock(LegalAcceptanceService.class),
@@ -197,20 +208,20 @@ class AuthControllerHttpTest {
   }
 
   @Test
-  void recoveryRequestReturnsGenericSuccessForEligibleAndIneligibleAddresses() throws Exception {
+  void unifiedRecoveryRequestReturnsGenericSuccess() throws Exception {
     mockMvc
         .perform(
-            post("/api/auth/email-verification/recovery/request")
+            post("/api/auth/password-reset/request")
                 .contentType(APPLICATION_JSON)
                 .content("{\"email\":\"pending@example.com\"}"))
         .andExpect(status().isOk())
         .andExpect(
             jsonPath("$.message")
                 .value(
-                    "If an eligible account exists for this email, a recovery code will be sent."));
+                    "If your account is eligible for recovery, we'll send instructions to your email."));
 
-    org.mockito.Mockito.verify(emailVerificationService)
-        .requestRecovery("pending@example.com", "127.0.0.1");
+    org.mockito.Mockito.verify(accountRecoveryService)
+        .requestInstructions("pending@example.com", "127.0.0.1");
   }
 
   @Test

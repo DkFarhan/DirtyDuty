@@ -5,6 +5,7 @@ import { ApiError } from "@/lib/auth/api"
 import { useAuth } from "@/lib/auth/auth-context"
 import { useChoreSync } from "@/lib/chore-sync/store"
 import { ProductLogo } from "@/components/brand/product-logo"
+import { PasswordInput } from "@/components/ui/password-input"
 import { ChevronLeftIcon } from "../icons"
 
 const inputClass =
@@ -12,14 +13,28 @@ const inputClass =
 
 export function ForgotPasswordScreen({ initialEmail = "" }: { initialEmail?: string }) {
   const { navigate } = useChoreSync()
-  const { requestPasswordReset } = useAuth()
-  const [email, setEmail] = useState(initialEmail)
+  const { requestPasswordReset, completeEmailVerificationRecovery } = useAuth()
+  const [email, setEmail] = useState(() => {
+    if (initialEmail) return initialEmail
+    return typeof window === "undefined"
+      ? ""
+      : (window.sessionStorage.getItem("auth-prefill-email") ?? "")
+  })
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
   const [confirmationEmail, setConfirmationEmail] = useState("")
   const [cooldown, setCooldown] = useState(0)
   const [cooldownUntil, setCooldownUntil] = useState<number | null>(null)
+  const [showRecoveryCodeForm, setShowRecoveryCodeForm] = useState(false)
+  const [recoveryCode, setRecoveryCode] = useState("")
+  const [newPassword, setNewPassword] = useState("")
+  const [recoveryBusy, setRecoveryBusy] = useState(false)
   const inFlight = useRef(false)
+  const recoveryInFlight = useRef(false)
+
+  useEffect(() => {
+    window.sessionStorage.removeItem("auth-prefill-email")
+  }, [])
 
   useEffect(() => {
     if (cooldownUntil === null) {
@@ -61,9 +76,38 @@ export function ForgotPasswordScreen({ initialEmail = "" }: { initialEmail?: str
   const useDifferentEmail = () => {
     setConfirmationEmail("")
     setEmail("")
+    setShowRecoveryCodeForm(false)
+    setRecoveryCode("")
+    setNewPassword("")
     setCooldownUntil(null)
     setCooldown(0)
     setError("")
+  }
+
+  const completeRecovery = async () => {
+    if (recoveryInFlight.current || recoveryCode.length !== 6 || newPassword.length < 12) {
+      return
+    }
+    recoveryInFlight.current = true
+    setRecoveryBusy(true)
+    setError("")
+    try {
+      await completeEmailVerificationRecovery({
+        email: confirmationEmail,
+        code: recoveryCode,
+        newPassword,
+      })
+      navigate("welcome")
+    } catch (cause) {
+      setError(
+        cause instanceof ApiError
+          ? cause.message
+          : "Unable to recover this account. Please check the code and try again.",
+      )
+    } finally {
+      recoveryInFlight.current = false
+      setRecoveryBusy(false)
+    }
   }
 
   return (
@@ -86,12 +130,66 @@ export function ForgotPasswordScreen({ initialEmail = "" }: { initialEmail?: str
             Check your email
           </h1>
           <p className="mt-3 text-sm leading-relaxed text-slate-700" role="status">
-            If an account exists for this email, we&apos;ll send you a password reset link.
+            If your account is eligible for recovery, we&apos;ll send instructions to your email.
           </p>
           <p className="mt-2 break-all text-sm font-semibold text-slate-800">{confirmationEmail}</p>
           <p className="mt-3 text-sm leading-relaxed text-slate-600">
-            Check your inbox and spam folder. The reset link expires after 30 minutes.
+            Check your inbox and spam folder. Password reset links expire after 30 minutes; recovery
+            codes expire after 10 minutes.
           </p>
+          <p className="mt-2 text-sm leading-relaxed text-slate-600">
+            If you no longer have access to this email or still need help, contact DirtyDuty
+            support.
+          </p>
+
+          {!showRecoveryCodeForm ? (
+            <button
+              className="mt-4 min-h-10 text-sm font-semibold text-teal-700"
+              onClick={() => setShowRecoveryCodeForm(true)}
+              type="button"
+            >
+              Received a recovery code?
+            </button>
+          ) : (
+            <div className="mt-5 flex flex-col gap-3 border-t border-teal-100 pt-4">
+              <label className="text-sm font-semibold text-slate-700" htmlFor="recovery-code">
+                Six-digit recovery code
+              </label>
+              <input
+                autoComplete="one-time-code"
+                className={inputClass}
+                id="recovery-code"
+                inputMode="numeric"
+                maxLength={6}
+                onChange={(event) =>
+                  setRecoveryCode(event.target.value.replace(/\D/g, "").slice(0, 6))
+                }
+                value={recoveryCode}
+              />
+              <label
+                className="text-sm font-semibold text-slate-700"
+                htmlFor="recovery-new-password"
+              >
+                New password
+              </label>
+              <PasswordInput
+                autoComplete="new-password"
+                className={inputClass}
+                id="recovery-new-password"
+                name="recovery-new-password"
+                onChange={(event) => setNewPassword(event.target.value)}
+                value={newPassword}
+              />
+              <button
+                className="min-h-11 w-full rounded-xl bg-teal-600 px-4 py-2 font-bold text-white disabled:opacity-60"
+                disabled={recoveryBusy || recoveryCode.length !== 6 || newPassword.length < 12}
+                onClick={() => void completeRecovery()}
+                type="button"
+              >
+                {recoveryBusy ? "Recovering account..." : "Verify code and continue"}
+              </button>
+            </div>
+          )}
 
           <div className="mt-6 border-t border-teal-100 pt-4">
             <p className="text-sm font-semibold text-slate-700">Didn&apos;t receive an email?</p>
@@ -117,7 +215,7 @@ export function ForgotPasswordScreen({ initialEmail = "" }: { initialEmail?: str
           )}
           <button
             className="mt-5 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-4 py-2 font-bold text-slate-700"
-            disabled={busy}
+            disabled={busy || recoveryBusy}
             onClick={useDifferentEmail}
             type="button"
           >

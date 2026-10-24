@@ -51,12 +51,10 @@ type AuthContextValue = {
   verifyEmail: (code: string) => Promise<AuthUser>
   resendVerificationCode: () => Promise<EmailVerificationStatus>
   correctVerificationEmail: (email: string, password: string) => Promise<void>
-  requestEmailVerificationRecovery: (email: string) => Promise<void>
   completeEmailVerificationRecovery: (input: {
     email: string
     code: string
     newPassword: string
-    displayName: string
   }) => Promise<AuthUser>
   completeLegalAcceptance: () => Promise<void>
   login: (email: string, password: string) => Promise<AuthUser>
@@ -161,15 +159,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAuthNotice("Your email was updated. Sign in with your new email to continue.")
   }
 
-  const requestEmailVerificationRecovery = async (email: string) => {
-    await api.post<void>("/api/auth/email-verification/recovery/request", { email })
-  }
-
   const completeEmailVerificationRecovery = async (input: {
     email: string
     code: string
     newPassword: string
-    displayName: string
   }) => {
     const recoveredUser = await api.post<AuthUser>(
       "/api/auth/email-verification/recovery/complete",
@@ -272,7 +265,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       verifyEmail,
       resendVerificationCode,
       correctVerificationEmail,
-      requestEmailVerificationRecovery,
       completeEmailVerificationRecovery,
       completeLegalAcceptance,
       login,

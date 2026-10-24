@@ -233,8 +233,7 @@ public class EmailVerificationService {
     }
   }
 
-  public User completeRecovery(
-      String email, String code, String newPassword, String displayName, String sourceIp) {
+  public User completeRecovery(String email, String code, String newPassword, String sourceIp) {
     if (!enabled) throw new EmailVerificationInvalidCodeException();
     String normalizedEmail = normalizeEmail(email);
     enforceAttemptLimits(normalizedEmail, sourceIp);
@@ -257,7 +256,6 @@ public class EmailVerificationService {
               }
               current.setEmailVerifiedAt(OffsetDateTime.now(ZoneOffset.UTC));
               current.setPasswordHash(passwordEncoder.encode(newPassword));
-              current.setDisplayName(displayName.trim());
               User saved = users.saveAndFlush(current);
               jdbc.update("DELETE FROM email_verification WHERE user_id = ?", current.getId());
               invalidateSessions(normalizedEmail);

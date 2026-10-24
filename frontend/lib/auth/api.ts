@@ -109,7 +109,7 @@ function messageFor(status: number, path: string, payload?: unknown): string {
   }
   if (status === 403) return "Your security token expired. Please try again."
   if (status === 409 && path === "/api/auth/register")
-    return "An account with this email already exists."
+    return "Unable to complete registration with this email. If you've registered before, try signing in or recovering your account."
   if (status === 409 && path === "/api/auth/delete-account") return "You still own households."
   if (status === 409 && path === "/api/households/join")
     return "You are already a member of this household."

@@ -405,7 +405,7 @@ describe("authentication screens", () => {
     expect(screen.queryByRole("heading", { name: "Verify your email" })).toBeNull()
   })
 
-  it("shows a safe duplicate-registration message", async () => {
+  it("shows safe duplicate-registration guidance and navigation", async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse({}, 401))
       .mockResolvedValueOnce(jsonResponse({ token: "csrf", headerName: "X-CSRF-TOKEN" }))
@@ -416,10 +416,11 @@ describe("authentication screens", () => {
     await openLogin()
     await fillAndSubmitRegistration()
 
-    expect(await screen.findByRole("alert")).toHaveProperty(
-      "textContent",
-      "An account with this email already exists.",
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Unable to complete registration with this email. If you've registered before, try signing in or recovering your account.",
     )
+    expect(screen.getByRole("button", { name: "Sign In" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Forgot Password" })).toBeTruthy()
     expect(screen.queryByText(/InternalException/)).toBeNull()
   })
 

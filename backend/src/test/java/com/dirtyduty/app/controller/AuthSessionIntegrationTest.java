@@ -184,19 +184,23 @@ class AuthSessionIntegrationTest {
         .andExpect(status().isBadRequest());
     mockMvc
         .perform(
-            post("/api/auth/email-verification/recovery/request")
+            post("/api/auth/password-reset/request")
                 .cookie(session)
                 .contentType(APPLICATION_JSON)
                 .content("{\"email\":\"" + email + "\"}"))
         .andExpect(status().isForbidden());
     mockMvc
         .perform(
-            post("/api/auth/email-verification/recovery/request")
+            post("/api/auth/password-reset/request")
                 .cookie(session)
                 .contentType(APPLICATION_JSON)
                 .header(token.headerName(), token.token())
                 .content("{\"email\":\"" + email + "\"}"))
-        .andExpect(status().isOk());
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.message")
+                .value(
+                    "If your account is eligible for recovery, we'll send instructions to your email."));
     mockMvc
         .perform(post("/api/auth/logout").cookie(session).header(token.headerName(), token.token()))
         .andExpect(status().isNoContent());

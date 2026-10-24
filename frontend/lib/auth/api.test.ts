@@ -176,7 +176,9 @@ describe("auth API client", () => {
     if (!(error instanceof ApiError)) throw error
     expect(error.status).toBe(409)
     expect(error.kind).toBe("conflict")
-    expect(error.message).toBe("An account with this email already exists.")
+    expect(error.message).toBe(
+      "Unable to complete registration with this email. If you've registered before, try signing in or recovering your account.",
+    )
     expect(error.message).not.toContain("SQL")
 
     fetchMock.mockResolvedValueOnce(
