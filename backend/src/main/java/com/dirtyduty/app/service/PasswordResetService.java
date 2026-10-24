@@ -37,6 +37,7 @@ public class PasswordResetService {
   private final PasswordLoginProtectionService loginProtection;
   private final FindByIndexNameSessionRepository<? extends Session> sessions;
   private final boolean enabled;
+  private final boolean emailVerificationEnabled;
   private final Duration ttl;
   private final int emailLimit;
   private final int ipLimit;
@@ -51,6 +52,7 @@ public class PasswordResetService {
       PasswordLoginProtectionService loginProtection,
       FindByIndexNameSessionRepository<? extends Session> sessions,
       @Value("${app.auth.password-reset.enabled:false}") boolean enabled,
+      @Value("${app.auth.email-verification.enabled:false}") boolean emailVerificationEnabled,
       @Value("${app.auth.password-reset.token-ttl:30m}") Duration ttl,
       @Value("${app.auth.password-reset.request-email-limit:3}") int emailLimit,
       @Value("${app.auth.password-reset.request-ip-limit:5}") int ipLimit,
@@ -63,6 +65,7 @@ public class PasswordResetService {
     this.loginProtection = loginProtection;
     this.sessions = sessions;
     this.enabled = enabled;
+    this.emailVerificationEnabled = emailVerificationEnabled;
     this.ttl = ttl;
     this.emailLimit = emailLimit;
     this.ipLimit = ipLimit;
@@ -80,7 +83,9 @@ public class PasswordResetService {
     }
 
     User user = userRepository.findByEmailIgnoreCaseForUpdate(email).orElse(null);
-    if (user == null || user.getAccountStatus() != AccountStatus.ACTIVE) {
+    if (user == null
+        || user.getAccountStatus() != AccountStatus.ACTIVE
+        || (emailVerificationEnabled && user.getEmailVerifiedAt() == null)) {
       return GENERIC_RESPONSE;
     }
 
@@ -142,6 +147,17 @@ public class PasswordResetService {
             .filter(found -> found.getAccountStatus() == AccountStatus.ACTIVE)
             .orElse(null);
     if (user == null) return false;
+    if (emailVerificationEnabled && user.getEmailVerifiedAt() == null) {
+      jdbc.update(
+          """
+          UPDATE password_reset_token
+          SET used_at = NOW()
+          WHERE token_hash = ? AND user_id = ? AND used_at IS NULL
+          """,
+          tokenHash(token),
+          userId);
+      return false;
+    }
 
     if (user.getPasswordHash() != null
         && passwordEncoder.matches(newPassword, user.getPasswordHash())) {

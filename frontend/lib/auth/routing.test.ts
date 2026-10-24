@@ -40,6 +40,15 @@ describe("auth route protection", () => {
     expect(getAuthRedirect("register", true, false)).toBe("welcome")
   })
 
+  it("requires unverified authenticated users to verify before accessing app screens", () => {
+    expect(getAuthRedirect("dashboard", true, false, false)).toBe("verify-email")
+    expect(getAuthRedirect("legal-acceptance", true, false, false)).toBe("verify-email")
+    expect(getAuthRedirect("login", true, false, false)).toBe("verify-email")
+    expect(getAuthRedirect("verify-email", true, false, false)).toBeNull()
+    expect(getAuthRedirect("verify-email", true, false, true)).toBe("welcome")
+    expect(getAuthRedirect("verify-email", false, false, false)).toBe("login")
+  })
+
   it("leaves public login and authenticated protected screens unchanged", () => {
     expect(getAuthRedirect("login", false, false)).toBeNull()
     expect(getAuthRedirect("dashboard", true, false)).toBeNull()

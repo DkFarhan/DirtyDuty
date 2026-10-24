@@ -5,7 +5,11 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 
 const mocks = vi.hoisted(() => ({
   auth: {
-    user: { userId: "user-1" } as { userId: string } | null,
+    user: { userId: "user-1", emailVerified: true } as {
+      userId: string
+      emailVerified: boolean
+    } | null,
+    features: { emailVerification: true },
     isAuthenticated: true,
     isLoading: false,
   },
@@ -13,7 +17,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock("@/lib/auth/auth-context", () => ({
-  useAuth: () => mocks.auth,
+  useAuth: () => ({ ...mocks.auth, features: mocks.auth.features }),
 }))
 
 vi.mock("./api", () => ({
@@ -69,9 +73,10 @@ function renderProvider() {
 
 describe("household context refresh", () => {
   beforeEach(() => {
-    mocks.auth.user = { userId: "user-1" }
+    mocks.auth.user = { userId: "user-1", emailVerified: true }
     mocks.auth.isAuthenticated = true
     mocks.auth.isLoading = false
+    mocks.auth.features = { emailVerification: true }
     mocks.list.mockReset()
   })
 
@@ -112,7 +117,7 @@ describe("household context refresh", () => {
           resolveSecondUser = resolve
         }),
     )
-    mocks.auth.user = { userId: "user-2" }
+    mocks.auth.user = { userId: "user-2", emailVerified: true }
     view.rerender(
       <HouseholdProvider>
         <HouseholdHarness />
@@ -135,7 +140,7 @@ describe("household context refresh", () => {
     expect(screen.getByTestId("created-invite").textContent).toBe("First user's home")
 
     mocks.list.mockResolvedValueOnce([{ ...firstHousehold, name: "Second user's home" }])
-    mocks.auth.user = { userId: "user-2" }
+    mocks.auth.user = { userId: "user-2", emailVerified: true }
     view.rerender(
       <HouseholdProvider>
         <HouseholdHarness />
@@ -144,5 +149,28 @@ describe("household context refresh", () => {
 
     await waitFor(() => expect(screen.getByTestId("created-invite").textContent).toBe(""))
     expect(await screen.findByText("Second user's home")).toBeTruthy()
+  })
+
+  it("never loads household data for an authenticated but unverified user", async () => {
+    mocks.auth.user = { userId: "pending-user", emailVerified: false }
+    const view = renderProvider()
+
+    await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("empty"))
+    expect(mocks.list).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }))
+    await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("empty"))
+    expect(mocks.list).not.toHaveBeenCalled()
+    expect(screen.getByTestId("households").textContent).toBe("")
+    view.unmount()
+  })
+
+  it("loads existing household data for unverified users when verification is disabled", async () => {
+    mocks.auth.user = { userId: "pending-user", emailVerified: false }
+    mocks.auth.features = { emailVerification: false }
+    mocks.list.mockResolvedValueOnce([firstHousehold])
+    renderProvider()
+
+    expect(await screen.findByText("First user's home")).toBeTruthy()
+    expect(mocks.list).toHaveBeenCalledTimes(1)
   })
 })

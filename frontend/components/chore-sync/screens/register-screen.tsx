@@ -47,14 +47,14 @@ export function RegisterScreen() {
 
     setIsSubmitting(true)
     try {
-      await register({
+      const authenticatedUser = await register({
         displayName: form.name,
         email: form.email,
         password: form.password,
         termsAccepted: true,
         privacyPolicyAcknowledged: true,
       })
-      navigate("login")
+      navigate(authenticatedUser.emailVerified ? "welcome" : "verify-email")
     } catch (error) {
       if (error instanceof ApiError) setError(error.message)
       else setError("Unable to create your account. Please try again.")

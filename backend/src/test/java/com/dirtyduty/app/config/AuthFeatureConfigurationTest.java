@@ -8,6 +8,34 @@ import org.junit.jupiter.api.Test;
 
 class AuthFeatureConfigurationTest {
   @Test
+  void productionRegistrationCannotRunWithoutEmailVerification() {
+    AuthFeatureConfiguration productionRegistration =
+        new AuthFeatureConfiguration(
+            false,
+            "",
+            "",
+            false,
+            false,
+            false,
+            true,
+            Duration.ofMinutes(30),
+            "",
+            "https://dirtyduty.test",
+            "",
+            "",
+            "",
+            "",
+            false,
+            true,
+            true,
+            true);
+
+    assertThatThrownBy(productionRegistration::validate)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("requires email verification");
+  }
+
+  @Test
   void passwordResetRequiresMandatoryStartTlsAndServerIdentityValidation() {
     assertThatThrownBy(() -> configuration(true, true, false, true).validate())
         .isInstanceOf(IllegalStateException.class)
@@ -28,6 +56,9 @@ class AuthFeatureConfigurationTest {
                         false,
                         "",
                         "",
+                        false,
+                        false,
+                        false,
                         false,
                         Duration.ofMinutes(30),
                         "",
@@ -52,12 +83,67 @@ class AuthFeatureConfigurationTest {
   }
 
   @Test
+  void emailVerificationRequiresSecureSecretAndConfiguredDelivery() {
+    AuthFeatureConfiguration missingSecret =
+        new AuthFeatureConfiguration(
+            false,
+            "",
+            "",
+            false,
+            true,
+            true,
+            false,
+            Duration.ofMinutes(30),
+            "",
+            "https://dirtyduty.test",
+            "smtp.dirtyduty.test",
+            "test-user",
+            "test-password",
+            "verify@dirtyduty.test",
+            true,
+            true,
+            true,
+            true);
+
+    assertThatThrownBy(missingSecret::validate)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("AUTH_RATE_LIMIT_HMAC_SECRET");
+
+    AuthFeatureConfiguration unauthenticatedSmtp =
+        new AuthFeatureConfiguration(
+            false,
+            "",
+            "",
+            false,
+            true,
+            true,
+            false,
+            Duration.ofMinutes(30),
+            "test-only-hmac-secret-with-at-least-32-characters",
+            "https://dirtyduty.test",
+            "smtp.dirtyduty.test",
+            "",
+            "",
+            "verify@dirtyduty.test",
+            false,
+            true,
+            true,
+            true);
+    assertThatThrownBy(unauthenticatedSmtp::validate)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("authenticated SMTP");
+  }
+
+  @Test
   void googleAuthenticationRequiresAnHttpsRedirectBaseUrl() {
     AuthFeatureConfiguration insecureBase =
         new AuthFeatureConfiguration(
             true,
             "google-client-id",
             "google-client-secret",
+            false,
+            false,
+            false,
             false,
             Duration.ofMinutes(30),
             "",
@@ -86,6 +172,9 @@ class AuthFeatureConfigurationTest {
         "",
         "",
         resetEnabled,
+        false,
+        false,
+        false,
         Duration.ofMinutes(30),
         "test-only-hmac-secret-with-at-least-32-characters",
         "https://dirtyduty.test",

@@ -1,11 +1,13 @@
 package com.dirtyduty.app.config;
 
 import com.dirtyduty.app.security.CustomUserDetailsService;
+import com.dirtyduty.app.security.EmailVerificationFilter;
 import com.dirtyduty.app.security.GoogleAuthenticationFailureHandler;
 import com.dirtyduty.app.security.GoogleAuthenticationSuccessHandler;
 import com.dirtyduty.app.security.GoogleLoginPromptResolver;
 import com.dirtyduty.app.security.LegalAcceptanceFilter;
 import com.dirtyduty.app.security.NoStoreAuthorizedClientRepository;
+import com.dirtyduty.app.service.EmailVerificationService;
 import com.dirtyduty.app.service.LegalAcceptanceService;
 import java.time.Duration;
 import java.util.HashMap;
@@ -54,6 +56,12 @@ public class SecurityConfig {
   }
 
   @Bean
+  public EmailVerificationFilter emailVerificationFilter(
+      EmailVerificationService emailVerificationService, JsonMapper jsonMapper) {
+    return new EmailVerificationFilter(emailVerificationService, jsonMapper);
+  }
+
+  @Bean
   public SecurityFilterChain securityFilterChain(
       HttpSecurity http,
       SecurityContextRepository securityContextRepository,
@@ -62,11 +70,15 @@ public class SecurityConfig {
       ClientRegistrationRepository clientRegistrationRepository,
       GoogleAuthenticationSuccessHandler googleSuccessHandler,
       GoogleAuthenticationFailureHandler googleFailureHandler,
-      LegalAcceptanceFilter legalAcceptanceFilter)
+      LegalAcceptanceFilter legalAcceptanceFilter,
+      EmailVerificationFilter emailVerificationFilter)
       throws Exception {
     http.csrf(csrf -> csrf.csrfTokenRepository(csrfTokenRepository))
         .addFilterBefore(
             legalAcceptanceFilter,
+            org.springframework.security.web.access.intercept.AuthorizationFilter.class)
+        .addFilterBefore(
+            emailVerificationFilter,
             org.springframework.security.web.access.intercept.AuthorizationFilter.class)
         .cors(cors -> {})
         .securityContext(context -> context.securityContextRepository(securityContextRepository))
@@ -91,6 +103,14 @@ public class SecurityConfig {
                     .permitAll()
                     .requestMatchers(HttpMethod.POST, "/api/auth/password-reset/confirm")
                     .permitAll()
+                    .requestMatchers(
+                        HttpMethod.POST, "/api/auth/email-verification/recovery/request")
+                    .permitAll()
+                    .requestMatchers(
+                        HttpMethod.POST, "/api/auth/email-verification/recovery/complete")
+                    .permitAll()
+                    .requestMatchers("/api/auth/email-verification/**")
+                    .authenticated()
                     .requestMatchers(HttpMethod.POST, "/api/auth/google/link")
                     .permitAll()
                     .requestMatchers(HttpMethod.POST, "/api/auth/register")

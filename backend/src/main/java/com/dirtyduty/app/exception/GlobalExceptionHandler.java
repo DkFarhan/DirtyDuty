@@ -111,6 +111,29 @@ public class GlobalExceptionHandler {
         request.getRequestURI());
   }
 
+  @ExceptionHandler(EmailVerificationRateLimitException.class)
+  public ResponseEntity<ApiErrorResponse> handleEmailVerificationRateLimit(
+      EmailVerificationRateLimitException ex, HttpServletRequest request) {
+    return buildResponse(
+        HttpStatus.TOO_MANY_REQUESTS,
+        "Too Many Requests",
+        ex.getMessage(),
+        request.getRequestURI());
+  }
+
+  @ExceptionHandler(EmailVerificationInvalidCodeException.class)
+  public ResponseEntity<ApiErrorResponse> handleEmailVerificationInvalidCode(
+      EmailVerificationInvalidCodeException ex, HttpServletRequest request) {
+    return buildResponse(
+        HttpStatus.BAD_REQUEST, "Bad Request", ex.getMessage(), request.getRequestURI());
+  }
+
+  @ExceptionHandler(EmailVerificationUnavailableException.class)
+  public ResponseEntity<ApiErrorResponse> handleEmailVerificationUnavailable(
+      EmailVerificationUnavailableException ex, HttpServletRequest request) {
+    return buildResponse(HttpStatus.CONFLICT, "Conflict", ex.getMessage(), request.getRequestURI());
+  }
+
   @ExceptionHandler(MethodArgumentNotValidException.class)
   public ResponseEntity<ApiErrorResponse> handleMethodArgumentNotValid(
       MethodArgumentNotValidException ex, HttpServletRequest request) {

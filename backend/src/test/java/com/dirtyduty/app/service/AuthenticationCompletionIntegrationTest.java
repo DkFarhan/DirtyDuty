@@ -44,6 +44,8 @@ import org.springframework.test.web.servlet.MvcResult;
       "app.auth.password-reset.request-email-limit=3",
       "app.auth.password-reset.request-ip-limit=5",
       "app.auth.password-reset.confirm-ip-limit=10",
+      "app.auth.email-verification.enabled=true",
+      "app.auth.email-verification.delivery-enabled=true",
       "app.base-url=https://dirtyduty.test",
       "spring.mail.host=localhost",
       "spring.mail.username=test-user",
@@ -80,9 +82,13 @@ class AuthenticationCompletionIntegrationTest {
 
   @MockitoBean private PasswordResetMailer mailer;
 
+  @MockitoBean private EmailVerificationMailer emailVerificationMailer;
+
   @AfterEach
   void cleanUp() {
     for (User user : testUsers) {
+      jdbc.update("DELETE FROM household_memberships WHERE user_id = ?", user.getId());
+      jdbc.update("DELETE FROM households WHERE created_by_user_id = ?", user.getId());
       userRepository.findById(user.getId()).ifPresent(userRepository::delete);
       jdbc.update("DELETE FROM spring_session WHERE principal_name = ?", user.getEmail());
     }
@@ -171,6 +177,26 @@ class AuthenticationCompletionIntegrationTest {
   }
 
   @Test
+  void previouslyIssuedResetTokenCannotBeRedeemedAfterAccountBecomesUnverified() {
+    User user = createUser("reset-unverified");
+    String token = issueResetToken(user);
+    String originalPasswordHash = user.getPasswordHash();
+    user.setEmailVerifiedAt(null);
+    userRepository.saveAndFlush(user);
+
+    assertThat(passwordResetService.confirm(token, "NewStrongPassword123!", uniqueTestIp()))
+        .isFalse();
+    assertThat(userRepository.findById(user.getId()).orElseThrow().getPasswordHash())
+        .isEqualTo(originalPasswordHash);
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT used_at FROM password_reset_token WHERE user_id = ?",
+                java.time.OffsetDateTime.class,
+                user.getId()))
+        .isNotNull();
+  }
+
+  @Test
   void resetRejectsCurrentPasswordWithoutConsumingTokenAndAllowsDifferentPasswordRetry() {
     User user = createUser("same-password");
     String token = issueResetToken(user);
@@ -230,6 +256,29 @@ class AuthenticationCompletionIntegrationTest {
     assertThat(passwordResetService.request(user.getEmail(), sourceIp)).isEqualTo(generic);
 
     verify(mailer, org.mockito.Mockito.timeout(2000).times(3))
+        .sendReset(eq(user.getEmail()), any(String.class), any(Duration.class));
+  }
+
+  @Test
+  void passwordResetDoesNotOfferMailboxOnlyRecoveryForUnverifiedHouseholdAccounts() {
+    User user = createUser("legacy-unverified-household");
+    user.setEmailVerifiedAt(null);
+    userRepository.saveAndFlush(user);
+    jdbc.update(
+        "INSERT INTO households(id, name, timezone, created_by_user_id) VALUES (?, 'Legacy home', 'UTC', ?)",
+        UUID.randomUUID(),
+        user.getId());
+
+    String response = passwordResetService.request(user.getEmail(), uniqueTestIp());
+
+    assertThat(response).isEqualTo(passwordResetService.genericResponse());
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT COUNT(*) FROM password_reset_token WHERE user_id = ?",
+                Integer.class,
+                user.getId()))
+        .isZero();
+    verify(mailer, org.mockito.Mockito.never())
         .sendReset(eq(user.getEmail()), any(String.class), any(Duration.class));
   }
 
@@ -404,6 +453,8 @@ class AuthenticationCompletionIntegrationTest {
     googleIdentityService.linkToPasswordAccount(
         "google-link-linked-" + UUID.randomUUID(), user.getEmail());
     assertThat(googleIdentityService.hasGoogleIdentity(user.getId())).isTrue();
+    assertThat(userRepository.findById(user.getId()).orElseThrow().getEmailVerifiedAt())
+        .isNotNull();
   }
 
   private User createUser(String prefix) {
@@ -413,6 +464,7 @@ class AuthenticationCompletionIntegrationTest {
     user.setPasswordHash(passwordEncoder.encode("OldStrongPassword123!"));
     user.setTimezone("UTC");
     user.setAccountStatus(AccountStatus.ACTIVE);
+    user.setEmailVerifiedAt(java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC));
     testUsers.add(userRepository.saveAndFlush(user));
     return testUsers.get(testUsers.size() - 1);
   }

@@ -49,6 +49,31 @@ function messageFor(status: number, path: string, payload?: unknown): string {
   if (status === 429 && (path === "/api/auth/login" || path === "/api/auth/google/link")) {
     return "Too many sign-in attempts. Please wait and try again, or reset your password."
   }
+  if (status === 429 && path.startsWith("/api/auth/email-verification/")) {
+    return "Please wait before trying again."
+  }
+  if (
+    status === 400 &&
+    (path === "/api/auth/email-verification/verify" ||
+      path === "/api/auth/email-verification/recovery/complete") &&
+    payload !== null &&
+    typeof payload === "object" &&
+    "message" in payload &&
+    payload.message === "The verification code is invalid or expired."
+  ) {
+    return payload.message
+  }
+  if (
+    status === 409 &&
+    path === "/api/auth/email-verification/correct-email" &&
+    payload !== null &&
+    typeof payload === "object" &&
+    "message" in payload &&
+    payload.message ===
+      "This email address cannot be changed automatically. Please contact DirtyDuty support."
+  ) {
+    return payload.message
+  }
   if (
     status === 400 &&
     path === "/api/auth/password-reset/confirm" &&

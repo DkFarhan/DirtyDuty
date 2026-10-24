@@ -199,6 +199,32 @@ describe("auth API client", () => {
     expect(validationError.message).not.toContain("<img")
   })
 
+  it("preserves only safe email-verification errors needed for recovery", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ token: "csrf-token", headerName: "X-CSRF-TOKEN" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            message: "The verification code is invalid or expired.",
+          }),
+          { status: 400, headers: { "content-type": "application/json" } },
+        ),
+      )
+
+    const error = await api
+      .post("/api/auth/email-verification/verify", { code: "000000" })
+      .catch((requestError) => requestError)
+
+    expect(error).toBeInstanceOf(ApiError)
+    if (!(error instanceof ApiError)) throw error
+    expect(error.message).toBe("The verification code is invalid or expired.")
+  })
+
   it("preserves the structured owned-household conflict payload for the account deletion blocker", async () => {
     fetchMock
       .mockResolvedValueOnce(

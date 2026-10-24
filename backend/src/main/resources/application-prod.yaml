@@ -54,6 +54,10 @@ app:
       request-email-limit: ${PASSWORD_RESET_EMAIL_LIMIT:3}
       request-ip-limit: ${PASSWORD_RESET_IP_LIMIT:5}
       confirm-ip-limit: ${PASSWORD_RESET_CONFIRM_IP_LIMIT:10}
+    email-verification:
+      enabled: ${EMAIL_VERIFICATION_ENABLED:true}
+      delivery-enabled: ${EMAIL_VERIFICATION_DELIVERY_ENABLED:true}
+      require-for-registration: true
   frontend:
     origins: ${FRONTEND_ORIGINS:http://localhost:3000}
   households:

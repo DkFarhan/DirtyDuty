@@ -15,6 +15,7 @@ import com.dirtyduty.app.exception.DuplicateResourceException;
 import com.dirtyduty.app.exception.GlobalExceptionHandler;
 import com.dirtyduty.app.repository.UserRepository;
 import com.dirtyduty.app.service.AuthService;
+import com.dirtyduty.app.service.EmailVerificationService;
 import com.dirtyduty.app.service.GoogleIdentityService;
 import com.dirtyduty.app.service.LegalAcceptanceService;
 import com.dirtyduty.app.service.PasswordLoginProtectionService;
@@ -51,6 +52,7 @@ class AuthControllerHttpTest {
   private AuthenticationManager authenticationManager;
   private GoogleIdentityService googleIdentityService;
   private PasswordLoginProtectionService loginProtection;
+  private EmailVerificationService emailVerificationService;
   private SessionAuthenticationStrategy sessionAuthenticationStrategy;
   private MockMvc mockMvc;
 
@@ -66,12 +68,22 @@ class AuthControllerHttpTest {
     authenticationManager = org.mockito.Mockito.mock(AuthenticationManager.class);
     googleIdentityService = org.mockito.Mockito.mock(GoogleIdentityService.class);
     loginProtection = org.mockito.Mockito.mock(PasswordLoginProtectionService.class);
+    emailVerificationService = org.mockito.Mockito.mock(EmailVerificationService.class);
     org.mockito.Mockito.doAnswer(invocation -> ((Supplier<?>) invocation.getArgument(2)).get())
         .when(loginProtection)
         .withAdmissionLock(
             org.mockito.ArgumentMatchers.anyString(),
             org.mockito.ArgumentMatchers.anyString(),
             org.mockito.ArgumentMatchers.<Supplier<?>>any());
+    org.mockito.Mockito.when(
+            authenticationManager.authenticate(
+                org.mockito.ArgumentMatchers.any(Authentication.class)))
+        .thenAnswer(
+            invocation -> {
+              Authentication token = invocation.getArgument(0);
+              return UsernamePasswordAuthenticationToken.authenticated(
+                  token.getName(), null, List.of());
+            });
     sessionAuthenticationStrategy = org.mockito.Mockito.mock(SessionAuthenticationStrategy.class);
     AuthController controller =
         new AuthController(
@@ -85,7 +97,8 @@ class AuthControllerHttpTest {
             authFeatures,
             org.mockito.Mockito.mock(RecentReauthenticationService.class),
             org.mockito.Mockito.mock(LegalAcceptanceService.class),
-            loginProtection);
+            loginProtection,
+            emailVerificationService);
     LocalValidatorFactoryBean validator = new LocalValidatorFactoryBean();
     validator.afterPropertiesSet();
     mockMvc =
@@ -118,7 +131,9 @@ class AuthControllerHttpTest {
 
   @Test
   void register_returns201AndNeverReturnsPasswordFields() throws Exception {
-    org.mockito.Mockito.when(authService.register(org.mockito.ArgumentMatchers.any()))
+    org.mockito.Mockito.when(
+            authService.register(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyString()))
         .thenReturn(new RegisterResponse(UUID.randomUUID(), "Alice Smith", "alice@example.com"));
 
     mockMvc
@@ -145,6 +160,57 @@ class AuthControllerHttpTest {
                 .string(
                     org.hamcrest.Matchers.not(
                         org.hamcrest.Matchers.containsString("StrongPassword123!"))));
+  }
+
+  @Test
+  void registerCreatesLimitedSessionAndReportsDeliveryFailureWithoutClaimingVerification()
+      throws Exception {
+    UUID userId = UUID.randomUUID();
+    org.mockito.Mockito.when(
+            authService.register(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyString()))
+        .thenReturn(new RegisterResponse(userId, "Alice Smith", "alice@example.com"));
+    org.mockito.Mockito.when(emailVerificationService.isEnabled()).thenReturn(true);
+    org.mockito.Mockito.when(emailVerificationService.sendReservedInitial(userId))
+        .thenReturn("FAILED");
+
+    mockMvc
+        .perform(
+            post("/api/auth/register")
+                .contentType(APPLICATION_JSON)
+                .content(
+                    """
+                        {
+                          "displayName": "Alice Smith",
+                          "email": "alice@example.com",
+                          "password": "StrongPassword123!",
+                          "termsAccepted": true,
+                          "privacyPolicyAcknowledged": true
+                        }
+                        """))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.emailVerified").value(false))
+        .andExpect(jsonPath("$.verificationDeliveryState").value("FAILED"));
+
+    org.mockito.Mockito.verify(authenticationManager)
+        .authenticate(org.mockito.ArgumentMatchers.any(Authentication.class));
+  }
+
+  @Test
+  void recoveryRequestReturnsGenericSuccessForEligibleAndIneligibleAddresses() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/auth/email-verification/recovery/request")
+                .contentType(APPLICATION_JSON)
+                .content("{\"email\":\"pending@example.com\"}"))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.message")
+                .value(
+                    "If an eligible account exists for this email, a recovery code will be sent."));
+
+    org.mockito.Mockito.verify(emailVerificationService)
+        .requestRecovery("pending@example.com", "127.0.0.1");
   }
 
   @Test

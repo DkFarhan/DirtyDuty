@@ -102,6 +102,52 @@ SMTP-dependent response delays; delivery failures revoke the token.
 Request and confirmation limits are persisted in PostgreSQL; the HMAC key used
 for pseudonymous rate-limit identifiers must remain private and stable.
 
+### Mandatory email ownership verification
+
+Production requires `EMAIL_VERIFICATION_ENABLED=true` and
+`EMAIL_VERIFICATION_DELIVERY_ENABLED=true`. Email/password registrations receive
+a limited authenticated session, but business APIs and household loading remain
+blocked until the address is verified. Configure `MAIL_HOST`, `MAIL_PORT`,
+`MAIL_USERNAME`, `MAIL_PASSWORD`, and `MAIL_FROM_ADDRESS` with verified SMTP
+credentials and keep mandatory STARTTLS and server-identity validation enabled.
+Production refuses to start if email verification is disabled, preventing new
+password registrations from being accepted without email ownership proof.
+Outside production, disabling verification leaves new accounts explicitly
+unverified; the feature flag disables verification gating without fabricating
+email ownership.
+`AUTH_RATE_LIMIT_HMAC_SECRET` must be a private, stable value of at least 32
+bytes; the production application fails to start when verification is enabled
+without its secret or delivery configuration.
+
+Verification codes are six digits, expire after ten minutes, and allow at most
+five guesses per code. Resending is limited to once per minute, with additional
+persistent per-email and per-IP hourly/daily limits. Email addresses, codes, and
+raw IP addresses are not stored in the verification rate-event table; it stores
+HMAC-derived identifiers. A successful Google sign-in with a verified Google
+email remains verified. A Google email matching a password account is still
+not linked automatically; only a successful password-authenticated linking
+flow may verify that account.
+Registration is limited to 5 attempts per email per hour and 10 per day, plus
+60 per source IP per hour and 200 per day. Initial email delivery capacity is
+reserved before password hashing and account creation; repeated rejected
+requests do not add verification rate-event rows.
+
+An abandoned password registration can be recovered using mailbox proof only
+for a recent account that has no household or other business data. Recovery
+lets the owner set a new password and display name. Existing/legacy
+unverified accounts can sign in and request a verification code, but mailbox
+recovery will not transfer or reclaim an account that may own household data;
+those cases require a controlled support process. Correcting a mistyped
+registration email additionally requires the current password and is limited
+to a recent, data-free pending registration. It invalidates existing sessions.
+Password-reset email is also withheld from accounts that remain unverified
+while email verification is enabled. Legacy unverified accounts with household
+or other business data therefore require support-led ownership verification;
+mailbox-only recovery or password reset must not transfer access to those
+accounts.
+The V14 migration adds verification-state and pseudonymous rate-event tables;
+it does not rewrite or delete existing user or household data.
+
 Password sign-in failures are also recorded as HMAC-pseudonymized account and
 source-IP counters. Five failures in 15 minutes begin a 30-second cooldown;
 continued failures increase this to 2, 5, and 15 minutes. After 100 consecutive

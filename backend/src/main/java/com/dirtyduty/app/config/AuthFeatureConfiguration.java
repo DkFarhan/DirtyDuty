@@ -14,6 +14,9 @@ public class AuthFeatureConfiguration {
   private final String googleClientId;
   private final String googleClientSecret;
   private final boolean passwordResetEnabled;
+  private final boolean emailVerificationEnabled;
+  private final boolean emailVerificationDeliveryEnabled;
+  private final boolean emailVerificationRequiredForRegistration;
   private final Duration resetTtl;
   private final String rateLimitSecret;
   private final String appBaseUrl;
@@ -31,6 +34,11 @@ public class AuthFeatureConfiguration {
       @Value("${app.auth.google.client-id:}") String googleClientId,
       @Value("${app.auth.google.client-secret:}") String googleClientSecret,
       @Value("${app.auth.password-reset.enabled:false}") boolean passwordResetEnabled,
+      @Value("${app.auth.email-verification.enabled:false}") boolean emailVerificationEnabled,
+      @Value("${app.auth.email-verification.delivery-enabled:false}")
+          boolean emailVerificationDeliveryEnabled,
+      @Value("${app.auth.email-verification.require-for-registration:false}")
+          boolean emailVerificationRequiredForRegistration,
       @Value("${app.auth.password-reset.token-ttl:30m}") Duration resetTtl,
       @Value("${app.auth.password-reset.rate-limit-hmac-secret:}") String rateLimitSecret,
       @Value("${app.base-url}") String appBaseUrl,
@@ -48,6 +56,9 @@ public class AuthFeatureConfiguration {
     this.googleClientId = googleClientId;
     this.googleClientSecret = googleClientSecret;
     this.passwordResetEnabled = passwordResetEnabled;
+    this.emailVerificationEnabled = emailVerificationEnabled;
+    this.emailVerificationDeliveryEnabled = emailVerificationDeliveryEnabled;
+    this.emailVerificationRequiredForRegistration = emailVerificationRequiredForRegistration;
     this.resetTtl = resetTtl;
     this.rateLimitSecret = rateLimitSecret;
     this.appBaseUrl = appBaseUrl;
@@ -63,12 +74,33 @@ public class AuthFeatureConfiguration {
 
   @PostConstruct
   void validate() {
+    if (emailVerificationRequiredForRegistration && !emailVerificationEnabled) {
+      throw new IllegalStateException(
+          "Production email/password registration requires email verification.");
+    }
     if (googleEnabled && (googleClientId.isBlank() || googleClientSecret.isBlank())) {
       throw new IllegalStateException(
           "Google authentication requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.");
     }
-    if (googleEnabled || passwordResetEnabled) {
+    if (googleEnabled || passwordResetEnabled || emailVerificationEnabled) {
       validateAppBaseUrl();
+    }
+    if (emailVerificationEnabled) {
+      if (rateLimitSecret.length() < 32) {
+        throw new IllegalStateException(
+            "Email verification requires AUTH_RATE_LIMIT_HMAC_SECRET of at least 32 characters.");
+      }
+      if (!emailVerificationDeliveryEnabled) {
+        throw new IllegalStateException(
+            "Email verification requires EMAIL_VERIFICATION_DELIVERY_ENABLED=true.");
+      }
+      if (mailHost.isBlank() || mailFrom.isBlank()) {
+        throw new IllegalStateException(
+            "Email verification requires an SMTP host and sender address.");
+      }
+      if (!mailSmtpAuth) {
+        throw new IllegalStateException("Email verification requires authenticated SMTP.");
+      }
     }
     if (passwordResetEnabled) {
       if (resetTtl.isNegative()
@@ -85,7 +117,7 @@ public class AuthFeatureConfiguration {
         throw new IllegalStateException("Password reset requires an SMTP host and sender address.");
       }
     }
-    if ((passwordResetEnabled || (!mailHost.isBlank() && mailSmtpAuth))
+    if ((passwordResetEnabled || emailVerificationEnabled || (!mailHost.isBlank() && mailSmtpAuth))
         && (!mailStartTls || !mailStartTlsRequired || !mailVerifyServerIdentity)) {
       throw new IllegalStateException(
           "SMTP requires mandatory STARTTLS and server identity verification.");
@@ -127,6 +159,10 @@ public class AuthFeatureConfiguration {
 
   public boolean passwordResetEnabled() {
     return passwordResetEnabled;
+  }
+
+  public boolean emailVerificationEnabled() {
+    return emailVerificationEnabled;
   }
 
   public Duration resetTtl() {

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useLayoutEffect } from "react"
+import { useEffect, useLayoutEffect, useRef } from "react"
 import { ThemeProvider, useTheme } from "@/components/theme/theme-provider"
 import type { Screen } from "@/lib/chore-sync/types"
 import { AuthProvider, useAuth } from "@/lib/auth/auth-context"
@@ -29,6 +29,7 @@ import { ForgotPasswordScreen } from "./screens/forgot-password-screen"
 import { ResetPasswordScreen } from "./screens/reset-password-screen"
 import { LegalAcceptanceScreen } from "./screens/legal-acceptance-screen"
 import { AppearanceScreen } from "./screens/appearance-screen"
+import { EmailVerificationScreen } from "./screens/email-verification-screen"
 import { AppLaunchGate } from "./launch-experience"
 import { PushSubscriptionHealthProvider } from "@/lib/notifications/push-health"
 
@@ -37,41 +38,53 @@ const authenticationScreens = new Set<Screen>([
   "register",
   "forgot-password",
   "reset-password",
+  "verify-email",
+])
+
+const screenTargets = new Map<string, Screen>([
+  ["dashboard", "dashboard"],
+  ["my-chores", "my-chores"],
+  ["household", "household"],
+  ["notifications", "notifications"],
+  ["profile", "profile"],
+  ["appearance", "appearance"],
+  ["household-settings", "household-settings"],
+  ["admin", "admin"],
+  ["privacy-security", "privacy-security"],
+  ["legal-acceptance", "legal-acceptance"],
 ])
 
 function ScreenRouter() {
   const { screen, adminTab, navigate, setCurrentUser } = useChoreSync()
-  const { user, isAuthenticated, isLoading, authError, refreshUser } = useAuth()
+  const { user, isAuthenticated, isLoading, authError, refreshUser, features } = useAuth()
   const { setPresentationLight } = useTheme()
+  const skipNextRouteGuard = useRef(false)
   const {
     households,
     status: householdStatus,
     error: householdError,
     refresh: refreshHouseholds,
   } = useHouseholds()
+  const verificationEnabled = features.emailVerification !== false
+  const emailVerified = !verificationEnabled || user?.emailVerified === true
+  const requiresEmailVerification =
+    isAuthenticated && verificationEnabled && user?.emailVerified === false
 
   useLayoutEffect(() => {
-    setPresentationLight(authenticationScreens.has(screen) || (!isAuthenticated && !isLoading))
-  }, [isAuthenticated, isLoading, screen, setPresentationLight])
+    setPresentationLight(
+      authenticationScreens.has(screen) ||
+        requiresEmailVerification ||
+        (!isAuthenticated && !isLoading),
+    )
+  }, [isAuthenticated, isLoading, requiresEmailVerification, screen, setPresentationLight])
 
   useEffect(() => {
     if (isLoading) return
 
     const target = new URLSearchParams(window.location.search).get("screen")
-    const screenTargets = new Map<string, Screen>([
-      ["dashboard", "dashboard"],
-      ["my-chores", "my-chores"],
-      ["household", "household"],
-      ["notifications", "notifications"],
-      ["profile", "profile"],
-      ["appearance", "appearance"],
-      ["household-settings", "household-settings"],
-      ["admin", "admin"],
-      ["privacy-security", "privacy-security"],
-      ["legal-acceptance", "legal-acceptance"],
-    ])
     const screenTarget = target ? screenTargets.get(target) : undefined
     if (screenTarget) {
+      skipNextRouteGuard.current = screenTarget !== screen
       navigate(screenTarget)
       const params = new URLSearchParams(window.location.search)
       params.delete("screen")
@@ -83,7 +96,7 @@ function ScreenRouter() {
         query ? `${window.location.pathname}?${query}` : window.location.pathname,
       )
     }
-  }, [isLoading, navigate])
+  }, [isLoading, navigate, screen])
 
   useEffect(() => {
     if (user) {
@@ -97,11 +110,27 @@ function ScreenRouter() {
   }, [setCurrentUser, user])
 
   useEffect(() => {
-    const redirect = isAuthenticated
-      ? getHouseholdRedirect(screen, true, householdStatus, households.length)
-      : getAuthRedirect(screen, false, isLoading)
+    if (skipNextRouteGuard.current) {
+      skipNextRouteGuard.current = false
+      return
+    }
+
+    const authRedirect = getAuthRedirect(screen, isAuthenticated, isLoading, emailVerified)
+    const redirect =
+      authRedirect ??
+      (isAuthenticated && emailVerified
+        ? getHouseholdRedirect(screen, true, householdStatus, households.length)
+        : null)
     if (redirect) navigate(redirect)
-  }, [householdStatus, households.length, isAuthenticated, isLoading, navigate, screen])
+  }, [
+    householdStatus,
+    households.length,
+    isAuthenticated,
+    isLoading,
+    navigate,
+    screen,
+    emailVerified,
+  ])
 
   useEffect(() => {
     if (isAuthenticated && screen === "legal-acceptance" && !user?.legalAcceptanceRequired) {
@@ -118,8 +147,11 @@ function ScreenRouter() {
   }
 
   if (isAuthenticated && user?.legalAcceptanceRequired) {
+    if (!emailVerified) return <EmailVerificationScreen />
     return <LegalAcceptanceScreen />
   }
+
+  if (isAuthenticated && user && !emailVerified) return <EmailVerificationScreen />
 
   if (authError) {
     return (
@@ -164,6 +196,8 @@ function ScreenRouter() {
       return <LoginScreen />
     case "register":
       return <RegisterScreen />
+    case "verify-email":
+      return isAuthenticated && !emailVerified ? <EmailVerificationScreen /> : <WelcomeScreen />
     case "forgot-password":
       return <ForgotPasswordScreen initialEmail={user?.email ?? ""} />
     case "reset-password":
