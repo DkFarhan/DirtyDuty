@@ -578,7 +578,10 @@ export function HouseholdSettingsScreen() {
                           </div>
                           <button
                             className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-700 transition hover:bg-rose-50"
-                            onClick={() => setRevokeTargetId(invitation.id)}
+                            onClick={() => {
+                              setRevokeError("")
+                              setRevokeTargetId(invitation.id)
+                            }}
                             type="button"
                           >
                             Revoke
