@@ -42,7 +42,7 @@ import org.springframework.test.web.servlet.MvcResult;
       "app.base-url=https://dirtyduty.test",
       "spring.mail.host=localhost",
       "spring.mail.username=test-user",
-      "spring.mail.******",
+      "spring.mail.password=test-only-password",
       "MAIL_FROM_ADDRESS=verify@dirtyduty.test"
     })
 @ActiveProfiles("ci")
@@ -150,7 +150,9 @@ class UnifiedRecoveryFeatureFlagsIntegrationTest {
                 pending.userId()))
         .isZero();
     org.mockito.Mockito.verify(emailVerificationMailer)
-        .sendVerificationCode(org.mockito.ArgumentMatchers.eq(pending.email()), code.getValue());
+        .sendVerificationCode(
+            org.mockito.ArgumentMatchers.eq(pending.email()),
+            org.mockito.ArgumentMatchers.eq(code.getValue()));
     org.mockito.Mockito.verifyNoInteractions(passwordResetMailer);
   }
 

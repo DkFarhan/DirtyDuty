@@ -121,7 +121,7 @@ class AuthenticationCompletionIntegrationTest {
     assertThat(accountRecoveryService.requestInstructions(pending.getEmail(), uniqueTestIp()))
         .isEqualTo(generic);
     verify(emailVerificationMailer)
-        .sendVerificationCode(eq(pending.getEmail()), codeCaptor.getValue());
+        .sendVerificationCode(eq(pending.getEmail()), eq(codeCaptor.getValue()));
 
     emailVerificationService.completeRecovery(
         pending.getEmail(), codeCaptor.getValue(), "RecoveredPassword123!", uniqueTestIp());
