@@ -7,6 +7,7 @@ export type Theme = "light" | "dark" | "system"
 type ThemeContextValue = {
   theme: Theme
   setTheme: (theme: Theme) => void
+  setPresentationLight: (forceLight: boolean) => void
 }
 
 const THEME_STORAGE_KEY = "dirtyduty-theme"
@@ -37,6 +38,7 @@ function applyTheme(theme: Theme) {
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>("system")
+  const [presentationLight, setPresentationLightState] = useState(false)
   const [initialized, setInitialized] = useState(false)
 
   useEffect(() => {
@@ -55,11 +57,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!initialized) return
-    applyTheme(theme)
-    if (theme !== "system" || typeof window.matchMedia !== "function") return
+    applyTheme(presentationLight ? "light" : theme)
+    if (presentationLight || theme !== "system" || typeof window.matchMedia !== "function") return
 
     const media = window.matchMedia("(prefers-color-scheme: dark)")
-    const onColorSchemeChange = () => applyTheme("system")
+    const onColorSchemeChange = () => applyTheme(presentationLight ? "light" : "system")
     if (typeof media.addEventListener === "function") {
       media.addEventListener("change", onColorSchemeChange)
       return () => media.removeEventListener("change", onColorSchemeChange)
@@ -67,14 +69,25 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
     media.addListener(onColorSchemeChange)
     return () => media.removeListener(onColorSchemeChange)
-  }, [initialized, theme])
+  }, [initialized, presentationLight, theme])
 
   const setTheme = useCallback((nextTheme: Theme) => {
     window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme)
     setThemeState(nextTheme)
   }, [])
 
-  const value = useMemo(() => ({ theme, setTheme }), [setTheme, theme])
+  const setPresentationLight = useCallback(
+    (forceLight: boolean) => {
+      setPresentationLightState(forceLight)
+      if (initialized) applyTheme(forceLight ? "light" : theme)
+    },
+    [initialized, theme],
+  )
+
+  const value = useMemo(
+    () => ({ theme, setTheme, setPresentationLight }),
+    [setPresentationLight, setTheme, theme],
+  )
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
 }
 

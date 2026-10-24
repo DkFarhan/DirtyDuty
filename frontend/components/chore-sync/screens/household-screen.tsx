@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useChoreSync } from "@/lib/chore-sync/store"
 import { ApiError } from "@/lib/auth/api"
 import { householdApi, type HouseholdMemberDTO } from "@/lib/household/api"
@@ -19,7 +19,7 @@ const adminActions = [
 
 export function HouseholdScreen() {
   const { state, navigate } = useChoreSync()
-  const { households, activeHousehold, refresh } = useHouseholds()
+  const { households, activeHousehold, refresh, removeHousehold } = useHouseholds()
   const household = activeHousehold ?? households[0]
   const [inviteOpen, setInviteOpen] = useState(false)
   const [leaveFlow, setLeaveFlow] = useState<
@@ -31,6 +31,11 @@ export function HouseholdScreen() {
   const [members, setMembers] = useState<HouseholdMemberDTO[]>([])
   const [memberStatus, setMemberStatus] = useState<"loading" | "loaded" | "error">("loading")
   const [memberError, setMemberError] = useState<string | null>(null)
+  const [memberErrorHouseholdId, setMemberErrorHouseholdId] = useState<string | null>(null)
+  const [memberRefreshError, setMemberRefreshError] = useState<string | null>(null)
+  const [membersHouseholdId, setMembersHouseholdId] = useState<string | null>(null)
+  const membersHouseholdIdRef = useRef<string | null>(null)
+  const memberRequestSequence = useRef(0)
   const [pendingMemberAction, setPendingMemberAction] = useState<{
     action: MemberAction
     member: HouseholdMemberDTO
@@ -44,22 +49,43 @@ export function HouseholdScreen() {
 
   const loadMembers = useCallback(async () => {
     if (!household) {
+      memberRequestSequence.current += 1
+      setMembers([])
+      membersHouseholdIdRef.current = null
+      setMembersHouseholdId(null)
       setMemberError("Your household could not be found.")
+      setMemberErrorHouseholdId(null)
       setMemberStatus("error")
       return
     }
-    setMemberStatus("loading")
-    setMemberError(null)
+    const requestId = ++memberRequestSequence.current
+    const hasCurrentData = membersHouseholdIdRef.current === household.id
+    if (!hasCurrentData) setMemberStatus("loading")
     try {
-      setMembers(await householdApi.members(household.id))
+      const result = await householdApi.members(household.id)
+      if (requestId !== memberRequestSequence.current) return
+      setMembers(result)
+      membersHouseholdIdRef.current = household.id
+      setMembersHouseholdId(household.id)
       setMemberStatus("loaded")
+      setMemberError(null)
+      setMemberErrorHouseholdId(null)
+      setMemberRefreshError(null)
     } catch (cause) {
-      setMemberError(
+      if (requestId !== memberRequestSequence.current) return
+      const message =
         cause instanceof ApiError
           ? cause.message
-          : "Unable to load household members. Please try again.",
-      )
-      setMemberStatus("error")
+          : hasCurrentData
+            ? "Unable to refresh household members. Please try again."
+            : "Unable to load household members. Please try again."
+      if (hasCurrentData) {
+        setMemberRefreshError(message)
+      } else {
+        setMemberError(message)
+        setMemberErrorHouseholdId(household.id)
+        setMemberStatus("error")
+      }
     }
   }, [household])
 
@@ -102,7 +128,7 @@ export function HouseholdScreen() {
       setConfirmText("")
       await loadMembers()
       if (action === "transfer") {
-        await refresh()
+        void refresh().catch(() => undefined)
       }
     } catch (cause) {
       setMemberActionError(
@@ -145,10 +171,11 @@ export function HouseholdScreen() {
     setLeaveError(null)
     try {
       await householdApi.leave(household.id, newOwnerUserId)
-      const remaining = await refresh()
+      const remaining = removeHousehold(household.id)
       setLeaveFlow("closed")
       setSelectedNewOwnerId("")
       navigate(remaining.length ? "dashboard" : "welcome")
+      void refresh().catch(() => undefined)
     } catch (cause) {
       setLeaveError(
         cause instanceof ApiError
@@ -158,11 +185,30 @@ export function HouseholdScreen() {
     } finally {
       setLeaveBusy(false)
     }
-  }, [eligibleNewOwners, household, leaveBusy, navigate, refresh, selectedNewOwnerId])
+  }, [
+    eligibleNewOwners,
+    household,
+    leaveBusy,
+    navigate,
+    refresh,
+    removeHousehold,
+    selectedNewOwnerId,
+  ])
 
   useEffect(() => {
     void loadMembers()
+    return () => {
+      memberRequestSequence.current += 1
+    }
   }, [loadMembers])
+
+  const visibleMemberStatus = !household
+    ? memberStatus
+    : membersHouseholdId === household.id
+      ? memberStatus
+      : memberErrorHouseholdId === household.id
+        ? "error"
+        : "loading"
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 pb-20">
@@ -175,7 +221,7 @@ export function HouseholdScreen() {
         </div>
         <div className="flex items-center gap-2 mt-3">
           <span className="text-xs bg-slate-100 text-slate-600 font-semibold px-2.5 py-1 rounded-full">
-            {memberStatus === "loaded" ? `${members.length} members` : "Members"}
+            {visibleMemberStatus === "loaded" ? `${members.length} members` : "Members"}
           </span>
           {canManage && (
             <span className="text-xs bg-teal-100 text-teal-700 font-semibold px-2.5 py-1 rounded-full">
@@ -188,14 +234,14 @@ export function HouseholdScreen() {
       <div className="flex flex-col gap-5 px-4 pt-5">
         <section>
           <SectionHeader title="Members" />
-          {memberStatus === "loading" && (
+          {visibleMemberStatus === "loading" && (
             <div aria-label="Loading household members" className="space-y-3">
               {[0, 1].map((item) => (
                 <div className="h-28 animate-pulse rounded-2xl bg-white" key={item} />
               ))}
             </div>
           )}
-          {memberStatus === "error" && (
+          {visibleMemberStatus === "error" && (
             <div className="rounded-2xl border border-slate-100 bg-white p-5 text-center">
               <p role="alert" className="text-sm text-slate-600">
                 {memberError}
@@ -209,12 +255,24 @@ export function HouseholdScreen() {
               </button>
             </div>
           )}
-          {memberStatus === "loaded" && members.length === 0 && (
+          {visibleMemberStatus === "loaded" && memberRefreshError && (
+            <div className="mb-3 flex items-center gap-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <p className="flex-1">{memberRefreshError}</p>
+              <button
+                className="shrink-0 font-bold underline"
+                onClick={() => void loadMembers()}
+                type="button"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+          {visibleMemberStatus === "loaded" && members.length === 0 && (
             <div className="rounded-2xl bg-white p-6 text-center text-sm text-slate-400">
               No household members found.
             </div>
           )}
-          {memberStatus === "loaded" && (
+          {visibleMemberStatus === "loaded" && (
             <div className="flex flex-col gap-3">
               {members.map((member, i) => (
                 <MemberCard

@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
 import { ApiError } from "@/lib/auth/api"
 import { useAuth } from "@/lib/auth/auth-context"
 import { householdApi, type CreateHouseholdInput, type Household } from "./api"
@@ -12,9 +12,12 @@ type HouseholdContextValue = {
   activeHousehold: Household | null
   status: HouseholdStatus
   error: string | null
+  isRefreshing: boolean
   createdHouseholdInvite: Household | null
   refresh: () => Promise<Household[]>
   selectHousehold: (householdId: string) => void
+  updateHousehold: (household: Household) => void
+  removeHousehold: (householdId: string) => Household[]
   create: (input: CreateHouseholdInput) => Promise<Household>
   join: (inviteCode: string) => Promise<void>
   queueCreatedHouseholdInvite: (household: Household | null) => void
@@ -29,19 +32,34 @@ function messageFor(error: unknown) {
 }
 
 export function HouseholdProvider({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading: isAuthLoading } = useAuth()
+  const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth()
+  const userId = user?.userId ?? null
   const [households, setHouseholds] = useState<Household[]>([])
   const [selectedHouseholdId, setSelectedHouseholdId] = useState<string | null>(null)
   const [status, setStatus] = useState<HouseholdStatus>("loading")
   const [error, setError] = useState<string | null>(null)
-  const [hasLoaded, setHasLoaded] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [loadedUserId, setLoadedUserId] = useState<string | null>(null)
+  const [statusUserId, setStatusUserId] = useState<string | null>(null)
+  const householdsRef = useRef<Household[]>([])
+  const loadedUserIdRef = useRef<string | null>(null)
+  const requestSequence = useRef(0)
   const [createdHouseholdInvite, setCreatedHouseholdInvite] = useState<Household | null>(null)
 
   const refresh = useCallback(async () => {
-    setStatus("loading")
+    const requestId = ++requestSequence.current
+    const requestUserId = userId
+    const hasCurrentData = requestUserId !== null && loadedUserIdRef.current === requestUserId
+    setStatusUserId(requestUserId)
     setError(null)
+    if (!hasCurrentData) {
+      setStatus("loading")
+    }
+    setIsRefreshing(true)
     try {
       const result = await householdApi.list()
+      if (requestId !== requestSequence.current || requestUserId !== userId) return result
+      householdsRef.current = result
       setHouseholds(result)
       setSelectedHouseholdId((selectedId) =>
         result.some((household) => household.id === selectedId)
@@ -49,28 +67,40 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
           : (result[0]?.id ?? null),
       )
       setStatus(result.length === 0 ? "empty" : "has-households")
-      setHasLoaded(true)
+      loadedUserIdRef.current = requestUserId
+      setLoadedUserId(requestUserId)
+      setError(null)
       return result
     } catch (cause) {
-      setError(messageFor(cause))
-      setStatus("error")
-      setHasLoaded(true)
+      if (requestId === requestSequence.current && requestUserId === userId) {
+        setError(messageFor(cause))
+        if (!hasCurrentData) setStatus("error")
+      }
       throw cause
+    } finally {
+      if (requestId === requestSequence.current) setIsRefreshing(false)
     }
-  }, [])
+  }, [userId])
 
   useEffect(() => {
     if (isAuthLoading) return
+    requestSequence.current += 1
+    householdsRef.current = []
+    loadedUserIdRef.current = null
+    setHouseholds([])
+    setSelectedHouseholdId(null)
+    setLoadedUserId(null)
+    setCreatedHouseholdInvite(null)
+    setStatusUserId(userId)
+    setIsRefreshing(false)
+    setError(null)
     if (!isAuthenticated) {
-      setHouseholds([])
-      setSelectedHouseholdId(null)
-      setError(null)
       setStatus("empty")
-      setHasLoaded(false)
       return
     }
+    setStatus("loading")
     void refresh().catch(() => undefined)
-  }, [isAuthenticated, isAuthLoading, refresh])
+  }, [isAuthenticated, isAuthLoading, refresh, userId])
 
   const create = useCallback(
     async (input: CreateHouseholdInput) => {
@@ -102,31 +132,60 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     [households],
   )
 
-  const activeHousehold =
-    households.find((household) => household.id === selectedHouseholdId) ?? households[0] ?? null
+  const updateHousehold = useCallback((updatedHousehold: Household) => {
+    const nextHouseholds = householdsRef.current.map((household) =>
+      household.id === updatedHousehold.id ? updatedHousehold : household,
+    )
+    householdsRef.current = nextHouseholds
+    setHouseholds(nextHouseholds)
+  }, [])
 
-  const visibleStatus = isAuthenticated && !hasLoaded ? "loading" : status
+  const removeHousehold = useCallback((householdId: string) => {
+    const nextHouseholds = householdsRef.current.filter((household) => household.id !== householdId)
+    householdsRef.current = nextHouseholds
+    setHouseholds(nextHouseholds)
+    setSelectedHouseholdId((selectedId) =>
+      selectedId === householdId ? (nextHouseholds[0]?.id ?? null) : selectedId,
+    )
+    setStatus(nextHouseholds.length === 0 ? "empty" : "has-households")
+    setError(null)
+    return nextHouseholds
+  }, [])
+
+  const visibleHouseholds = isAuthenticated && loadedUserId === userId ? households : []
+  const activeHousehold =
+    visibleHouseholds.find((household) => household.id === selectedHouseholdId) ??
+    visibleHouseholds[0] ??
+    null
+
+  const visibleStatus = isAuthenticated && statusUserId !== userId ? "loading" : status
   const value = useMemo(
     () => ({
-      households,
+      households: visibleHouseholds,
       activeHousehold,
       status: visibleStatus,
       error,
+      isRefreshing,
       createdHouseholdInvite,
       refresh,
       selectHousehold,
+      updateHousehold,
+      removeHousehold,
       create,
       join,
       queueCreatedHouseholdInvite,
     }),
     [
-      households,
+      visibleHouseholds,
       activeHousehold,
       visibleStatus,
       error,
+      isRefreshing,
       createdHouseholdInvite,
       refresh,
       selectHousehold,
+      updateHousehold,
+      removeHousehold,
       create,
       join,
       queueCreatedHouseholdInvite,

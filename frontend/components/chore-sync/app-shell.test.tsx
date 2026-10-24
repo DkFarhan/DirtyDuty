@@ -181,6 +181,24 @@ describe("authentication screens", () => {
     expect(screen.queryByRole("status", { name: "Starting DirtyDuty" })).toBeNull()
   })
 
+  it("keeps authentication screens light without changing a saved dark preference", async () => {
+    localStorage.setItem("dirtyduty-theme", "dark")
+    fetchMock.mockResolvedValueOnce(jsonResponse({}, 401))
+
+    await openLogin()
+
+    await waitFor(() => {
+      expect(document.documentElement.classList.contains("dark")).toBe(false)
+      expect(document.documentElement.dataset.theme).toBe("light")
+    })
+    expect(localStorage.getItem("dirtyduty-theme")).toBe("dark")
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign up" }))
+    expect(screen.getByRole("heading", { name: "Create account" })).toBeTruthy()
+    expect(document.documentElement.classList.contains("dark")).toBe(false)
+    expect(localStorage.getItem("dirtyduty-theme")).toBe("dark")
+  })
+
   it("toggles login password visibility without changing the value or submitting", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({}, 401))
     await openLogin()

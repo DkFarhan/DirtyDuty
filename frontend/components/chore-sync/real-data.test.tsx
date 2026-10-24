@@ -171,6 +171,82 @@ describe("server-backed chore data", () => {
     expect(new Headers(completeRequest?.[1]?.headers).get("X-CSRF-TOKEN")).toBe("complete-csrf")
   })
 
+  it("shows Dashboard's initial API error and recovers after retry", async () => {
+    let dashboardRequests = 0
+    fetchMock.mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.endsWith("/api/auth/me")) return jsonResponse(user)
+      if (url.endsWith("/api/households")) return jsonResponse([household])
+      if (url.endsWith("/api/households/home-1/dashboard")) {
+        dashboardRequests += 1
+        return dashboardRequests === 1
+          ? jsonResponse({ message: "Unavailable." }, 500)
+          : jsonResponse(dashboard)
+      }
+      if (url.endsWith("/api/notifications/preferences"))
+        return jsonResponse({ pushEnabled: false })
+      if (url.endsWith("/api/notifications/unread-count")) return jsonResponse({ count: 0 })
+      return jsonResponse({}, 404)
+    })
+    render(<AppShell initialScreen="dashboard" />)
+
+    expect(await screen.findByRole("alert", {}, { timeout: 3_000 })).toHaveProperty(
+      "textContent",
+      "Something went wrong. Please try again.",
+    )
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy()
+    expect(screen.queryByRole("heading", { name: "Today" })).toBeNull()
+
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+
+    expect(await screen.findByRole("heading", { name: "Today" })).toBeTruthy()
+    expect(screen.getByText("1/2")).toBeTruthy()
+    expect(dashboardRequests).toBe(2)
+  })
+
+  it("shows chore completion immediately and restores it when the server rejects the request", async () => {
+    await startAtDashboard()
+    let finishCompletion!: (response: Response) => void
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ token: "complete-csrf", headerName: "X-CSRF-TOKEN" }))
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishCompletion = resolve
+          }),
+      )
+
+    fireEvent.click(screen.getByRole("button", { name: "Mark Clean Kitchen complete" }))
+
+    await waitFor(() => expect(finishCompletion).toBeTypeOf("function"))
+    expect(screen.getByText("100% done")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Mark Clean Kitchen complete" })).toBeNull()
+
+    finishCompletion(jsonResponse({ message: "Completion rejected." }, 500))
+    await waitFor(() => {
+      expect(screen.getByText("1/2")).toBeTruthy()
+      expect(screen.getByRole("button", { name: "Mark Clean Kitchen complete" })).toBeTruthy()
+      expect(screen.getByRole("alert").textContent).toContain("Something went wrong.")
+    })
+  })
+
+  it("keeps a successful completion when the background dashboard refresh fails", async () => {
+    await startAtDashboard()
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ token: "complete-csrf", headerName: "X-CSRF-TOKEN" }))
+      .mockResolvedValueOnce(
+        jsonResponse({ ...pendingAssignment, status: "COMPLETED", canComplete: false }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ message: "Refresh failed." }, 500))
+
+    fireEvent.click(screen.getByRole("button", { name: "Mark Clean Kitchen complete" }))
+
+    await waitFor(() => {
+      expect(screen.getByText("100% done")).toBeTruthy()
+      expect(screen.queryByRole("button", { name: "Mark Clean Kitchen complete" })).toBeNull()
+    })
+  })
+
   it("shows dashboard recovery and syncs a missing subscription after explicit action", async () => {
     const browserSubscription = {
       endpoint: "https://push.example.test/new-endpoint",
@@ -578,21 +654,41 @@ describe("server-backed chore data", () => {
       overdue: false,
       completedByDisplayName: "Jahid",
     }
+    let finishCompletion!: (response: Response) => void
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ token: "my-chores-csrf", headerName: "X-CSRF-TOKEN" }))
-      .mockResolvedValueOnce(jsonResponse(completed))
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishCompletion = resolve
+          }),
+      )
       .mockResolvedValueOnce(jsonResponse([]))
       .mockResolvedValueOnce(jsonResponse([completed]))
-    fireEvent.click(screen.getByRole("button", { name: "Mark Clean Kitchen complete" }))
+    const completionButton = screen.getByRole("button", { name: "Mark Clean Kitchen complete" })
+    fireEvent.click(completionButton)
+    fireEvent.click(completionButton)
 
-    await waitFor(() => expect(screen.getByText("0 upcoming · 1 completed")).toBeTruthy())
+    await waitFor(() => expect(finishCompletion).toBeTypeOf("function"))
+    expect(screen.getByText("0 upcoming · 1 completed")).toBeTruthy()
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url, request]) =>
+          url === "http://localhost:8080/api/households/home-1/assignments/assignment-1/complete" &&
+          request?.method === "POST",
+      ),
+    ).toHaveLength(1)
+    fireEvent.click(screen.getByRole("button", { name: /completed/i }))
+    expect(screen.getByText("Clean Kitchen")).toBeTruthy()
+    expect(screen.queryByText("Completed by Jahid")).toBeNull()
+
+    finishCompletion(jsonResponse(completed))
+    await waitFor(() => expect(screen.getByText("Completed by Jahid")).toBeTruthy())
     expect(
       fetchMock.mock.calls.some(
         ([url]) => url === "http://localhost:8080/api/households/home-1/my-chores?status=UPCOMING",
       ),
     ).toBe(true)
-    fireEvent.click(screen.getByRole("button", { name: /completed/i }))
-    expect(await screen.findByText("Completed by Jahid")).toBeTruthy()
   })
 
   it("uses real member roles, join dates and progress in Household and Household Management", async () => {

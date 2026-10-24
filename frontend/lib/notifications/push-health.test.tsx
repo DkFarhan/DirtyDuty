@@ -219,9 +219,11 @@ describe("push subscription health", () => {
       "registered to another account",
     )
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }))
-    await waitFor(() => expect(mocks.inspect.mock.calls.length).toBeGreaterThanOrEqual(2))
-    expect(mocks.confirm).toHaveBeenCalledOnce()
-    expect(screen.getByTestId("push-reason").textContent).toBe("sync-required")
+    await waitFor(() => {
+      expect(mocks.inspect.mock.calls.length).toBeGreaterThanOrEqual(2)
+      expect(mocks.confirm).toHaveBeenCalledOnce()
+      expect(screen.getByTestId("push-reason").textContent).toBe("sync-required")
+    })
   })
 
   it("does not inspect or request permission when the saved preference is disabled", async () => {
