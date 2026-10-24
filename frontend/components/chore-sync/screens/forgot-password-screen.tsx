@@ -97,7 +97,7 @@ export function ForgotPasswordScreen({ initialEmail = "" }: { initialEmail?: str
             <p className="text-sm font-semibold text-slate-700">Didn&apos;t receive an email?</p>
             {cooldown > 0 ? (
               <p className="mt-1 text-sm text-slate-500" role="timer">
-                Resend available in {cooldown} seconds.
+                Resend available in {cooldown} {cooldown === 1 ? "second" : "seconds"}.
               </p>
             ) : (
               <button

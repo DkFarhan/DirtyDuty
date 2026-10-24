@@ -12,6 +12,7 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.junit.jupiter.api.AfterEach;
@@ -55,10 +56,10 @@ class PasswordLoginProtectionIntegrationTest {
     String ipHash = hash("IP", ip);
 
     for (int attempt = 0; attempt < 4; attempt++) protection.recordFailure(email, ip);
-    protection.assertAllowed(email, ip, "WrongPassword123!");
+    protection.assertAllowed(email, ip);
     protection.recordFailure(email, ip);
 
-    assertThatThrownBy(() -> protection.assertAllowed(email, ip, "WrongPassword123!"))
+    assertThatThrownBy(() -> protection.assertAllowed(email, ip))
         .isInstanceOf(LoginTemporarilyThrottledException.class);
     assertThat(cooldownSeconds("ACCOUNT", accountHash)).isBetween(29L, 30L);
     assertThat(
@@ -146,10 +147,9 @@ class PasswordLoginProtectionIntegrationTest {
       protection.recordFailure(trackAccount("visitor-" + attempt + "@example.com"), ip);
     }
 
-    protection.assertAllowed(trackAccount("another-user@example.com"), ip, "WrongPassword123!");
+    protection.assertAllowed(trackAccount("another-user@example.com"), ip);
     protection.recordFailure(trackAccount("last-visitor@example.com"), ip);
-    assertThatThrownBy(
-            () -> protection.assertAllowed("another-user@example.com", ip, "WrongPassword123!"))
+    assertThatThrownBy(() -> protection.assertAllowed("another-user@example.com", ip))
         .isInstanceOf(LoginTemporarilyThrottledException.class);
     assertThat(cooldownSeconds("IP", hash("IP", ip))).isBetween(29L, 30L);
   }
@@ -191,6 +191,64 @@ class PasswordLoginProtectionIntegrationTest {
                 Integer.class,
                 accountHash))
         .isEqualTo(workers);
+  }
+
+  @Test
+  void concurrentAdmissionCannotPassTheAccountLimit() throws Exception {
+    String email = trackAccount("admission-" + UUID.randomUUID() + "@example.com");
+    String ip = trackIp("test-ip-" + UUID.randomUUID());
+    String accountHash = hash("ACCOUNT", email);
+    for (int attempt = 0; attempt < 4; attempt++) {
+      protection.recordFailure(email, ip);
+    }
+
+    int workers = 12;
+    var executor = Executors.newFixedThreadPool(workers);
+    CountDownLatch ready = new CountDownLatch(workers);
+    CountDownLatch start = new CountDownLatch(1);
+    AtomicInteger admitted = new AtomicInteger();
+    List<java.util.concurrent.Future<?>> futures = new ArrayList<>();
+
+    try {
+      for (int worker = 0; worker < workers; worker++) {
+        futures.add(
+            executor.submit(
+                () -> {
+                  ready.countDown();
+                  if (!start.await(5, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("Concurrent test start timed out.");
+                  }
+                  try {
+                    protection.withAdmissionLock(
+                        email,
+                        ip,
+                        () -> {
+                          protection.assertAllowed(email, ip);
+                          protection.recordFailure(email, ip);
+                          admitted.incrementAndGet();
+                          return null;
+                        });
+                  } catch (LoginTemporarilyThrottledException expected) {
+                    return null;
+                  }
+                  return null;
+                }));
+      }
+      assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+      start.countDown();
+      for (var future : futures) future.get(15, TimeUnit.SECONDS);
+    } finally {
+      executor.shutdownNow();
+    }
+
+    assertThat(admitted).hasValue(1);
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT window_failure_count FROM auth_login_failure WHERE scope = 'ACCOUNT' AND subject_hash = ?",
+                Integer.class,
+                accountHash))
+        .isEqualTo(5);
+    assertThat(cooldownSeconds("ACCOUNT", accountHash)).isBetween(29L, 30L);
   }
 
   @Test

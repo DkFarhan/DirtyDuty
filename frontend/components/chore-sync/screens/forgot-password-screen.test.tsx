@@ -62,7 +62,7 @@ describe("forgot password screen", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(59_000)
     })
-    expect(screen.getByRole("timer").textContent).toContain("1 seconds")
+    expect(screen.getByRole("timer").textContent).toContain("1 second.")
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1_000)
     })

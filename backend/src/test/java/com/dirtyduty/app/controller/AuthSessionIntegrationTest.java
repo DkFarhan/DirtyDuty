@@ -22,11 +22,16 @@ import com.dirtyduty.app.service.GoogleIdentityService;
 import com.dirtyduty.app.service.LegalDocumentVersions;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.Cookie;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -48,8 +53,12 @@ class AuthSessionIntegrationTest {
 
   private final List<String> testEmails = new ArrayList<>();
   private final List<UUID> testUserIds = new ArrayList<>();
+  private final Map<String, String> testIps = new ConcurrentHashMap<>();
 
   @Autowired private MockMvc mockMvc;
+
+  @Value("${app.auth.password-reset.rate-limit-hmac-secret}")
+  private String rateLimitSecret;
 
   @Autowired private AuthService authService;
 
@@ -67,7 +76,7 @@ class AuthSessionIntegrationTest {
   private boolean sessionCookieSecure;
 
   @AfterEach
-  void cleanUpTestOwnedSessionsAndUsers() {
+  void cleanUpTestOwnedSessionsAndUsers() throws Exception {
     for (String email : testEmails) {
       jdbcTemplate.update(
           """
@@ -78,12 +87,15 @@ class AuthSessionIntegrationTest {
                     """,
           email);
       jdbcTemplate.update("DELETE FROM spring_session WHERE principal_name = ?", email);
+      deleteRateLimitRecord("ACCOUNT", email);
     }
+    for (String ip : testIps.values()) deleteRateLimitRecord("IP", ip);
     for (UUID userId : testUserIds) {
       userRepository.findById(userId).ifPresent(userRepository::delete);
     }
     testEmails.clear();
     testUserIds.clear();
+    testIps.clear();
   }
 
   @Test
@@ -676,11 +688,33 @@ class AuthSessionIntegrationTest {
     return mockMvc
         .perform(
             post("/api/auth/login")
+                .with(
+                    request -> {
+                      request.setRemoteAddr(
+                          testIps.computeIfAbsent(email, ignored -> uniqueTestIp()));
+                      return request;
+                    })
                 .cookie(csrf.getResponse().getCookie("SESSION"))
                 .contentType(APPLICATION_JSON)
                 .header(csrfResponse.headerName(), csrfResponse.token())
                 .content(loginJson(email, password)))
         .andReturn();
+  }
+
+  private String uniqueTestIp() {
+    int first = UUID.randomUUID().hashCode() & 0xff;
+    int second = UUID.randomUUID().hashCode() & 0xff;
+    return "198.51." + first + "." + second;
+  }
+
+  private void deleteRateLimitRecord(String scope, String identifier) throws Exception {
+    Mac mac = Mac.getInstance("HmacSHA256");
+    mac.init(new SecretKeySpec(rateLimitSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+    String subjectHash =
+        java.util.HexFormat.of()
+            .formatHex(mac.doFinal((scope + ":" + identifier).getBytes(StandardCharsets.UTF_8)));
+    jdbcTemplate.update(
+        "DELETE FROM auth_login_failure WHERE scope = ? AND subject_hash = ?", scope, subjectHash);
   }
 
   private void assertPasswordChangeStatus(

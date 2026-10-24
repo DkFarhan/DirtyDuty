@@ -3,42 +3,50 @@ package com.dirtyduty.app.service;
 import com.dirtyduty.app.exception.LoginTemporarilyThrottledException;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
+import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.Locale;
+import java.util.function.Supplier;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class PasswordLoginProtectionService {
   private static final int MAX_CONSECUTIVE_FAILURES = 100;
-  private static final String DUMMY_PASSWORD = "Dummy password used for throttled authentication";
 
   private final JdbcTemplate jdbc;
   private final byte[] secret;
-  private final PasswordEncoder passwordEncoder;
-  private final String dummyPasswordHash;
 
   public PasswordLoginProtectionService(
       JdbcTemplate jdbc,
-      PasswordEncoder passwordEncoder,
       @Value("${app.auth.password-reset.rate-limit-hmac-secret:}") String secret) {
     this.jdbc = jdbc;
-    this.passwordEncoder = passwordEncoder;
     this.secret = secret.getBytes(StandardCharsets.UTF_8);
     if (this.secret.length < 32) {
       throw new IllegalStateException(
           "AUTH_RATE_LIMIT_HMAC_SECRET must be configured with at least 32 bytes.");
     }
-    this.dummyPasswordHash = passwordEncoder.encode(DUMMY_PASSWORD);
   }
 
-  public void assertAllowed(String email, String sourceIp, String submittedPassword) {
+  @Transactional
+  public <T> T withAdmissionLock(String email, String sourceIp, Supplier<T> authentication) {
+    long[] lockKeys = {
+      admissionLockKey("ACCOUNT", normalizeEmail(email)),
+      admissionLockKey("IP", normalizeIp(sourceIp))
+    };
+    Arrays.sort(lockKeys);
+    for (long lockKey : lockKeys) {
+      jdbc.query(
+          "SELECT pg_advisory_xact_lock(?)", (resultSet, rowNumber) -> Boolean.TRUE, lockKey);
+    }
+    return authentication.get();
+  }
+
+  public void assertAllowed(String email, String sourceIp) {
     String accountHash = hash("ACCOUNT", normalizeEmail(email));
     String ipHash = hash("IP", normalizeIp(sourceIp));
     Boolean blocked =
@@ -56,14 +64,12 @@ public class PasswordLoginProtectionService {
             accountHash,
             ipHash);
     if (Boolean.TRUE.equals(blocked)) {
-      passwordEncoder.matches(
-          submittedPassword == null ? "" : submittedPassword, dummyPasswordHash);
       throw new LoginTemporarilyThrottledException(
           "Too many sign-in attempts. Please wait and try again, or reset your password.");
     }
   }
 
-  @Transactional(propagation = Propagation.REQUIRES_NEW)
+  @Transactional
   public void recordFailure(String email, String sourceIp) {
     incrementScopeFailure("ACCOUNT", hash("ACCOUNT", normalizeEmail(email)));
     incrementScopeFailure("IP", hash("IP", normalizeIp(sourceIp)));
@@ -170,5 +176,9 @@ public class PasswordLoginProtectionService {
     } catch (GeneralSecurityException exception) {
       throw new IllegalStateException("Unable to hash authentication rate-limit key.", exception);
     }
+  }
+
+  private long admissionLockKey(String scope, String value) {
+    return Long.parseUnsignedLong(hash("ADMISSION_" + scope, value).substring(0, 16), 16);
   }
 }

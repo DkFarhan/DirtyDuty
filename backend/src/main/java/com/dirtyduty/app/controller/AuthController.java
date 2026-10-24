@@ -223,18 +223,31 @@ public class AuthController {
   }
 
   private Authentication authenticatePassword(String email, String password, String sourceIp) {
-    loginProtection.assertAllowed(email, sourceIp, password);
-    try {
-      Authentication authentication =
-          authenticationManager.authenticate(
-              new UsernamePasswordAuthenticationToken(email, password));
-      loginProtection.clearAccountFailures(email);
-      return authentication;
-    } catch (org.springframework.security.core.AuthenticationException exception) {
-      loginProtection.recordFailure(email, sourceIp);
-      throw exception;
+    PasswordAuthenticationResult result =
+        loginProtection.withAdmissionLock(
+            email,
+            sourceIp,
+            () -> {
+              loginProtection.assertAllowed(email, sourceIp);
+              try {
+                Authentication authentication =
+                    authenticationManager.authenticate(
+                        new UsernamePasswordAuthenticationToken(email, password));
+                loginProtection.clearAccountFailures(email);
+                return new PasswordAuthenticationResult(authentication, null);
+              } catch (BadCredentialsException exception) {
+                loginProtection.recordFailure(email, sourceIp);
+                return new PasswordAuthenticationResult(null, exception);
+              }
+            });
+    if (result.failure() != null) {
+      throw result.failure();
     }
+    return result.authentication();
   }
+
+  private record PasswordAuthenticationResult(
+      Authentication authentication, BadCredentialsException failure) {}
 
   @GetMapping("/me")
   public LoginResponse me(Authentication authentication) {
