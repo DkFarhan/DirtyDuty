@@ -88,6 +88,7 @@ public class GoogleIdentityService {
     user.setTimezone("UTC");
     user.setAccountStatus(AccountStatus.ACTIVE);
     user.setEmailVerifiedAt(OffsetDateTime.now(ZoneOffset.UTC));
+    user.setDisplayNamePersonalizationCompleted(false);
     User saved = userRepository.saveAndFlush(user);
     jdbc.update(
         """

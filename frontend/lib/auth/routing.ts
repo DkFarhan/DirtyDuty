@@ -14,6 +14,7 @@ const protectedScreens = new Set<Screen>([
   "household-settings",
   "privacy-security",
   "legal-acceptance",
+  "display-name-personalization",
 ])
 
 export function getAuthRedirect(
@@ -21,12 +22,33 @@ export function getAuthRedirect(
   isAuthenticated: boolean,
   isLoading: boolean,
   emailVerified = true,
+  displayNamePersonalizationPending = false,
 ): Screen | null {
   if (isLoading) return null
   if (!isAuthenticated && protectedScreens.has(screen)) return "login"
   if (!isAuthenticated && screen === "verify-email") return "login"
   if (isAuthenticated && !emailVerified && screen !== "verify-email") return "verify-email"
   if (isAuthenticated && emailVerified && screen === "verify-email") return "welcome"
+  if (
+    isAuthenticated &&
+    emailVerified &&
+    displayNamePersonalizationPending &&
+    screen !== "display-name-personalization" &&
+    screen !== "legal-acceptance" &&
+    screen !== "privacy-security" &&
+    screen !== "forgot-password" &&
+    screen !== "reset-password"
+  ) {
+    return "display-name-personalization"
+  }
+  if (
+    isAuthenticated &&
+    emailVerified &&
+    !displayNamePersonalizationPending &&
+    screen === "display-name-personalization"
+  ) {
+    return "welcome"
+  }
   if (isAuthenticated && (screen === "login" || screen === "register")) return "welcome"
   return null
 }

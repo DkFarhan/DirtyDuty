@@ -30,6 +30,7 @@ import { ResetPasswordScreen } from "./screens/reset-password-screen"
 import { LegalAcceptanceScreen } from "./screens/legal-acceptance-screen"
 import { AppearanceScreen } from "./screens/appearance-screen"
 import { EmailVerificationScreen } from "./screens/email-verification-screen"
+import { DisplayNamePersonalizationScreen } from "./screens/display-name-personalization-screen"
 import { AppLaunchGate } from "./launch-experience"
 import { PushSubscriptionHealthProvider } from "@/lib/notifications/push-health"
 
@@ -132,7 +133,13 @@ function ScreenRouter() {
       return
     }
 
-    const authRedirect = getAuthRedirect(screen, isAuthenticated, isLoading, emailVerified)
+    const authRedirect = getAuthRedirect(
+      screen,
+      isAuthenticated,
+      isLoading,
+      emailVerified,
+      user?.displayNamePersonalizationPending,
+    )
     const redirect =
       authRedirect ??
       (isAuthenticated && emailVerified
@@ -147,6 +154,7 @@ function ScreenRouter() {
     navigate,
     screen,
     emailVerified,
+    user?.displayNamePersonalizationPending,
   ])
 
   useEffect(() => {
@@ -208,6 +216,22 @@ function ScreenRouter() {
     )
   }
 
+  if (
+    isAuthenticated &&
+    user?.displayNamePersonalizationPending &&
+    emailVerified &&
+    !user.legalAcceptanceRequired &&
+    screen !== "privacy-security" &&
+    screen !== "forgot-password" &&
+    screen !== "reset-password"
+  ) {
+    return <DisplayNamePersonalizationScreen key={user.userId} />
+  }
+
+  if (screen === "display-name-personalization" && !user?.displayNamePersonalizationPending) {
+    return <WelcomeScreen />
+  }
+
   switch (screen) {
     case "login":
       return <LoginScreen />
@@ -221,6 +245,8 @@ function ScreenRouter() {
       return <ResetPasswordScreen />
     case "welcome":
       return <WelcomeScreen />
+    case "display-name-personalization":
+      return <DisplayNamePersonalizationScreen key={user?.userId} />
     case "create-household":
       return <CreateHouseholdScreen />
     case "join-household":

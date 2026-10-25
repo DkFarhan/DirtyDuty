@@ -51,6 +51,9 @@ public class User {
   @Column(name = "legal_accepted_at")
   private OffsetDateTime legalAcceptedAt;
 
+  @Column(name = "display_name_personalization_completed", nullable = false)
+  private boolean displayNamePersonalizationCompleted = true;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private OffsetDateTime createdAt;
 

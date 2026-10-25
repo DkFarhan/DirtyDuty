@@ -34,6 +34,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -172,16 +173,18 @@ public class OccurrenceService {
               occurrenceId,
               userId);
         }
-        notificationEventService.publish(
-            new NotificationEvent(
-                "CHORE_ASSIGNED",
-                null,
-                household.getId(),
-                "CHORE_ASSIGNMENT",
-                occurrenceId,
-                "CHORE_REMINDER",
-                java.util.Map.of("chore_name", chore.getTitle()),
-                assignees));
+        if ("FREQ=ONCE".equals(schedule.getRecurrenceRule())) {
+          notificationEventService.publish(
+              new NotificationEvent(
+                  "CHORE_ASSIGNED",
+                  null,
+                  household.getId(),
+                  "CHORE_ASSIGNMENT",
+                  occurrenceId,
+                  "CHORE_REMINDER",
+                  java.util.Map.of("chore_name", chore.getTitle()),
+                  assignees));
+        }
       } else {
         String occurrenceStatus = status(occurrenceId);
         if (!"PENDING".equals(occurrenceStatus)
@@ -223,6 +226,83 @@ public class OccurrenceService {
         ensureLegacyAssigneeRelation(occurrenceId, household.getId());
       }
     }
+    if (!"FREQ=ONCE".equals(schedule.getRecurrenceRule())) {
+      publishNewRecurringAssigneeAnnouncements(schedule, today);
+    }
+  }
+
+  private void publishNewRecurringAssigneeAnnouncements(ChoreSchedule schedule, LocalDate today) {
+    if (!schedule.isActive()
+        || !schedule.getChore().isActive()
+        || schedule.getChore().getArchivedAt() != null
+        || (schedule.getEndsOn() != null && schedule.getEndsOn().isBefore(today))) {
+      return;
+    }
+
+    Set<UUID> activeMembers =
+        Set.copyOf(
+            jdbc.query(
+                """
+                    SELECT user_id FROM household_memberships
+                    WHERE household_id=? AND status='ACTIVE'
+                    """,
+                (rs, row) -> rs.getObject("user_id", UUID.class),
+                schedule.getHousehold().getId()));
+    List<UUID> recipients =
+        participantIds(schedule).stream().filter(activeMembers::contains).distinct().toList();
+    boolean rotating =
+        schedule.getAssignmentStrategy() == AssignmentStrategy.ROUND_ROBIN
+            || schedule.getAssignmentStrategy() == AssignmentStrategy.RANDOM;
+
+    for (UUID userId : recipients) {
+      int inserted =
+          jdbc.update(
+              """
+                      INSERT INTO recurring_chore_assignment_announcements (schedule_id, user_id)
+                      VALUES (?, ?) ON CONFLICT (schedule_id, user_id) DO NOTHING
+                      """,
+              schedule.getId(),
+              userId);
+      if (inserted == 1) {
+        Map<String, String> variables = new LinkedHashMap<>();
+        variables.put("chore_name", schedule.getChore().getTitle());
+        if (schedule.getAssignmentStrategy() == AssignmentStrategy.FIXED) {
+          variables.put("notification_title", fixedRecurringAnnouncementTitle(schedule));
+          variables.put(
+              "notification_message",
+              schedule.getChore().getTitle()
+                  + " has been added to your recurring chores. You'll receive reminders before each due date.");
+        } else if (rotating) {
+          variables.put("notification_title", "You've joined a chore rotation!");
+          variables.put(
+              "notification_message",
+              "You'll be reminded when it's your turn to complete "
+                  + schedule.getChore().getTitle()
+                  + ".");
+        }
+        notificationEventService.publish(
+            new NotificationEvent(
+                "CHORE_ASSIGNED",
+                null,
+                schedule.getHousehold().getId(),
+                "CHORE_SCHEDULE",
+                schedule.getId(),
+                "CHORE_REMINDER",
+                Map.copyOf(variables),
+                List.of(userId)));
+      }
+    }
+  }
+
+  private String fixedRecurringAnnouncementTitle(ChoreSchedule schedule) {
+    String recurrenceRule = schedule.getRecurrenceRule();
+    if ("FREQ=DAILY".equals(recurrenceRule)) {
+      return "New daily chore assigned";
+    }
+    if (recurrenceRule.startsWith("FREQ=WEEKLY") && !recurrenceRule.contains("INTERVAL=")) {
+      return "New weekly chore assigned";
+    }
+    return "New recurring chore assigned";
   }
 
   @Transactional

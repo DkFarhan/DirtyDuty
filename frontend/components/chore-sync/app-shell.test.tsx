@@ -40,6 +40,7 @@ const user = {
   hasPassword: true,
   authProviders: ["PASSWORD"],
   legalAcceptanceRequired: false,
+  displayNamePersonalizationPending: false,
 }
 
 function jsonResponse(payload: unknown, status = 200) {
@@ -138,6 +139,31 @@ describe("authentication screens", () => {
     ).toBeTruthy()
     expect(screen.queryByText("Welcome!")).toBeNull()
     expect(window.location.search).toBe("")
+  })
+
+  it("shows optional name personalization for a new verified user after auth and household loading", async () => {
+    fetchMock.mockImplementation(async (input) => {
+      if (String(input).endsWith("/api/auth/me"))
+        return jsonResponse({ ...user, displayNamePersonalizationPending: true })
+      if (String(input).endsWith("/api/households")) return jsonResponse([])
+      return jsonResponse({}, 404)
+    })
+
+    render(<AppShell />)
+
+    expect(
+      await screen.findByRole(
+        "heading",
+        {
+          name: "What should your roommates call you?",
+        },
+        { timeout: 3_000 },
+      ),
+    ).toBeTruthy()
+    expect((screen.getByRole("textbox", { name: "Display name" }) as HTMLInputElement).value).toBe(
+      user.displayName,
+    )
+    expect(screen.queryByRole("button", { name: "Create a Household" })).toBeNull()
   })
 
   it("shows the splash and not Login until /me restores the session", async () => {
@@ -307,7 +333,9 @@ describe("authentication screens", () => {
       )
       .mockResolvedValueOnce(jsonResponse({ userId: "user-1" }, 201))
       .mockResolvedValueOnce(jsonResponse({ token: "fresh-csrf", headerName: "X-CSRF-TOKEN" }))
-      .mockResolvedValueOnce(jsonResponse({ ...user, emailVerified: false }))
+      .mockResolvedValueOnce(
+        jsonResponse({ ...user, emailVerified: false, displayNamePersonalizationPending: true }),
+      )
       .mockResolvedValueOnce(
         jsonResponse({
           email: user.email,
@@ -321,8 +349,13 @@ describe("authentication screens", () => {
     await openLogin()
     await fillAndSubmitRegistration()
 
-    expect(await screen.findByRole("heading", { name: "Verify your email" })).toBeTruthy()
+    expect(
+      await screen.findByRole("heading", { name: "Verify your email" }, { timeout: 3_000 }),
+    ).toBeTruthy()
     expect(await screen.findByText(`A verification code was sent to ${user.email}.`)).toBeTruthy()
+    expect(
+      screen.queryByRole("heading", { name: "What should your roommates call you?" }),
+    ).toBeNull()
     expect(fetchMock).toHaveBeenCalledTimes(6)
     expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:8080/api/auth/me")
     expect(fetchMock.mock.calls[1][0]).toBe("http://localhost:8080/api/auth/csrf")
@@ -355,7 +388,9 @@ describe("authentication screens", () => {
       emailVerification: true,
     })
     fetchMock
-      .mockResolvedValueOnce(jsonResponse({ ...user, emailVerified: false }))
+      .mockResolvedValueOnce(
+        jsonResponse({ ...user, emailVerified: false, displayNamePersonalizationPending: true }),
+      )
       .mockResolvedValueOnce(
         jsonResponse({
           email: user.email,
@@ -377,9 +412,68 @@ describe("authentication screens", () => {
       ),
     ).toBeTruthy()
     expect(screen.queryByText(/A verification code was sent/)).toBeNull()
+    expect(
+      screen.queryByRole("heading", { name: "What should your roommates call you?" }),
+    ).toBeNull()
     expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/api/households"))).toBe(
       false,
     )
+  })
+
+  it("shows personalization after a new user's email is verified", async () => {
+    stubAuthFeatures(fetchMock, {
+      google: false,
+      passwordReset: false,
+      emailVerification: true,
+    })
+    let authMeCalls = 0
+    fetchMock.mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.endsWith("/api/auth/me")) {
+        authMeCalls += 1
+        return jsonResponse({
+          ...user,
+          emailVerified: authMeCalls > 1,
+          displayNamePersonalizationPending: true,
+        })
+      }
+      if (url.endsWith("/api/auth/email-verification/status")) {
+        return jsonResponse({
+          email: user.email,
+          emailVerified: false,
+          codeExpiresAt: null,
+          resendAvailableAt: null,
+          deliveryState: "SENT",
+        })
+      }
+      if (url.endsWith("/api/auth/csrf")) {
+        return jsonResponse({ token: "verify-token", headerName: "X-CSRF-TOKEN" })
+      }
+      if (url.endsWith("/api/auth/email-verification/verify")) {
+        return new Response(null, { status: 204 })
+      }
+      if (url.endsWith("/api/households")) return jsonResponse([])
+      return jsonResponse({}, 404)
+    })
+
+    render(<AppShell />)
+    expect(
+      await screen.findByRole("heading", { name: "Verify your email" }, { timeout: 3_000 }),
+    ).toBeTruthy()
+    expect(
+      screen.queryByRole("heading", { name: "What should your roommates call you?" }),
+    ).toBeNull()
+
+    fireEvent.change(screen.getByLabelText("Six-digit code"), { target: { value: "123456" } })
+    fireEvent.click(screen.getByRole("button", { name: "Verify email" }))
+
+    expect(
+      await screen.findByRole(
+        "heading",
+        { name: "What should your roommates call you?" },
+        { timeout: 3_000 },
+      ),
+    ).toBeTruthy()
   })
 
   it("allows existing unverified users to load household data when verification is disabled", async () => {

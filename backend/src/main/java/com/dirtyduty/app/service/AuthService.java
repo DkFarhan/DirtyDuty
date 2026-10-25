@@ -92,6 +92,7 @@ public class AuthService {
     user.setTimezone("UTC");
     user.setAccountStatus(AccountStatus.ACTIVE);
     user.setEmailVerifiedAt(null);
+    user.setDisplayNamePersonalizationCompleted(false);
     legalAcceptanceService.acceptForRegistration(user);
 
     try {

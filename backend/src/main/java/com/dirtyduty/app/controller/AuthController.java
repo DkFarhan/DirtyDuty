@@ -362,7 +362,8 @@ public class AuthController {
         user.getEmailVerifiedAt() != null,
         user.getPasswordHash() != null,
         List.copyOf(providers),
-        legalAcceptanceService.isAcceptanceRequired(user));
+        legalAcceptanceService.isAcceptanceRequired(user),
+        !user.isDisplayNamePersonalizationCompleted());
   }
 
   private void clearPendingLink(jakarta.servlet.http.HttpSession session) {

@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useEffect, useMemo, useState } from "react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
 import { notificationApi } from "@/lib/notifications/api"
 import { removeBrowserPushSubscription } from "@/lib/notifications/push"
 import { ApiError, api, clearCsrfToken, getCsrfToken } from "./api"
@@ -13,6 +13,7 @@ export type AuthUser = {
   hasPassword: boolean
   authProviders: string[]
   legalAcceptanceRequired: boolean
+  displayNamePersonalizationPending: boolean
 }
 
 export type AuthFeatures = {
@@ -65,6 +66,7 @@ type AuthContextValue = {
   confirmPasswordReset: (token: string, newPassword: string) => Promise<void>
   completeGoogleLink: (password: string) => Promise<void>
   refreshUser: () => Promise<AuthUser | null>
+  completeDisplayNamePersonalization: (displayName: string) => void
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -100,6 +102,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw error
     }
   }
+
+  const completeDisplayNamePersonalization = useCallback((displayName: string) => {
+    setUser((current) =>
+      current ? { ...current, displayName, displayNamePersonalizationPending: false } : current,
+    )
+  }, [])
 
   useEffect(() => {
     Promise.allSettled([refreshUser(), api.get<AuthFeatures>("/api/auth/providers")]).then(
@@ -275,8 +283,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       confirmPasswordReset,
       completeGoogleLink,
       refreshUser,
+      completeDisplayNamePersonalization,
     }),
-    [authError, authNotice, emailVerificationStatus, features, isLoading, user],
+    [
+      authError,
+      authNotice,
+      completeDisplayNamePersonalization,
+      emailVerificationStatus,
+      features,
+      isLoading,
+      user,
+    ],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

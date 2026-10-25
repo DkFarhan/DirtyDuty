@@ -65,8 +65,16 @@ public class ProfileService {
     }
     User user = currentUser(authentication);
     user.setDisplayName(displayName);
-    userRepository.save(user);
+    user.setDisplayNamePersonalizationCompleted(true);
+    userRepository.saveAndFlush(user);
     return get(authentication);
+  }
+
+  @Transactional
+  public void completeDisplayNamePersonalization(Authentication authentication) {
+    User user = currentUser(authentication);
+    user.setDisplayNamePersonalizationCompleted(true);
+    userRepository.saveAndFlush(user);
   }
 
   private User currentUser(Authentication authentication) {

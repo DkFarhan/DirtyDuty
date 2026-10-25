@@ -16,4 +16,6 @@ export type ProfileUpdate = Pick<Profile, "displayName">
 export const profileApi = {
   get: () => api.get<Profile>("/api/profile"),
   update: (input: ProfileUpdate) => api.put<Profile>("/api/profile", input),
+  completeDisplayNamePersonalization: () =>
+    api.post<void>("/api/profile/display-name-personalization/complete"),
 }

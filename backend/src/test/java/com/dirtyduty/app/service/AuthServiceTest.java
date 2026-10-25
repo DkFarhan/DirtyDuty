@@ -62,6 +62,7 @@ class AuthServiceTest {
 
     assertThat(response.emailVerified()).isFalse();
     assertThat(capturedUser.getValue().getEmailVerifiedAt()).isNull();
+    assertThat(capturedUser.getValue().isDisplayNamePersonalizationCompleted()).isFalse();
     org.mockito.Mockito.verify(rateLimiter)
         .allow("REGISTER_EMAIL_HOURLY", "new@example.com", 5, java.time.Duration.ofHours(1));
     org.mockito.Mockito.verify(rateLimiter)
