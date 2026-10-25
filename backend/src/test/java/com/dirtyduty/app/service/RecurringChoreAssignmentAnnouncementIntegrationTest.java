@@ -22,6 +22,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @SpringBootTest
 class RecurringChoreAssignmentAnnouncementIntegrationTest {
@@ -32,6 +34,7 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
   @Autowired private OccurrenceService occurrenceService;
   @Autowired private NotificationEventService notificationEventService;
   @Autowired private NotificationScheduler notificationScheduler;
+  @Autowired private PlatformTransactionManager transactionManager;
 
   private UUID householdId;
   private final List<UUID> userIds = new java.util.ArrayList<>();
@@ -75,12 +78,12 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
             recurringChoreId, "FREQ=DAILY", "ROUND_ROBIN", List.of(firstUser, secondUser));
     ChoreSchedule recurringSchedule = loadSchedule(recurringChoreId);
 
-    occurrenceService.synchronizeSchedule(recurringSchedule);
+    synchronizeSchedule(recurringSchedule.getId());
     assertThat(announcementCount(recurringScheduleId)).isEqualTo(2);
     assertThat(notificationCount(recurringScheduleId, firstUser)).isEqualTo(1);
     assertThat(notificationCount(recurringScheduleId, secondUser)).isEqualTo(1);
 
-    occurrenceService.synchronizeSchedule(recurringSchedule);
+    synchronizeSchedule(recurringSchedule.getId());
     assertThat(announcementCount(recurringScheduleId)).isEqualTo(2);
 
     Map<String, Object> config = new HashMap<>(recurringSchedule.getStrategyConfig());
@@ -89,7 +92,7 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
         List.of(firstUser.toString(), secondUser.toString(), newlyAddedUser.toString()));
     recurringSchedule.setStrategyConfig(config);
     scheduleRepository.saveAndFlush(recurringSchedule);
-    occurrenceService.synchronizeSchedule(recurringSchedule, true);
+    synchronizeSchedule(recurringSchedule.getId(), true);
 
     assertThat(announcementCount(recurringScheduleId)).isEqualTo(3);
     assertThat(notificationCount(recurringScheduleId, newlyAddedUser)).isEqualTo(1);
@@ -98,7 +101,7 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
     config.put("participantUserIds", List.of(firstUser.toString(), newlyAddedUser.toString()));
     recurringSchedule.setStrategyConfig(config);
     scheduleRepository.saveAndFlush(recurringSchedule);
-    occurrenceService.synchronizeSchedule(recurringSchedule, true);
+    synchronizeSchedule(recurringSchedule.getId(), true);
     assertThat(
             jdbc.queryForObject(
                 """
@@ -120,14 +123,14 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
         List.of(firstUser.toString(), secondUser.toString(), newlyAddedUser.toString()));
     recurringSchedule.setStrategyConfig(config);
     scheduleRepository.saveAndFlush(recurringSchedule);
-    occurrenceService.synchronizeSchedule(recurringSchedule, true);
+    synchronizeSchedule(recurringSchedule.getId(), true);
     assertThat(announcementCount(recurringScheduleId)).isEqualTo(3);
     assertThat(notificationCount(recurringScheduleId, secondUser)).isEqualTo(1);
 
     UUID oneTimeChoreId = createChore(firstUser, "One-time chore");
     UUID oneTimeScheduleId =
         createSchedule(oneTimeChoreId, "FREQ=ONCE", "FIXED", List.of(firstUser));
-    occurrenceService.synchronizeSchedule(loadSchedule(oneTimeChoreId));
+    synchronizeScheduleForChore(oneTimeChoreId);
     assertThat(announcementCount(oneTimeScheduleId)).isEqualTo(1);
     assertThat(notificationTitle(oneTimeScheduleId, firstUser)).isEqualTo("Chore assigned");
     assertThat(notificationMessage(oneTimeScheduleId, firstUser))
@@ -139,7 +142,7 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
         .isEqualTo("CHORE_ASSIGNMENT");
     assertThat(notificationAssignmentReferenceId(oneTimeScheduleId, firstUser))
         .isEqualTo(oneTimeAssignmentId);
-    occurrenceService.synchronizeSchedule(loadSchedule(oneTimeChoreId));
+    synchronizeScheduleForChore(oneTimeChoreId);
     assertThat(announcementCount(oneTimeScheduleId)).isEqualTo(1);
   }
 
@@ -157,7 +160,7 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
         scheduleId,
         userId);
 
-    occurrenceService.synchronizeSchedule(loadSchedule(choreId));
+    synchronizeScheduleForChore(choreId);
 
     assertThat(announcementCount(scheduleId)).isZero();
   }
@@ -175,7 +178,7 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
           createSchedule(choreId, "FREQ=DAILY", strategy, List.of(firstUser, secondUser), 2);
       ChoreSchedule schedule = loadSchedule(choreId);
 
-      occurrenceService.synchronizeSchedule(schedule);
+      synchronizeSchedule(schedule.getId());
 
       assertThat(announcementCount(scheduleId)).as(strategy).isEqualTo(2);
       assertThat(notificationCount(scheduleId, firstUser)).as(strategy).isEqualTo(1);
@@ -194,7 +197,7 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
                   ? "has been added to your recurring chores"
                   : "You'll be reminded when it's your turn");
 
-      occurrenceService.synchronizeSchedule(schedule);
+      synchronizeSchedule(schedule.getId());
       assertThat(announcementCount(scheduleId)).as(strategy).isEqualTo(2);
     }
   }
@@ -215,7 +218,7 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
     schedule.setEndsOn(LocalDate.now(ZoneOffset.UTC));
     scheduleRepository.saveAndFlush(schedule);
 
-    occurrenceService.synchronizeSchedule(schedule);
+    synchronizeSchedule(schedule.getId());
 
     assertThat(occurrenceCount(scheduleId)).isEqualTo(1);
     assertThat(announcementCount(scheduleId)).isEqualTo(3);
@@ -235,21 +238,21 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
 
     UUID dailyChoreId = createChore(userId, "Daily chore");
     UUID dailyScheduleId = createSchedule(dailyChoreId, "FREQ=DAILY", "FIXED", List.of(userId));
-    occurrenceService.synchronizeSchedule(loadSchedule(dailyChoreId));
+    synchronizeScheduleForChore(dailyChoreId);
     assertThat(notificationTitle(dailyScheduleId, userId)).isEqualTo("New daily chore assigned");
     assertThat(notificationMessage(dailyScheduleId, userId)).contains("Daily chore");
 
     UUID weeklyChoreId = createChore(userId, "Weekly chore");
     UUID weeklyScheduleId =
         createSchedule(weeklyChoreId, "FREQ=WEEKLY;BYDAY=MO", "FIXED", List.of(userId));
-    occurrenceService.synchronizeSchedule(loadSchedule(weeklyChoreId));
+    synchronizeScheduleForChore(weeklyChoreId);
     assertThat(notificationTitle(weeklyScheduleId, userId)).isEqualTo("New weekly chore assigned");
 
     UUID biweeklyChoreId = createChore(userId, "Biweekly chore");
     UUID biweeklyScheduleId =
         createSchedule(
             biweeklyChoreId, "FREQ=WEEKLY;INTERVAL=2;BYDAY=MO", "FIXED", List.of(userId));
-    occurrenceService.synchronizeSchedule(loadSchedule(biweeklyChoreId));
+    synchronizeScheduleForChore(biweeklyChoreId);
     assertThat(notificationTitle(biweeklyScheduleId, userId))
         .isEqualTo("New recurring chore assigned");
   }
@@ -267,7 +270,7 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
     schedule.setStartsOn(LocalDate.now(ZoneOffset.UTC).plusDays(45));
     scheduleRepository.saveAndFlush(schedule);
 
-    occurrenceService.synchronizeSchedule(schedule);
+    synchronizeSchedule(schedule.getId());
 
     assertThat(occurrenceCount(scheduleId)).isZero();
     assertThat(announcementCount(scheduleId)).isEqualTo(2);
@@ -281,7 +284,7 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
     householdId = createHousehold(userId);
     UUID choreId = createChore(userId, "Completing chore");
     UUID scheduleId = createSchedule(choreId, "FREQ=DAILY", "FIXED", List.of(userId));
-    occurrenceService.synchronizeSchedule(loadSchedule(choreId));
+    synchronizeScheduleForChore(choreId);
 
     UUID assignmentId =
         jdbc.queryForObject(
@@ -315,7 +318,7 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
     schedule.setStartsOn(LocalDate.now(ZoneOffset.UTC).plusDays(1));
     schedule.setDueTime(LocalTime.now(ZoneOffset.UTC).plusHours(4));
     scheduleRepository.saveAndFlush(schedule);
-    occurrenceService.synchronizeSchedule(schedule);
+    synchronizeSchedule(schedule.getId());
     UUID assignmentId =
         jdbc.queryForObject(
             "SELECT id FROM chore_assignments WHERE schedule_id=? ORDER BY scheduled_for LIMIT 1",
@@ -348,7 +351,7 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
     User nextAssignee = userRepository.findById(nextUser).orElseThrow();
     schedule.setFixedAssignee(nextAssignee);
     scheduleRepository.saveAndFlush(schedule);
-    occurrenceService.synchronizeSchedule(schedule, true);
+    synchronizeSchedule(schedule.getId(), true);
 
     notificationScheduler.run();
 
@@ -568,6 +571,23 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
 
   private ChoreSchedule loadSchedule(UUID choreId) {
     return scheduleRepository.findByChore_IdAndHousehold_Id(choreId, householdId).orElseThrow();
+  }
+
+  private void synchronizeScheduleForChore(UUID choreId) {
+    synchronizeSchedule(loadSchedule(choreId).getId());
+  }
+
+  private void synchronizeSchedule(UUID scheduleId) {
+    synchronizeSchedule(scheduleId, false);
+  }
+
+  private void synchronizeSchedule(UUID scheduleId, boolean updatePendingAssignees) {
+    new TransactionTemplate(transactionManager)
+        .executeWithoutResult(
+            status -> {
+              ChoreSchedule schedule = scheduleRepository.findById(scheduleId).orElseThrow();
+              occurrenceService.synchronizeSchedule(schedule, updatePendingAssignees);
+            });
   }
 
   private int announcementCount(UUID scheduleId) {
