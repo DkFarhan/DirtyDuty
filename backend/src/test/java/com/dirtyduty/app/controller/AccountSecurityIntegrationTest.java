@@ -385,7 +385,7 @@ class AccountSecurityIntegrationTest {
 
   @Test
   void accountDeletionEmailConfirmationIgnoresCaseAndSurroundingWhitespace() throws Exception {
-    User user = createUser("case-insensitive-confirmation");
+    User user = createUser("email-case");
     WebSession session = login(user.getEmail(), PASSWORD);
 
     deleteAccount(session, PASSWORD, "  " + user.getEmail().toUpperCase() + "  ")
