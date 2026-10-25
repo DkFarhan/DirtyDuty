@@ -7,7 +7,7 @@ import { ProductLogo } from "@/components/brand/product-logo"
 import { ChevronLeftIcon } from "../icons"
 
 const inputClass =
-  "w-full px-4 py-3.5 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent text-[15px] transition-all"
+  "w-full rounded-xl border border-slate-200 px-4 py-3.5 text-[15px] text-slate-900 placeholder-slate-400 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-teal-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:placeholder-slate-500"
 
 export function CreateHouseholdScreen() {
   const { navigate } = useChoreSync()
@@ -37,26 +37,30 @@ export function CreateHouseholdScreen() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-white px-6 pt-12 pb-10">
+    <div className="flex min-h-[100dvh] flex-col bg-white px-6 pb-[max(2.5rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] dark:bg-slate-950">
       <button
         onClick={() => navigate("welcome")}
-        className="flex items-center gap-1 text-slate-500 mb-8 -ml-1 w-fit"
+        className="mb-8 -ml-1 flex min-h-10 w-fit items-center gap-1 text-slate-500 dark:text-slate-400"
       >
         <ChevronLeftIcon className="w-5 h-5" />
         <span className="text-sm font-medium">Back</span>
       </button>
 
       <div className="mb-8">
-        <ProductLogo className="mb-4 h-8 w-auto" variant="mark" />
-        <h1 className="text-3xl font-black text-slate-900 mb-1 font-display">Create Household</h1>
-        <p className="text-slate-500 text-sm">Give your home a name and invite your housemates</p>
+        <ProductLogo className="mb-4 h-auto w-36 max-w-full" />
+        <h1 className="mb-1 font-display text-3xl font-black text-slate-900 dark:text-white">
+          Create Household
+        </h1>
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          Give your home a name and invite your housemates
+        </p>
       </div>
 
       <div className="flex flex-col gap-5 mb-8">
         <div>
           <label
             htmlFor="household-name"
-            className="block text-sm font-semibold text-slate-700 mb-1.5"
+            className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-300"
           >
             Household Name <span className="text-teal-600">*</span>
           </label>
@@ -71,7 +75,7 @@ export function CreateHouseholdScreen() {
         <div>
           <label
             htmlFor="household-desc"
-            className="block text-sm font-semibold text-slate-700 mb-1.5"
+            className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-300"
           >
             Description <span className="text-slate-400 font-normal">(optional)</span>
           </label>
@@ -86,8 +90,8 @@ export function CreateHouseholdScreen() {
         </div>
       </div>
 
-      <div className="bg-teal-50 rounded-2xl p-4 mb-8">
-        <p className="text-sm text-teal-700 font-medium">
+      <div className="mb-8 rounded-2xl bg-teal-50 p-4 dark:bg-teal-950/50">
+        <p className="text-sm font-medium text-teal-700 dark:text-teal-300">
           {
             "💡 After creating your household, you'll get a unique invite code to share with housemates."
           }
@@ -102,7 +106,7 @@ export function CreateHouseholdScreen() {
       <button
         onClick={() => void handleCreate()}
         disabled={submitting || !name.trim()}
-        className="w-full bg-teal-600 text-white font-bold text-[15px] py-4 rounded-xl shadow-lg shadow-teal-200 hover:bg-teal-700 active:scale-[0.98] transition-all disabled:cursor-not-allowed disabled:opacity-50"
+        className="w-full rounded-xl bg-teal-600 py-4 text-[15px] font-bold text-white shadow-lg shadow-teal-200 transition-all hover:bg-teal-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 dark:shadow-none"
       >
         {submitting ? "Creating..." : "Create Household"}
       </button>

@@ -149,7 +149,11 @@ public class AuthService {
       throw new InvalidCredentialsException("Password is incorrect.");
     }
 
-    if (emailConfirmation == null || !user.getEmail().equals(emailConfirmation.trim())) {
+    if (emailConfirmation == null
+        || !user.getEmail()
+            .trim()
+            .toLowerCase(Locale.ROOT)
+            .equals(emailConfirmation.trim().toLowerCase(Locale.ROOT))) {
       throw new InvalidCredentialsException("The email confirmation does not match your account.");
     }
 

@@ -1,6 +1,8 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { createPortal } from "react-dom"
+import { AlertTriangle } from "lucide-react"
 import { ApiError, apiUrl } from "@/lib/auth/api"
 import { useAuth } from "@/lib/auth/auth-context"
 import { useChoreSync } from "@/lib/chore-sync/store"
@@ -12,6 +14,10 @@ import { getLegalDocumentUrl } from "@/lib/chore-sync/legal-navigation"
 import { SubpageHeader } from "./subpage-header"
 
 type OwnedHousehold = Pick<Household, "id" | "name">
+
+function normalizeEmail(email: string) {
+  return email.trim().toLowerCase()
+}
 
 function ownedHouseholdsFromError(error: ApiError): OwnedHousehold[] {
   if (!error.details || typeof error.details !== "object" || !("ownedHouseholds" in error.details))
@@ -52,6 +58,12 @@ export function PrivacySecurityScreen() {
   const [deleteStage, setDeleteStage] = useState<1 | 2 | null>(null)
   const [deleteAcknowledged, setDeleteAcknowledged] = useState(false)
   const [deleteForm, setDeleteForm] = useState({ password: "", email: "" })
+  const [confirmationOpen, setConfirmationOpen] = useState(false)
+  const deleteBusyRef = useRef(false)
+  const confirmationDialogRef = useRef<HTMLElement>(null)
+  const cancelConfirmationRef = useRef<HTMLButtonElement>(null)
+  const reviewButtonRef = useRef<HTMLButtonElement>(null)
+  const confirmationWasOpen = useRef(false)
   const [serverOwnedHouseholds, setServerOwnedHouseholds] = useState<OwnedHousehold[] | null>(null)
   const [ownershipStatus, setOwnershipStatus] = useState<"idle" | "loading" | "loaded" | "error">(
     "idle",
@@ -63,6 +75,19 @@ export function PrivacySecurityScreen() {
   const ownedHouseholds = serverOwnedHouseholds ?? activeOwnedHouseholds
   const hasPassword = user?.hasPassword ?? true
   const hasGoogle = user?.authProviders?.includes("GOOGLE") ?? false
+  const emailConfirmationMatches = Boolean(
+    user?.email && normalizeEmail(deleteForm.email) === normalizeEmail(user.email),
+  )
+
+  useEffect(() => {
+    if (confirmationOpen) {
+      confirmationWasOpen.current = true
+      cancelConfirmationRef.current?.focus()
+    } else if (confirmationWasOpen.current) {
+      confirmationWasOpen.current = false
+      reviewButtonRef.current?.focus()
+    }
+  }, [confirmationOpen])
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -142,6 +167,7 @@ export function PrivacySecurityScreen() {
     setError("")
     setDeleteAcknowledged(false)
     setDeleteForm({ password: "", email: "" })
+    setConfirmationOpen(false)
     setDeleteStage(1)
     setServerOwnedHouseholds(null)
     setOwnershipStatus("loading")
@@ -167,6 +193,7 @@ export function PrivacySecurityScreen() {
 
   const closeDeleteFlow = () => {
     if (deleteBusy) return
+    setConfirmationOpen(false)
     setDeleteStage(null)
     setDeleteAcknowledged(false)
     setDeleteForm({ password: "", email: "" })
@@ -182,26 +209,71 @@ export function PrivacySecurityScreen() {
     setDeleteStage(2)
   }
 
-  const handleDeleteAccount = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (deleteBusy || !user) return
-    if (deleteForm.email !== user.email) {
-      setError("Enter the exact email address for this account.")
-      return
+  const validateDeleteConfirmation = () => {
+    if (!deleteAcknowledged) {
+      setError("Acknowledge that account deletion is permanent before continuing.")
+      return false
+    }
+    if (!user || !emailConfirmationMatches) {
+      setError("Enter the full email address for this account.")
+      return false
     }
     if (hasPassword && !deleteForm.password) {
       setError("Enter your current password.")
-      return
+      return false
+    }
+    if (ownershipStatus !== "loaded") {
+      setError("Check household ownership before deleting your account.")
+      return false
     }
     if (ownedHouseholds.length > 0) {
       setError("You still own households.")
+      return false
+    }
+    return true
+  }
+
+  const reviewAccountDeletion = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (deleteBusy || !user || !validateDeleteConfirmation()) return
+    setError("")
+    setConfirmationOpen(true)
+  }
+
+  const handleConfirmationKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
+    if (event.key === "Escape" && !deleteBusy) {
+      event.preventDefault()
+      setConfirmationOpen(false)
       return
     }
+    if (event.key !== "Tab") return
 
+    const buttons =
+      confirmationDialogRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")
+    if (!buttons?.length) {
+      event.preventDefault()
+      confirmationDialogRef.current?.focus()
+      return
+    }
+    const firstButton = buttons[0]
+    const lastButton = buttons[buttons.length - 1]
+    if (event.shiftKey && document.activeElement === firstButton) {
+      event.preventDefault()
+      lastButton.focus()
+    } else if (!event.shiftKey && document.activeElement === lastButton) {
+      event.preventDefault()
+      firstButton.focus()
+    }
+  }
+
+  const handleDeleteAccount = async () => {
+    if (deleteBusyRef.current || !confirmationOpen || !user || !validateDeleteConfirmation()) return
+
+    deleteBusyRef.current = true
     setDeleteBusy(true)
     setError("")
     try {
-      await deleteAccount(deleteForm.password, deleteForm.email)
+      await deleteAccount(deleteForm.password, normalizeEmail(deleteForm.email))
       await removeBrowserPushSubscription().catch((cause: unknown) => {
         console.warn(
           "Unable to remove the browser push subscription after account deletion.",
@@ -211,9 +283,11 @@ export function PrivacySecurityScreen() {
       resetUserData()
       clearAccountDeletion()
       setDeleteStage(null)
+      setConfirmationOpen(false)
       navigate("login")
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 409) {
+        setConfirmationOpen(false)
         setServerOwnedHouseholds(ownedHouseholdsFromError(cause))
         setOwnershipStatus("loading")
         setDeleteStage(1)
@@ -238,6 +312,7 @@ export function PrivacySecurityScreen() {
         )
       }
     } finally {
+      deleteBusyRef.current = false
       setDeleteBusy(false)
     }
   }
@@ -247,6 +322,7 @@ export function PrivacySecurityScreen() {
     screen: "household" | "household-settings",
   ) => {
     selectHousehold(household.id)
+    setConfirmationOpen(false)
     setDeleteStage(null)
     if (user) beginAccountDeletion(user.userId)
     navigate(screen)
@@ -445,30 +521,18 @@ export function PrivacySecurityScreen() {
               <h3 className="font-bold text-slate-900" id="delete-account-title">
                 Before you continue
               </h3>
-              <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                Account deletion is permanent. Your profile and notification data will be removed,
-                and your membership in households will end. Household chore and completion history
-                will remain for other members.
+              <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+                Deleting your account permanently removes your account access and personal account
+                data. This cannot be undone.
               </p>
-              <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                Deleting a household only resolves ownership; it does not delete your account. You
-                must return here and explicitly confirm account deletion.
-              </p>
-              <label className="mt-4 flex items-start gap-2 text-sm text-slate-700">
-                <input
-                  checked={deleteAcknowledged}
-                  className="mt-0.5"
-                  onChange={(event) => setDeleteAcknowledged(event.target.checked)}
-                  type="checkbox"
-                />
-                <span>I understand that deleting my account is permanent.</span>
-              </label>
 
               {ownedHouseholds.length > 0 && (
                 <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
                   <h4 className="font-bold text-amber-900">You still own households.</h4>
                   <p className="mt-1 text-xs leading-relaxed text-amber-800">
                     Transfer ownership or delete each household before deleting your account.
+                    Household deletion resolves ownership only; it does not delete your account.
+                    Household history needed by other members remains available to them.
                   </p>
                   <ul className="mt-3 space-y-3">
                     {ownedHouseholds.map((household) => (
@@ -495,6 +559,17 @@ export function PrivacySecurityScreen() {
                   </ul>
                 </div>
               )}
+              {ownershipStatus === "loaded" && ownedHouseholds.length === 0 && (
+                <label className="mt-4 flex min-h-11 items-start gap-2 rounded-lg text-sm text-slate-700 dark:text-slate-300">
+                  <input
+                    checked={deleteAcknowledged}
+                    className="mt-0.5 h-4 w-4 accent-teal-600"
+                    onChange={(event) => setDeleteAcknowledged(event.target.checked)}
+                    type="checkbox"
+                  />
+                  <span>I understand that deleting my account is permanent.</span>
+                </label>
+              )}
               {error && (
                 <div className="mt-3">
                   <p role="alert" className="text-sm text-rose-600">
@@ -502,7 +577,7 @@ export function PrivacySecurityScreen() {
                   </p>
                   {ownershipStatus === "error" && (
                     <button
-                      className="mt-2 min-h-10 text-sm font-bold text-teal-700 underline"
+                      className="mt-2 min-h-10 text-sm font-bold text-teal-700 underline dark:text-teal-300"
                       onClick={() => void openDeleteFlow()}
                       type="button"
                     >
@@ -522,11 +597,7 @@ export function PrivacySecurityScreen() {
                 {ownedHouseholds.length === 0 && (
                   <button
                     className="flex-1 rounded-xl bg-slate-700 px-3 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={
-                      !deleteAcknowledged ||
-                      ownershipStatus !== "loaded" ||
-                      ownedHouseholds.length > 0
-                    }
+                    disabled={!deleteAcknowledged || ownershipStatus !== "loaded"}
                     onClick={moveToConfirmation}
                     type="button"
                   >
@@ -540,7 +611,7 @@ export function PrivacySecurityScreen() {
           {deleteStage === 2 && (
             <form
               className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4"
-              onSubmit={(event) => void handleDeleteAccount(event)}
+              onSubmit={reviewAccountDeletion}
             >
               <h3 className="font-bold text-slate-900">Confirm account deletion</h3>
               <p className="mt-1 text-sm leading-relaxed text-slate-600">
@@ -551,7 +622,7 @@ export function PrivacySecurityScreen() {
                 Account email
                 <input
                   autoComplete="email"
-                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-rose-400"
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-rose-400 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                   onChange={(event) =>
                     setDeleteForm((current) => ({ ...current, email: event.target.value }))
                   }
@@ -560,6 +631,11 @@ export function PrivacySecurityScreen() {
                   value={deleteForm.email}
                 />
               </label>
+              {deleteForm.email && !emailConfirmationMatches && (
+                <p className="mt-1 text-xs font-medium text-rose-600 dark:text-rose-400">
+                  Enter the complete email address for this account. Capitalization does not matter.
+                </p>
+              )}
               {!user?.hasPassword && hasGoogle && features.google && (
                 <button
                   className="mt-3 w-full rounded-xl border border-teal-200 bg-white py-3 text-sm font-bold text-teal-700"
@@ -574,7 +650,7 @@ export function PrivacySecurityScreen() {
                   Current password
                   <PasswordInput
                     autoComplete="current-password"
-                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-rose-400"
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-rose-400 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                     id="delete-account-password"
                     name="password"
                     onChange={(event) =>
@@ -585,7 +661,7 @@ export function PrivacySecurityScreen() {
                   />
                 </label>
               )}
-              {error && (
+              {error && !confirmationOpen && (
                 <p role="alert" className="mt-3 text-sm text-rose-600">
                   {error}
                 </p>
@@ -600,23 +676,87 @@ export function PrivacySecurityScreen() {
                   Cancel
                 </button>
                 <button
+                  ref={reviewButtonRef}
                   className="flex-1 rounded-xl bg-rose-600 px-3 py-2.5 text-sm font-bold text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={
                     deleteBusy ||
                     ownershipStatus !== "loaded" ||
-                    deleteForm.email !== user?.email ||
+                    !deleteAcknowledged ||
+                    !emailConfirmationMatches ||
                     (hasPassword && !deleteForm.password) ||
                     ownedHouseholds.length > 0
                   }
                   type="submit"
                 >
-                  {deleteBusy ? "Deleting…" : "Permanently delete my account"}
+                  {deleteBusy ? "Deleting…" : "Review account deletion"}
                 </button>
               </div>
             </form>
           )}
         </section>
       </main>
+      {confirmationOpen &&
+        createPortal(
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/55 p-0 sm:items-center sm:p-4">
+            <section
+              aria-describedby="account-deletion-dialog-description"
+              aria-labelledby="account-deletion-dialog-title"
+              aria-modal="true"
+              className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-3xl border border-slate-200 bg-white p-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl sm:rounded-2xl sm:p-6 dark:border-slate-700 dark:bg-slate-900"
+              onKeyDown={handleConfirmationKeyDown}
+              ref={confirmationDialogRef}
+              role="dialog"
+              tabIndex={-1}
+            >
+              <div className="flex items-start gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300">
+                  <AlertTriangle aria-hidden="true" className="h-5 w-5" />
+                </span>
+                <div>
+                  <h2
+                    className="font-display text-lg font-black text-slate-900 dark:text-white"
+                    id="account-deletion-dialog-title"
+                  >
+                    Permanently delete your account?
+                  </h2>
+                  <p
+                    className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300"
+                    id="account-deletion-dialog-description"
+                  >
+                    Your account will be permanently deleted and you will be signed out. This action
+                    cannot be undone.
+                  </p>
+                </div>
+              </div>
+              {error && (
+                <p role="alert" className="mt-4 text-sm text-rose-600 dark:text-rose-400">
+                  {error}
+                </p>
+              )}
+              <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button
+                  className="min-h-11 rounded-xl border border-slate-200 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                  disabled={deleteBusy}
+                  onClick={() => setConfirmationOpen(false)}
+                  ref={cancelConfirmationRef}
+                  type="button"
+                >
+                  Cancel
+                </button>
+                <button
+                  aria-busy={deleteBusy}
+                  className="min-h-11 rounded-xl bg-rose-600 px-4 text-sm font-bold text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={deleteBusy}
+                  onClick={() => void handleDeleteAccount()}
+                  type="button"
+                >
+                  {deleteBusy ? "Deleting account…" : "Permanently delete account"}
+                </button>
+              </div>
+            </section>
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }

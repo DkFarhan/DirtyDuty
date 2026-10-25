@@ -383,6 +383,20 @@ class AccountSecurityIntegrationTest {
         .isEqualTo("ACTIVE");
   }
 
+  @Test
+  void accountDeletionEmailConfirmationIgnoresCaseAndSurroundingWhitespace() throws Exception {
+    User user = createUser("case-insensitive-confirmation");
+    WebSession session = login(user.getEmail(), PASSWORD);
+
+    deleteAccount(session, PASSWORD, "  " + user.getEmail().toUpperCase() + "  ")
+        .andExpect(status().isNoContent());
+
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT account_status FROM users WHERE id=?", String.class, user.getId()))
+        .isEqualTo("DELETED");
+  }
+
   private User createUser(String localPart) {
     return createUserWithEmail(localPart + "-" + UUID.randomUUID() + "@example.com", "Test User");
   }
