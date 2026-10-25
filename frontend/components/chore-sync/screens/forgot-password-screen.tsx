@@ -28,6 +28,7 @@ export function ForgotPasswordScreen({ initialEmail = "" }: { initialEmail?: str
   const [showRecoveryCodeForm, setShowRecoveryCodeForm] = useState(false)
   const [recoveryCode, setRecoveryCode] = useState("")
   const [newPassword, setNewPassword] = useState("")
+  const [confirmNewPassword, setConfirmNewPassword] = useState("")
   const [recoveryBusy, setRecoveryBusy] = useState(false)
   const inFlight = useRef(false)
   const recoveryInFlight = useRef(false)
@@ -79,13 +80,24 @@ export function ForgotPasswordScreen({ initialEmail = "" }: { initialEmail?: str
     setShowRecoveryCodeForm(false)
     setRecoveryCode("")
     setNewPassword("")
+    setConfirmNewPassword("")
     setCooldownUntil(null)
     setCooldown(0)
     setError("")
   }
 
   const completeRecovery = async () => {
-    if (recoveryInFlight.current || recoveryCode.length !== 6 || newPassword.length < 12) {
+    if (recoveryInFlight.current || recoveryCode.length !== 6) return
+    if (newPassword.length < 12 || newPassword.length > 128) {
+      setError("Password must be between 12 and 128 characters.")
+      return
+    }
+    if (confirmNewPassword.length < 12 || confirmNewPassword.length > 128) {
+      setError("Password must be between 12 and 128 characters.")
+      return
+    }
+    if (newPassword !== confirmNewPassword) {
+      setError("Passwords do not match.")
       return
     }
     recoveryInFlight.current = true
@@ -176,13 +188,31 @@ export function ForgotPasswordScreen({ initialEmail = "" }: { initialEmail?: str
                 autoComplete="new-password"
                 className={inputClass}
                 id="recovery-new-password"
+                maxLength={128}
                 name="recovery-new-password"
                 onChange={(event) => setNewPassword(event.target.value)}
                 value={newPassword}
               />
+              <label
+                className="text-sm font-semibold text-slate-700"
+                htmlFor="recovery-confirm-password"
+              >
+                Confirm new password
+              </label>
+              <PasswordInput
+                autoComplete="new-password"
+                className={inputClass}
+                id="recovery-confirm-password"
+                maxLength={128}
+                name="recovery-confirm-password"
+                onChange={(event) => setConfirmNewPassword(event.target.value)}
+                value={confirmNewPassword}
+              />
               <button
                 className="min-h-11 w-full rounded-xl bg-teal-600 px-4 py-2 font-bold text-white disabled:opacity-60"
-                disabled={recoveryBusy || recoveryCode.length !== 6 || newPassword.length < 12}
+                disabled={
+                  recoveryBusy || recoveryCode.length !== 6 || !newPassword || !confirmNewPassword
+                }
                 onClick={() => void completeRecovery()}
                 type="button"
               >

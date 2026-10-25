@@ -35,7 +35,7 @@ function dateLabel(value: string) {
 }
 
 export function HouseholdSettingsScreen() {
-  const { navigate } = useChoreSync()
+  const { navigate, pendingAccountDeletionUserId, clearAccountDeletion } = useChoreSync()
   const { user, features } = useAuth()
   const { households, activeHousehold, refresh, updateHousehold, removeHousehold } = useHouseholds()
   const household = activeHousehold ?? households[0]
@@ -78,6 +78,7 @@ export function HouseholdSettingsScreen() {
   const revokeBusyRef = useRef(false)
   const hasPassword = user?.hasPassword ?? true
   const hasGoogle = user?.authProviders?.includes("GOOGLE") ?? false
+  const continuingAccountDeletion = pendingAccountDeletionUserId === user?.userId
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -285,8 +286,12 @@ export function HouseholdSettingsScreen() {
       })
       const remaining = removeHousehold(household.id)
       resetDeleteFlow()
-      navigate(remaining.length ? "dashboard" : "welcome")
-      void refresh().catch(() => undefined)
+      if (continuingAccountDeletion) {
+        navigate("privacy-security")
+      } else {
+        navigate(remaining.length ? "dashboard" : "welcome")
+        void refresh().catch(() => undefined)
+      }
     } catch (cause) {
       setDeleteError(cause instanceof ApiError ? cause.message : "Unable to delete this household.")
     } finally {
@@ -321,7 +326,10 @@ export function HouseholdSettingsScreen() {
       <SubpageHeader
         title="Household Settings"
         subtitle={settings?.name ?? household?.name}
-        back={() => navigate("household")}
+        back={() => {
+          if (continuingAccountDeletion) clearAccountDeletion()
+          navigate("household")
+        }}
       />
       <main className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 pt-4">
         {reauthMessage && (
@@ -602,6 +610,12 @@ export function HouseholdSettingsScreen() {
                 <p className="mt-2 text-sm leading-relaxed text-slate-600">
                   Permanently remove this household and its data.
                 </p>
+                {continuingAccountDeletion && (
+                  <p className="mt-2 text-sm leading-relaxed text-amber-800">
+                    This does not delete your account. After the household is deleted, you will
+                    return to Account &amp; Privacy to continue.
+                  </p>
+                )}
                 <button
                   className="mt-4 w-full rounded-xl border border-rose-200 bg-white px-3 py-2.5 text-sm font-bold text-rose-700 transition hover:bg-rose-50"
                   onClick={() => setDeleteOpen(true)}
@@ -700,7 +714,10 @@ export function HouseholdSettingsScreen() {
                   </button>
                   <button
                     className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700"
-                    onClick={resetDeleteFlow}
+                    onClick={() => {
+                      resetDeleteFlow()
+                      if (continuingAccountDeletion) clearAccountDeletion()
+                    }}
                     type="button"
                   >
                     Cancel

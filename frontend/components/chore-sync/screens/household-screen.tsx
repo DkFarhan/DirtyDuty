@@ -18,7 +18,7 @@ const adminActions = [
 ]
 
 export function HouseholdScreen() {
-  const { state, navigate } = useChoreSync()
+  const { state, navigate, pendingAccountDeletionUserId, clearAccountDeletion } = useChoreSync()
   const { households, activeHousehold, refresh, removeHousehold } = useHouseholds()
   const household = activeHousehold ?? households[0]
   const [inviteOpen, setInviteOpen] = useState(false)
@@ -128,7 +128,11 @@ export function HouseholdScreen() {
       setConfirmText("")
       await loadMembers()
       if (action === "transfer") {
-        void refresh().catch(() => undefined)
+        if (pendingAccountDeletionUserId === state.currentUser.id) {
+          navigate("privacy-security")
+        } else {
+          void refresh().catch(() => undefined)
+        }
       }
     } catch (cause) {
       setMemberActionError(
@@ -139,7 +143,15 @@ export function HouseholdScreen() {
     } finally {
       setBusyMemberId(null)
     }
-  }, [confirmText, household, loadMembers, pendingMemberAction, refresh])
+  }, [
+    confirmText,
+    household,
+    loadMembers,
+    navigate,
+    pendingAccountDeletionUserId,
+    refresh,
+    state.currentUser.id,
+  ])
 
   const eligibleNewOwners = members.filter(
     (member) =>
@@ -618,6 +630,7 @@ export function HouseholdScreen() {
           setPendingMemberAction(null)
           setConfirmText("")
           setMemberActionError(null)
+          if (pendingAccountDeletionUserId === state.currentUser.id) clearAccountDeletion()
         }}
         onChangeConfirmText={setConfirmText}
         onConfirm={() => void commitMemberAction()}

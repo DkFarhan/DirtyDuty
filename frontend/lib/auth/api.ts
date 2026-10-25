@@ -64,6 +64,16 @@ function messageFor(status: number, path: string, payload?: unknown): string {
     return payload.message
   }
   if (
+    status === 400 &&
+    path === "/api/auth/email-verification/recovery/complete" &&
+    payload !== null &&
+    typeof payload === "object" &&
+    "message" in payload &&
+    payload.message === "Your new password must be different from your current password."
+  ) {
+    return payload.message
+  }
+  if (
     status === 409 &&
     path === "/api/auth/email-verification/correct-email" &&
     payload !== null &&

@@ -2,6 +2,7 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { ApiError } from "@/lib/auth/api"
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
@@ -66,6 +67,9 @@ describe("forgot password screen", () => {
     fireEvent.change(screen.getByLabelText("New password"), {
       target: { value: "RecoveredPassword123!" },
     })
+    fireEvent.change(screen.getByLabelText("Confirm new password"), {
+      target: { value: "RecoveredPassword123!" },
+    })
     fireEvent.click(screen.getByRole("button", { name: "Verify code and continue" }))
 
     await waitFor(() =>
@@ -93,10 +97,78 @@ describe("forgot password screen", () => {
     fireEvent.change(screen.getByLabelText("New password"), {
       target: { value: "RecoveredPassword123!" },
     })
+    fireEvent.change(screen.getByLabelText("Confirm new password"), {
+      target: { value: "RecoveredPassword123!" },
+    })
     fireEvent.click(screen.getByRole("button", { name: "Verify code and continue" }))
     expect(await screen.findByRole("alert")).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "Verify code and continue" }))
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith("welcome"))
+    expect(mocks.completeEmailVerificationRecovery).toHaveBeenCalledTimes(2)
+  })
+
+  it("requires matching 12-to-128-character recovery passwords before submission", async () => {
+    mocks.requestPasswordReset.mockResolvedValueOnce(undefined)
+    render(<ForgotPasswordScreen initialEmail="pending@example.com" />)
+    fireEvent.click(screen.getByRole("button", { name: "Send reset instructions" }))
+    await screen.findByRole("heading", { name: "Check your email" })
+    fireEvent.click(screen.getByRole("button", { name: "Received a recovery code?" }))
+    fireEvent.change(screen.getByLabelText("Six-digit recovery code"), {
+      target: { value: "123456" },
+    })
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "RecoveredPassword123!" },
+    })
+    fireEvent.change(screen.getByLabelText("Confirm new password"), {
+      target: { value: "DifferentPassword123!" },
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Verify code and continue" }))
+    expect((await screen.findByRole("alert")).textContent).toBe("Passwords do not match.")
+    expect(mocks.completeEmailVerificationRecovery).not.toHaveBeenCalled()
+  })
+
+  it("shows the same-password recovery error and keeps the code available for retry", async () => {
+    mocks.requestPasswordReset.mockResolvedValueOnce(undefined)
+    mocks.completeEmailVerificationRecovery
+      .mockRejectedValueOnce(
+        new ApiError(
+          "Your new password must be different from your current password.",
+          400,
+          "validation",
+        ),
+      )
+      .mockResolvedValueOnce({})
+    render(<ForgotPasswordScreen initialEmail="pending@example.com" />)
+    fireEvent.click(screen.getByRole("button", { name: "Send reset instructions" }))
+    await screen.findByRole("heading", { name: "Check your email" })
+    fireEvent.click(screen.getByRole("button", { name: "Received a recovery code?" }))
+    fireEvent.change(screen.getByLabelText("Six-digit recovery code"), {
+      target: { value: "123456" },
+    })
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "OriginalPassword123!" },
+    })
+    fireEvent.change(screen.getByLabelText("Confirm new password"), {
+      target: { value: "OriginalPassword123!" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Verify code and continue" }))
+
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Your new password must be different from your current password.",
+    )
+    expect(screen.getByLabelText("Six-digit recovery code")).toHaveProperty("value", "123456")
+    expect(mocks.navigate).not.toHaveBeenCalled()
+
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "RecoveredPassword123!" },
+    })
+    fireEvent.change(screen.getByLabelText("Confirm new password"), {
+      target: { value: "RecoveredPassword123!" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Verify code and continue" }))
+
     await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith("welcome"))
     expect(mocks.completeEmailVerificationRecovery).toHaveBeenCalledTimes(2)
   })

@@ -24,7 +24,10 @@ interface ChoreSyncContextValue {
   screen: Screen
   adminTab: "members" | "chores"
   editingChoreId: string | null
+  pendingAccountDeletionUserId: string | null
   navigate: (screen: Screen, adminTab?: "members" | "chores") => void
+  beginAccountDeletion: (userId: string) => void
+  clearAccountDeletion: () => void
   openNotifications: (returnTo: Screen) => void
   returnFromNotifications: () => void
   editChore: (choreId: string) => void
@@ -49,10 +52,21 @@ export function ChoreSyncProvider({
   const [adminTab, setAdminTab] = useState<"members" | "chores">("chores")
   const [editingChoreId, setEditingChoreId] = useState<string | null>(null)
   const [notificationReturnScreen, setNotificationReturnScreen] = useState<Screen | null>(null)
+  const [pendingAccountDeletionUserId, setPendingAccountDeletionUserId] = useState<string | null>(
+    null,
+  )
 
   const navigate = useCallback((next: Screen, nextAdminTab?: "members" | "chores") => {
     if (nextAdminTab) setAdminTab(nextAdminTab)
     setScreen(next)
+  }, [])
+
+  const beginAccountDeletion = useCallback((userId: string) => {
+    setPendingAccountDeletionUserId(userId)
+  }, [])
+
+  const clearAccountDeletion = useCallback(() => {
+    setPendingAccountDeletionUserId(null)
   }, [])
 
   const openNotifications = useCallback((returnTo: Screen) => {
@@ -92,6 +106,7 @@ export function ChoreSyncProvider({
   const resetUserData = useCallback(() => {
     setState(initialState)
     setEditingChoreId(null)
+    setPendingAccountDeletionUserId(null)
   }, [])
 
   const markComplete = useCallback((choreId: string) => {
@@ -115,7 +130,10 @@ export function ChoreSyncProvider({
       screen,
       adminTab,
       editingChoreId,
+      pendingAccountDeletionUserId,
       navigate,
+      beginAccountDeletion,
+      clearAccountDeletion,
       openNotifications,
       returnFromNotifications,
       editChore,
@@ -130,7 +148,10 @@ export function ChoreSyncProvider({
       screen,
       adminTab,
       editingChoreId,
+      pendingAccountDeletionUserId,
       navigate,
+      beginAccountDeletion,
+      clearAccountDeletion,
       openNotifications,
       returnFromNotifications,
       editChore,

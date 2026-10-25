@@ -13,6 +13,9 @@ const mocks = vi.hoisted(() => ({
   deleteAccount: vi.fn(),
   refresh: vi.fn(),
   selectHousehold: vi.fn(),
+  beginAccountDeletion: vi.fn(),
+  clearAccountDeletion: vi.fn(),
+  pendingAccountDeletionUserId: null as string | null,
   removeBrowserPushSubscription: vi.fn(),
   user: {
     userId: "user-1",
@@ -37,7 +40,13 @@ vi.mock("@/lib/auth/auth-context", () => ({
 }))
 
 vi.mock("@/lib/chore-sync/store", () => ({
-  useChoreSync: () => ({ navigate: mocks.navigate, resetUserData: mocks.resetUserData }),
+  useChoreSync: () => ({
+    navigate: mocks.navigate,
+    resetUserData: mocks.resetUserData,
+    beginAccountDeletion: mocks.beginAccountDeletion,
+    clearAccountDeletion: mocks.clearAccountDeletion,
+    pendingAccountDeletionUserId: mocks.pendingAccountDeletionUserId,
+  }),
 }))
 
 vi.mock("@/lib/household/household-context", () => ({
@@ -61,7 +70,7 @@ describe("PrivacySecurityScreen", () => {
     mocks.features = { google: false, passwordReset: false }
     mocks.households = []
     mocks.removeBrowserPushSubscription.mockResolvedValue(null)
-    mocks.refresh.mockResolvedValue([])
+    mocks.refresh.mockImplementation(async () => mocks.households)
   })
 
   afterEach(() => cleanup())
@@ -174,30 +183,39 @@ describe("PrivacySecurityScreen", () => {
     })
   })
 
-  it("shows the active-owner blocker and routes each household action to its existing flow", () => {
+  it("preserves deletion intent for household resolution without deleting the account", async () => {
     mocks.households = [{ id: "house-1", name: "Maple House", currentUserRole: "OWNER" }]
     render(<PrivacySecurityScreen />)
     fireEvent.click(screen.getByRole("button", { name: "Delete account" }))
 
+    await screen.findByText("Maple House")
     expect(screen.getAllByText("You still own households.").length).toBeGreaterThan(0)
-    expect(screen.getByText("Maple House")).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Permanently delete my account" })).toBeNull()
 
     fireEvent.click(screen.getByRole("button", { name: "Transfer ownership" }))
+    expect(mocks.beginAccountDeletion).toHaveBeenCalledWith("user-1")
     expect(mocks.selectHousehold).toHaveBeenCalledWith("house-1")
     expect(mocks.navigate).toHaveBeenCalledWith("household")
+    expect(mocks.deleteAccount).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole("button", { name: "Delete account" }))
     fireEvent.click(screen.getByRole("button", { name: "Delete household" }))
+    expect(mocks.beginAccountDeletion).toHaveBeenLastCalledWith("user-1")
     expect(mocks.selectHousehold).toHaveBeenCalledWith("house-1")
     expect(mocks.navigate).toHaveBeenCalledWith("household-settings")
+  })
+
+  it("returns Back to Welcome for a user without a household", () => {
+    render(<PrivacySecurityScreen />)
+    fireEvent.click(screen.getByRole("button", { name: "Back" }))
+    expect(mocks.navigate).toHaveBeenCalledWith("welcome")
   })
 
   it("requires acknowledgement, exact email, and password before deletion", async () => {
     mocks.deleteAccount.mockResolvedValue(undefined)
     render(<PrivacySecurityScreen />)
     fireEvent.click(screen.getByRole("button", { name: "Delete account" }))
-    const continueButton = screen.getByRole("button", { name: "Continue" })
+    const continueButton = await screen.findByRole("button", { name: "Continue" })
     expect((continueButton as HTMLButtonElement).disabled).toBe(true)
 
     fireEvent.click(screen.getByLabelText("I understand that deleting my account is permanent."))
@@ -232,8 +250,18 @@ describe("PrivacySecurityScreen", () => {
         ownedHouseholds: [{ id: "house-2", name: "Cedar Home" }],
       }),
     )
+    mocks.refresh.mockResolvedValueOnce([]).mockResolvedValueOnce([
+      {
+        id: "house-2",
+        name: "Cedar Home",
+        timezone: "UTC",
+        currentUserRole: "OWNER",
+        createdAt: "2026-10-01T00:00:00Z",
+      },
+    ])
     render(<PrivacySecurityScreen />)
     fireEvent.click(screen.getByRole("button", { name: "Delete account" }))
+    await screen.findByRole("button", { name: "Continue" })
     fireEvent.click(screen.getByLabelText("I understand that deleting my account is permanent."))
     fireEvent.click(screen.getByRole("button", { name: "Continue" }))
     fireEvent.change(screen.getByLabelText("Account email"), {
@@ -246,7 +274,7 @@ describe("PrivacySecurityScreen", () => {
 
     expect(await screen.findByText("Cedar Home")).toBeTruthy()
     expect(screen.getAllByText("You still own households.").length).toBeGreaterThan(0)
-    expect(mocks.refresh).toHaveBeenCalledOnce()
+    expect(mocks.refresh).toHaveBeenCalledTimes(2)
     expect(mocks.resetUserData).not.toHaveBeenCalled()
   })
 
@@ -263,6 +291,7 @@ describe("PrivacySecurityScreen", () => {
     expect(mocks.navigate).toHaveBeenCalledWith("forgot-password")
 
     fireEvent.click(screen.getByRole("button", { name: "Delete account" }))
+    await screen.findByRole("button", { name: "Continue" })
     fireEvent.click(screen.getByLabelText("I understand that deleting my account is permanent."))
     fireEvent.click(screen.getByRole("button", { name: "Continue" }))
     expect(screen.queryByLabelText("Current password")).toBeNull()

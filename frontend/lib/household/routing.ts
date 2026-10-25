@@ -32,6 +32,8 @@ export function getHouseholdRedirect(
   }
   if (!authenticatedScreens.has(screen)) return null
   if (householdsCount > 0 && onboardingScreens.has(screen)) return "dashboard"
-  if (householdsCount === 0 && !onboardingScreens.has(screen)) return "welcome"
+  if (householdsCount === 0 && !onboardingScreens.has(screen) && screen !== "privacy-security") {
+    return "welcome"
+  }
   return null
 }
