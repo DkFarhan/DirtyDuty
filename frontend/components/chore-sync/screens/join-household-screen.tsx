@@ -32,25 +32,30 @@ export function JoinHouseholdScreen() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-white px-6 pt-12 pb-10">
+    <div className="flex min-h-[100dvh] flex-col bg-white px-6 pb-[max(2.5rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] dark:bg-slate-950">
       <button
         onClick={() => navigate("welcome")}
-        className="flex items-center gap-1 text-slate-500 mb-8 -ml-1 w-fit"
+        className="mb-8 -ml-1 flex min-h-10 w-fit items-center gap-1 text-slate-500 dark:text-slate-400"
       >
         <ChevronLeftIcon className="w-5 h-5" />
         <span className="text-sm font-medium">Back</span>
       </button>
 
       <div className="mb-8">
-        <ProductLogo className="mb-4 h-8 w-auto" variant="mark" />
-        <h1 className="text-3xl font-black text-slate-900 mb-1 font-display">Join Household</h1>
-        <p className="text-slate-500 text-sm">
+        <ProductLogo className="mb-4 h-auto w-36 max-w-full" />
+        <h1 className="mb-1 font-display text-3xl font-black text-slate-900 dark:text-white">
+          Join Household
+        </h1>
+        <p className="text-sm text-slate-500 dark:text-slate-400">
           Enter the invite code your housemate shared with you
         </p>
       </div>
 
       <div className="mb-6">
-        <label htmlFor="invite-code" className="block text-sm font-semibold text-slate-700 mb-1.5">
+        <label
+          htmlFor="invite-code"
+          className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-300"
+        >
           Invite Code
         </label>
         <input
@@ -58,7 +63,7 @@ export function JoinHouseholdScreen() {
           value={code}
           onChange={(e) => setCode(e.target.value)}
           placeholder="e.g. ABC123"
-          className="w-full px-4 py-3.5 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent text-2xl font-black text-center tracking-[0.3em] transition-all"
+          className="w-full rounded-xl border border-slate-200 px-4 py-3.5 text-center text-2xl font-black tracking-[0.3em] text-slate-900 placeholder-slate-400 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-teal-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
         />
       </div>
 
@@ -74,8 +79,8 @@ export function JoinHouseholdScreen() {
         className={cn(
           "w-full font-bold text-[15px] py-4 rounded-xl transition-all",
           code.trim()
-            ? "bg-teal-600 text-white shadow-lg shadow-teal-200 hover:bg-teal-700 active:scale-[0.98]"
-            : "bg-slate-100 text-slate-400 cursor-not-allowed",
+            ? "bg-teal-600 text-white shadow-lg shadow-teal-200 hover:bg-teal-700 active:scale-[0.98] dark:shadow-none"
+            : "cursor-not-allowed bg-slate-100 text-slate-400 dark:bg-slate-800",
         )}
       >
         {submitting ? "Joining..." : "Join Household"}

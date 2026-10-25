@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { ApiError } from "@/lib/auth/api"
 import { PrivacySecurityScreen } from "./screens/privacy-security-screen"
@@ -190,8 +190,11 @@ describe("PrivacySecurityScreen", () => {
 
     await screen.findByText("Maple House")
     expect(screen.getAllByText("You still own households.").length).toBeGreaterThan(0)
-    expect(screen.queryByRole("button", { name: "Permanently delete my account" })).toBeNull()
+    expect(
+      screen.queryByLabelText("I understand that deleting my account is permanent."),
+    ).toBeNull()
 
+    // Ownership resolution is independent from account-deletion acknowledgement.
     fireEvent.click(screen.getByRole("button", { name: "Transfer ownership" }))
     expect(mocks.beginAccountDeletion).toHaveBeenCalledWith("user-1")
     expect(mocks.selectHousehold).toHaveBeenCalledWith("house-1")
@@ -211,17 +214,18 @@ describe("PrivacySecurityScreen", () => {
     expect(mocks.navigate).toHaveBeenCalledWith("welcome")
   })
 
-  it("requires acknowledgement, exact email, and password before deletion", async () => {
+  it("requires acknowledgement, full email, and password before reviewing deletion", async () => {
     mocks.deleteAccount.mockResolvedValue(undefined)
     render(<PrivacySecurityScreen />)
     fireEvent.click(screen.getByRole("button", { name: "Delete account" }))
-    const continueButton = await screen.findByRole("button", { name: "Continue" })
+    await screen.findByLabelText("I understand that deleting my account is permanent.")
+    const continueButton = screen.getByRole("button", { name: "Continue" })
     expect((continueButton as HTMLButtonElement).disabled).toBe(true)
 
     fireEvent.click(screen.getByLabelText("I understand that deleting my account is permanent."))
     fireEvent.click(continueButton)
-    const deleteButton = screen.getByRole("button", { name: "Permanently delete my account" })
-    expect((deleteButton as HTMLButtonElement).disabled).toBe(true)
+    const reviewButton = screen.getByRole("button", { name: "Review account deletion" })
+    expect((reviewButton as HTMLButtonElement).disabled).toBe(true)
 
     fireEvent.change(screen.getByLabelText("Account email"), {
       target: { value: "other@example.com" },
@@ -229,15 +233,37 @@ describe("PrivacySecurityScreen", () => {
     fireEvent.change(screen.getAllByLabelText("Current password")[1], {
       target: { value: "StrongPassword123!" },
     })
-    expect((deleteButton as HTMLButtonElement).disabled).toBe(true)
+    expect((reviewButton as HTMLButtonElement).disabled).toBe(true)
     fireEvent.change(screen.getByLabelText("Account email"), {
-      target: { value: "user@example.com" },
+      target: { value: "USER@Example.COM" },
     })
-    expect((deleteButton as HTMLButtonElement).disabled).toBe(false)
-    fireEvent.click(deleteButton)
+    expect((reviewButton as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(reviewButton)
+    const dialog = await screen.findByRole("dialog", { name: "Permanently delete your account?" })
+    expect(dialog.textContent).toContain("you will be signed out")
+    expect(dialog.textContent).toContain("cannot be undone")
+    expect(dialog.textContent).not.toContain("StrongPassword123!")
+    expect(mocks.deleteAccount).not.toHaveBeenCalled()
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }))
+    expect(mocks.deleteAccount).not.toHaveBeenCalled()
+    expect((screen.getByLabelText("Account email") as HTMLInputElement).value).toBe(
+      "USER@Example.COM",
+    )
+    expect((screen.getAllByLabelText("Current password")[1] as HTMLInputElement).value).toBe(
+      "StrongPassword123!",
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Review account deletion" }))
+    fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Permanently delete your account?" })).getByRole(
+        "button",
+        { name: "Permanently delete account" },
+      ),
+    )
 
     await waitFor(() => {
       expect(mocks.deleteAccount).toHaveBeenCalledWith("StrongPassword123!", "user@example.com")
+      expect(mocks.deleteAccount).toHaveBeenCalledOnce()
       expect(mocks.resetUserData).toHaveBeenCalledOnce()
       expect(mocks.navigate).toHaveBeenCalledWith("login")
       expect(mocks.removeBrowserPushSubscription).toHaveBeenCalledOnce()
@@ -261,7 +287,7 @@ describe("PrivacySecurityScreen", () => {
     ])
     render(<PrivacySecurityScreen />)
     fireEvent.click(screen.getByRole("button", { name: "Delete account" }))
-    await screen.findByRole("button", { name: "Continue" })
+    await screen.findByLabelText("I understand that deleting my account is permanent.")
     fireEvent.click(screen.getByLabelText("I understand that deleting my account is permanent."))
     fireEvent.click(screen.getByRole("button", { name: "Continue" }))
     fireEvent.change(screen.getByLabelText("Account email"), {
@@ -270,7 +296,13 @@ describe("PrivacySecurityScreen", () => {
     fireEvent.change(screen.getAllByLabelText("Current password")[1], {
       target: { value: "StrongPassword123!" },
     })
-    fireEvent.click(screen.getByRole("button", { name: "Permanently delete my account" }))
+    fireEvent.click(screen.getByRole("button", { name: "Review account deletion" }))
+    fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Permanently delete your account?" })).getByRole(
+        "button",
+        { name: "Permanently delete account" },
+      ),
+    )
 
     expect(await screen.findByText("Cedar Home")).toBeTruthy()
     expect(screen.getAllByText("You still own households.").length).toBeGreaterThan(0)
@@ -291,7 +323,7 @@ describe("PrivacySecurityScreen", () => {
     expect(mocks.navigate).toHaveBeenCalledWith("forgot-password")
 
     fireEvent.click(screen.getByRole("button", { name: "Delete account" }))
-    await screen.findByRole("button", { name: "Continue" })
+    await screen.findByLabelText("I understand that deleting my account is permanent.")
     fireEvent.click(screen.getByLabelText("I understand that deleting my account is permanent."))
     fireEvent.click(screen.getByRole("button", { name: "Continue" }))
     expect(screen.queryByLabelText("Current password")).toBeNull()
@@ -301,9 +333,15 @@ describe("PrivacySecurityScreen", () => {
     fireEvent.change(screen.getByLabelText("Account email"), {
       target: { value: "user@example.com" },
     })
-    const deleteButton = screen.getByRole("button", { name: "Permanently delete my account" })
-    expect((deleteButton as HTMLButtonElement).disabled).toBe(false)
-    fireEvent.click(deleteButton)
+    const reviewButton = screen.getByRole("button", { name: "Review account deletion" })
+    expect((reviewButton as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(reviewButton)
+    fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Permanently delete your account?" })).getByRole(
+        "button",
+        { name: "Permanently delete account" },
+      ),
+    )
 
     await waitFor(() => {
       expect(mocks.deleteAccount).toHaveBeenCalledWith("", "user@example.com")
