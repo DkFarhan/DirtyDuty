@@ -59,4 +59,23 @@ describe("profile API", () => {
       body: JSON.stringify({ displayName: "Sam Updated" }),
     })
   })
+
+  it("completes skipped personalization without sending a display-name update", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ token: "profile-csrf", headerName: "X-CSRF-TOKEN" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+
+    await expect(profileApi.completeDisplayNamePersonalization()).resolves.toBeNull()
+
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      "http://localhost:8080/api/profile/display-name-personalization/complete",
+    )
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({ method: "POST" })
+    expect(fetchMock.mock.calls[1][1]?.body).toBeUndefined()
+  })
 })

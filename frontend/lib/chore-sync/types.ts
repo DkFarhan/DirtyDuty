@@ -2,6 +2,7 @@ export type Screen =
   | "login"
   | "register"
   | "verify-email"
+  | "display-name-personalization"
   | "forgot-password"
   | "reset-password"
   | "welcome"

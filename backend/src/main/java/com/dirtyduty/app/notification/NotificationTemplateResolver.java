@@ -89,8 +89,12 @@ public class NotificationTemplateResolver {
       variables.put("household_name", context.householdName());
     }
 
+    String title = event.variables() == null ? null : event.variables().get("notification_title");
+    String message =
+        event.variables() == null ? null : event.variables().get("notification_message");
     return new ResolvedTemplate(
-        render(template.title(), variables), render(template.message(), variables));
+        title == null ? render(template.title(), variables) : title,
+        message == null ? render(template.message(), variables) : message);
   }
 
   public boolean hasEnabledTemplate(String eventType, UUID householdId, UUID recipientUserId) {

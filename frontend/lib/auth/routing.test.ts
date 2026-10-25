@@ -53,6 +53,21 @@ describe("auth route protection", () => {
     expect(getAuthRedirect("verify-email", false, false, false)).toBe("login")
   })
 
+  it("requires personalization only for newly onboarded verified accounts", () => {
+    expect(getAuthRedirect("welcome", true, false, true, true)).toBe("display-name-personalization")
+    expect(getAuthRedirect("login", true, false, true, true)).toBe("display-name-personalization")
+    expect(getAuthRedirect("dashboard", true, false, true, true)).toBe(
+      "display-name-personalization",
+    )
+    expect(getAuthRedirect("privacy-security", true, false, true, true)).toBeNull()
+    expect(getAuthRedirect("legal-acceptance", true, false, true, true)).toBeNull()
+    expect(getAuthRedirect("welcome", true, false, false, true)).toBe("verify-email")
+    expect(getAuthRedirect("display-name-personalization", true, false, true, false)).toBe(
+      "welcome",
+    )
+    expect(getAuthRedirect("welcome", true, false, true, false)).toBeNull()
+  })
+
   it("leaves public login and authenticated protected screens unchanged", () => {
     expect(getAuthRedirect("login", false, false)).toBeNull()
     expect(getAuthRedirect("dashboard", true, false)).toBeNull()

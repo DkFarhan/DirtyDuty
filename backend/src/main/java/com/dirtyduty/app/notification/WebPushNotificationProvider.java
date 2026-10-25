@@ -219,6 +219,9 @@ public class WebPushNotificationProvider implements NotificationDeliveryProvider
         && notification.referenceId() != null) {
       return "/?screen=my-chores&assignmentId=" + notification.referenceId();
     }
+    if ("CHORE_SCHEDULE".equals(notification.referenceType())) {
+      return "/?screen=my-chores";
+    }
     if ("HOUSEHOLD".equals(notification.referenceType())
         || "HOUSEHOLD_JOINED".equals(notification.type())
         || "INVITE_ACCEPTED".equals(notification.type())) {

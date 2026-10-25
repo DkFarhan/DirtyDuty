@@ -10,4 +10,5 @@ public record LoginResponse(
     boolean emailVerified,
     boolean hasPassword,
     List<String> authProviders,
-    boolean legalAcceptanceRequired) {}
+    boolean legalAcceptanceRequired,
+    boolean displayNamePersonalizationPending) {}

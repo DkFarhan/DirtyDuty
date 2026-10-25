@@ -149,9 +149,14 @@ public class NotificationScheduler {
         """
                 UPDATE notifications n SET status='CANCELLED'
                 WHERE n.status='PENDING' AND n.reference_type='CHORE_ASSIGNMENT'
+                  AND n.type IN ('CHORE_DUE_SOON', 'CHORE_DUE_NOW', 'CHORE_OVERDUE')
                   AND NOT EXISTS (
                       SELECT 1 FROM chore_assignments a
                       WHERE a.id=n.reference_id AND a.status IN ('PENDING', 'SUBMITTED')
+                        AND (a.assigned_to_user_id=n.recipient_user_id OR EXISTS (
+                            SELECT 1 FROM chore_assignment_assignees aa
+                            WHERE aa.assignment_id=a.id AND aa.user_id=n.recipient_user_id
+                        ))
                   )
                 """);
     jdbc.update(
@@ -163,7 +168,14 @@ public class NotificationScheduler {
                 WHERE d.notification_id=n.id AND d.status IN ('PENDING', 'FAILED')
                   AND (n.status='CANCELLED'
                        OR (n.reference_type='CHORE_ASSIGNMENT'
-                           AND (a.id IS NULL OR a.status NOT IN ('PENDING', 'SUBMITTED'))))
+                           AND (a.id IS NULL OR a.status NOT IN ('PENDING', 'SUBMITTED')
+                                OR (n.type IN ('CHORE_DUE_SOON', 'CHORE_DUE_NOW', 'CHORE_OVERDUE')
+                                    AND a.assigned_to_user_id IS DISTINCT FROM n.recipient_user_id
+                                    AND NOT EXISTS (
+                                        SELECT 1 FROM chore_assignment_assignees aa
+                                        WHERE aa.assignment_id=a.id
+                                          AND aa.user_id=n.recipient_user_id
+                                    )))))
                 """);
   }
 
@@ -329,11 +341,38 @@ public class NotificationScheduler {
         jdbc.queryForObject(
             """
                 SELECT EXISTS(SELECT 1 FROM chore_assignments
-                              WHERE id=? AND status IN ('PENDING', 'SUBMITTED'))
+                              WHERE id=? AND status IN ('PENDING', 'SUBMITTED')
+                )
                 """,
             Boolean.class,
             item.referenceId());
-    return Boolean.TRUE.equals(active);
+    if (!Boolean.TRUE.equals(active) || !isChoreReminder(item.type())) {
+      return Boolean.TRUE.equals(active);
+    }
+    Boolean assigned =
+        jdbc.queryForObject(
+            """
+                SELECT EXISTS(
+                    SELECT 1 FROM chore_assignments a
+                    WHERE a.id=? AND (
+                        a.assigned_to_user_id=? OR EXISTS (
+                            SELECT 1 FROM chore_assignment_assignees aa
+                            WHERE aa.assignment_id=a.id AND aa.user_id=?
+                        )
+                    )
+                )
+                """,
+            Boolean.class,
+            item.referenceId(),
+            item.recipientUserId(),
+            item.recipientUserId());
+    return Boolean.TRUE.equals(assigned);
+  }
+
+  private boolean isChoreReminder(String type) {
+    return "CHORE_DUE_SOON".equals(type)
+        || "CHORE_DUE_NOW".equals(type)
+        || "CHORE_OVERDUE".equals(type);
   }
 
   private void cancelNotification(UUID notificationId) {

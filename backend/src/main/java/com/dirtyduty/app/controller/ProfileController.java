@@ -6,6 +6,7 @@ import com.dirtyduty.app.service.ProfileService;
 import jakarta.validation.Valid;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -29,5 +30,10 @@ public class ProfileController {
   public ProfileResponse update(
       @Valid @RequestBody UpdateProfileRequest request, Authentication authentication) {
     return profileService.update(request, authentication);
+  }
+
+  @PostMapping("/display-name-personalization/complete")
+  public void completeDisplayNamePersonalization(Authentication authentication) {
+    profileService.completeDisplayNamePersonalization(authentication);
   }
 }

@@ -60,4 +60,24 @@ class WebPushNotificationProviderTest {
     assertThat(WebPushNotificationProvider.targetPath(household)).isEqualTo("/?screen=household");
     assertThat(WebPushNotificationProvider.targetPath(generic)).isEqualTo("/?screen=notifications");
   }
+
+  @Test
+  void recurringScheduleAnnouncementsOpenMyChoresWithoutAnAssignmentDeepLink() {
+    NotificationMessage announcement =
+        new NotificationMessage(
+            UUID.randomUUID(),
+            "CHORE_ASSIGNED",
+            "CHORE_REMINDER",
+            "NORMAL",
+            "You've joined a chore rotation!",
+            "You'll be reminded when it's your turn.",
+            "CHORE_SCHEDULE",
+            UUID.randomUUID(),
+            null,
+            null,
+            "schedule-announcement");
+
+    assertThat(WebPushNotificationProvider.targetPath(announcement))
+        .isEqualTo("/?screen=my-chores");
+  }
 }
