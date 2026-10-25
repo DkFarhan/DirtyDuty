@@ -148,6 +148,7 @@ export function HouseholdScreen() {
     household,
     loadMembers,
     navigate,
+    pendingMemberAction,
     pendingAccountDeletionUserId,
     refresh,
     state.currentUser.id,
