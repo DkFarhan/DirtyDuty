@@ -16,15 +16,24 @@ const mocks = vi.hoisted(() => ({
   revokeInvitation: vi.fn(),
   setHouseholdStyle: vi.fn(),
   navigate: vi.fn(),
+  deleteHousehold: vi.fn(),
+  refresh: vi.fn(),
+  removeHousehold: vi.fn(),
+  pendingAccountDeletionUserId: null as string | null,
+  clearAccountDeletion: vi.fn(),
 }))
 
 vi.mock("@/lib/chore-sync/store", () => ({
-  useChoreSync: () => ({ navigate: mocks.navigate }),
+  useChoreSync: () => ({
+    navigate: mocks.navigate,
+    pendingAccountDeletionUserId: mocks.pendingAccountDeletionUserId,
+    clearAccountDeletion: mocks.clearAccountDeletion,
+  }),
 }))
 
 vi.mock("@/lib/auth/auth-context", () => ({
   useAuth: () => ({
-    user: { hasPassword: true, authProviders: ["PASSWORD"] },
+    user: { userId: "user-1", hasPassword: true, authProviders: ["PASSWORD"] },
     features: { google: false },
   }),
 }))
@@ -33,9 +42,9 @@ vi.mock("@/lib/household/household-context", () => ({
   useHouseholds: () => ({
     households: [mocks.activeHousehold],
     activeHousehold: mocks.activeHousehold,
-    refresh: vi.fn(),
+    refresh: mocks.refresh,
     updateHousehold: vi.fn(),
-    removeHousehold: vi.fn(() => []),
+    removeHousehold: mocks.removeHousehold,
   }),
 }))
 
@@ -45,7 +54,7 @@ vi.mock("@/lib/household/api", () => ({
     listInvitations: mocks.listInvitations,
     revokeInvitation: mocks.revokeInvitation,
     updateSettings: vi.fn(),
-    deleteHousehold: vi.fn(),
+    deleteHousehold: mocks.deleteHousehold,
   },
 }))
 
@@ -101,6 +110,11 @@ describe("household settings screen", () => {
     mocks.revokeInvitation.mockReset()
     mocks.setHouseholdStyle.mockReset()
     mocks.navigate.mockReset()
+    mocks.deleteHousehold.mockReset().mockResolvedValue(undefined)
+    mocks.refresh.mockReset().mockResolvedValue([])
+    mocks.removeHousehold.mockReset().mockReturnValue([])
+    mocks.pendingAccountDeletionUserId = null
+    mocks.clearAccountDeletion.mockReset()
   })
 
   afterEach(() => cleanup())
@@ -176,6 +190,35 @@ describe("household settings screen", () => {
       ),
     )
     expect(mocks.setHouseholdStyle).toHaveBeenCalledWith("home-a", "FUNNY")
+  })
+
+  it("returns to account deletion after household deletion when that flow is pending", async () => {
+    mocks.pendingAccountDeletionUserId = "user-1"
+    render(<HouseholdSettingsScreen />)
+    fireEvent.click(await screen.findByRole("button", { name: "Delete household" }))
+    fireEvent.click(screen.getByRole("button", { name: "Continue to deletion" }))
+    fireEvent.click(screen.getByRole("checkbox", { name: "All members will lose access." }))
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: "Household data and history will be permanently deleted.",
+      }),
+    )
+    fireEvent.click(screen.getByRole("checkbox", { name: "I understand this cannot be undone." }))
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    fireEvent.change(screen.getByPlaceholderText("Home A"), { target: { value: "Home A" } })
+    fireEvent.change(screen.getByPlaceholderText("Current password"), {
+      target: { value: "StrongPassword123!" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Permanently delete Home A" }))
+
+    await waitFor(() => {
+      expect(mocks.deleteHousehold).toHaveBeenCalledWith("home-a", {
+        householdName: "Home A",
+        password: "StrongPassword123!",
+      })
+      expect(mocks.navigate).toHaveBeenCalledWith("privacy-security")
+    })
+    expect(mocks.clearAccountDeletion).not.toHaveBeenCalled()
   })
 })
 

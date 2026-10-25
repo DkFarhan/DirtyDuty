@@ -180,13 +180,18 @@ public class AuthController {
   }
 
   @PostMapping("/email-verification/recovery/complete")
-  public ResponseEntity<LoginResponse> completeEmailVerificationRecovery(
+  public ResponseEntity<?> completeEmailVerificationRecovery(
       @Valid @RequestBody CompleteEmailVerificationRecoveryRequest request,
       HttpServletRequest httpRequest,
       HttpServletResponse httpResponse) {
-    User user =
-        emailVerificationService.completeRecovery(
-            request.email(), request.code(), request.newPassword(), httpRequest.getRemoteAddr());
+    User user;
+    try {
+      user =
+          emailVerificationService.completeRecovery(
+              request.email(), request.code(), request.newPassword(), httpRequest.getRemoteAddr());
+    } catch (PasswordResetSamePasswordException exception) {
+      return ResponseEntity.badRequest().body(java.util.Map.of("message", exception.getMessage()));
+    }
     Authentication authentication =
         authenticationManager.authenticate(
             new UsernamePasswordAuthenticationToken(user.getEmail(), request.newPassword()));

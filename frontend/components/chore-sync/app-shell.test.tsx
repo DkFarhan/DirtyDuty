@@ -161,6 +161,10 @@ describe("authentication screens", () => {
     ).toBeTruthy()
     expect(screen.queryByRole("status", { name: "Starting DirtyDuty" })).toBeNull()
     expect(screen.getByRole("img", { name: "DirtyDuty" })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Account & Privacy" }))
+    expect(
+      await screen.findByRole("heading", { name: "Privacy & Security" }, { timeout: 3_000 }),
+    ).toBeTruthy()
     expect(fetchMock).toHaveBeenCalledWith(
       "http://localhost:8080/api/auth/me",
       expect.objectContaining({

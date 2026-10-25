@@ -27,6 +27,10 @@ describe("auth route protection", () => {
       expect(getHouseholdRedirect("create-household", true, "has-households", 2)).toBe("dashboard")
       expect(getHouseholdRedirect("join-household", true, "has-households", 2)).toBe("dashboard")
     })
+
+    it("allows account privacy settings without a household", () => {
+      expect(getHouseholdRedirect("privacy-security", true, "empty", 0)).toBeNull()
+    })
   })
 
   it("redirects unauthenticated users away from protected screens", () => {

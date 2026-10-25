@@ -7,6 +7,7 @@ import com.dirtyduty.app.exception.DuplicateResourceException;
 import com.dirtyduty.app.exception.EmailVerificationInvalidCodeException;
 import com.dirtyduty.app.exception.EmailVerificationRateLimitException;
 import com.dirtyduty.app.exception.EmailVerificationUnavailableException;
+import com.dirtyduty.app.exception.PasswordResetSamePasswordException;
 import com.dirtyduty.app.repository.UserRepository;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
@@ -254,6 +255,10 @@ public class EmailVerificationService {
               if (!isValid(record, current, code)) {
                 recordFailedAttempt(current.getId(), record);
                 return null;
+              }
+              if (current.getPasswordHash() != null
+                  && passwordEncoder.matches(newPassword, current.getPasswordHash())) {
+                throw new PasswordResetSamePasswordException();
               }
               current.setEmailVerifiedAt(OffsetDateTime.now(ZoneOffset.UTC));
               current.setPasswordHash(passwordEncoder.encode(newPassword));

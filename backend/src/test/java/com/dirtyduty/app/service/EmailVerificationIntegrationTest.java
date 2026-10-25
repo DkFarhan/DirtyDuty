@@ -157,8 +157,27 @@ class EmailVerificationIntegrationTest {
   void recoveryVerifiesMailboxChangesPasswordAndConsumesTheCode() {
     User user = createUser("recovery");
     verificationService.sendInitial(user.getId(), uniqueIp());
+    String currentPassword = "OriginalPassword123!";
+    String recoveryCode = latestCode.get();
+    assertThatThrownBy(
+            () ->
+                verificationService.completeRecovery(
+                    user.getEmail(), recoveryCode, currentPassword, uniqueIp()))
+        .isInstanceOf(com.dirtyduty.app.exception.PasswordResetSamePasswordException.class)
+        .hasMessage("Your new password must be different from your current password.");
+
+    User unchanged = users.findById(user.getId()).orElseThrow();
+    assertThat(unchanged.getEmailVerifiedAt()).isNull();
+    assertThat(passwordEncoder.matches(currentPassword, unchanged.getPasswordHash())).isTrue();
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT COUNT(*) FROM email_verification WHERE user_id = ?",
+                Integer.class,
+                user.getId()))
+        .isEqualTo(1);
+
     verificationService.completeRecovery(
-        user.getEmail(), latestCode.get(), "RecoveredPassword123!", uniqueIp());
+        user.getEmail(), recoveryCode, "RecoveredPassword123!", uniqueIp());
 
     User recovered = users.findById(user.getId()).orElseThrow();
     assertThat(recovered.getEmailVerifiedAt()).isNotNull();
@@ -174,7 +193,7 @@ class EmailVerificationIntegrationTest {
     assertThatThrownBy(
             () ->
                 verificationService.completeRecovery(
-                    user.getEmail(), latestCode.get(), "AnotherPassword123!", uniqueIp()))
+                    user.getEmail(), recoveryCode, "AnotherPassword123!", uniqueIp()))
         .isInstanceOf(EmailVerificationInvalidCodeException.class);
   }
 

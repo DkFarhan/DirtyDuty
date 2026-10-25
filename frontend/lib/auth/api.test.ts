@@ -227,6 +227,36 @@ describe("auth API client", () => {
     expect(error.message).toBe("The verification code is invalid or expired.")
   })
 
+  it("preserves the same-password recovery error for the recovery form", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ token: "csrf-token", headerName: "X-CSRF-TOKEN" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            message: "Your new password must be different from your current password.",
+          }),
+          { status: 400, headers: { "content-type": "application/json" } },
+        ),
+      )
+
+    const error = await api
+      .post("/api/auth/email-verification/recovery/complete", {
+        email: "person@example.com",
+        code: "123456",
+        newPassword: "OriginalPassword123!",
+      })
+      .catch((requestError) => requestError)
+
+    expect(error).toBeInstanceOf(ApiError)
+    if (!(error instanceof ApiError)) throw error
+    expect(error.message).toBe("Your new password must be different from your current password.")
+  })
+
   it("preserves the structured owned-household conflict payload for the account deletion blocker", async () => {
     fetchMock
       .mockResolvedValueOnce(

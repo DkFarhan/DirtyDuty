@@ -55,7 +55,14 @@ const screenTargets = new Map<string, Screen>([
 ])
 
 function ScreenRouter() {
-  const { screen, adminTab, navigate, setCurrentUser } = useChoreSync()
+  const {
+    screen,
+    adminTab,
+    navigate,
+    setCurrentUser,
+    pendingAccountDeletionUserId,
+    clearAccountDeletion,
+  } = useChoreSync()
   const { user, isAuthenticated, isLoading, authError, refreshUser, features } = useAuth()
   const { setPresentationLight } = useTheme()
   const skipNextRouteGuard = useRef(false)
@@ -108,6 +115,16 @@ function ScreenRouter() {
       })
     }
   }, [setCurrentUser, user])
+
+  useEffect(() => {
+    if (
+      !isLoading &&
+      pendingAccountDeletionUserId !== null &&
+      (!isAuthenticated || pendingAccountDeletionUserId !== user?.userId)
+    ) {
+      clearAccountDeletion()
+    }
+  }, [clearAccountDeletion, isAuthenticated, isLoading, pendingAccountDeletionUserId, user?.userId])
 
   useEffect(() => {
     if (skipNextRouteGuard.current) {

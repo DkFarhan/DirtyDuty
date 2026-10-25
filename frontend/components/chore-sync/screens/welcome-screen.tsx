@@ -6,7 +6,7 @@ import { ProductLogo } from "@/components/brand/product-logo"
 import { useState } from "react"
 
 export function WelcomeScreen() {
-  const { navigate } = useChoreSync()
+  const { navigate, clearAccountDeletion } = useChoreSync()
   const { logout } = useAuth()
   const [loggingOut, setLoggingOut] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -16,6 +16,7 @@ export function WelcomeScreen() {
     setError(null)
     try {
       await logout()
+      clearAccountDeletion()
       navigate("login")
     } catch {
       setError("Unable to sign out. Please try again.")
@@ -64,6 +65,13 @@ export function WelcomeScreen() {
           <div className="text-2xl mb-2">🔗</div>
           <div className="font-bold text-[17px] mb-0.5">Join a Household</div>
           <div className="text-slate-500 text-sm">Use an invite code from a housemate</div>
+        </button>
+        <button
+          onClick={() => navigate("privacy-security")}
+          className="min-h-11 text-sm font-semibold text-teal-700 underline-offset-2 hover:underline"
+          type="button"
+        >
+          Account &amp; Privacy
         </button>
       </div>
     </div>

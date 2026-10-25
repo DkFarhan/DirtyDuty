@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { ApiError, apiUrl } from "@/lib/auth/api"
 import { useAuth } from "@/lib/auth/auth-context"
 import { useChoreSync } from "@/lib/chore-sync/store"
@@ -30,7 +30,13 @@ function ownedHouseholdsFromError(error: ApiError): OwnedHousehold[] {
 }
 
 export function PrivacySecurityScreen() {
-  const { navigate, resetUserData } = useChoreSync()
+  const {
+    navigate,
+    resetUserData,
+    beginAccountDeletion,
+    clearAccountDeletion,
+    pendingAccountDeletionUserId,
+  } = useChoreSync()
   const { user, logout, changePassword, deleteAccount, features } = useAuth()
   const { households, refresh, selectHousehold } = useHouseholds()
   const [signOutBusy, setSignOutBusy] = useState(false)
@@ -46,13 +52,15 @@ export function PrivacySecurityScreen() {
   const [deleteStage, setDeleteStage] = useState<1 | 2 | null>(null)
   const [deleteAcknowledged, setDeleteAcknowledged] = useState(false)
   const [deleteForm, setDeleteForm] = useState({ password: "", email: "" })
-  const [serverOwnedHouseholds, setServerOwnedHouseholds] = useState<OwnedHousehold[]>([])
+  const [serverOwnedHouseholds, setServerOwnedHouseholds] = useState<OwnedHousehold[] | null>(null)
+  const [ownershipStatus, setOwnershipStatus] = useState<"idle" | "loading" | "loaded" | "error">(
+    "idle",
+  )
   const activeOwnedHouseholds = useMemo(
     () => households.filter((household) => household.currentUserRole === "OWNER"),
     [households],
   )
-  const ownedHouseholds =
-    serverOwnedHouseholds.length > 0 ? serverOwnedHouseholds : activeOwnedHouseholds
+  const ownedHouseholds = serverOwnedHouseholds ?? activeOwnedHouseholds
   const hasPassword = user?.hasPassword ?? true
   const hasGoogle = user?.authProviders?.includes("GOOGLE") ?? false
 
@@ -86,6 +94,7 @@ export function PrivacySecurityScreen() {
     try {
       await logout()
       resetUserData()
+      clearAccountDeletion()
       navigate("login")
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : "Unable to sign out. Please try again.")
@@ -129,13 +138,32 @@ export function PrivacySecurityScreen() {
     }
   }
 
-  const openDeleteFlow = () => {
+  const openDeleteFlow = useCallback(async () => {
     setError("")
     setDeleteAcknowledged(false)
     setDeleteForm({ password: "", email: "" })
-    setServerOwnedHouseholds([])
     setDeleteStage(1)
-  }
+    setServerOwnedHouseholds(null)
+    setOwnershipStatus("loading")
+    try {
+      const latestHouseholds = await refresh()
+      setServerOwnedHouseholds(
+        latestHouseholds
+          .filter((household) => household.currentUserRole === "OWNER")
+          .map(({ id, name }) => ({ id, name })),
+      )
+      setOwnershipStatus("loaded")
+    } catch {
+      setOwnershipStatus("error")
+      setError("Unable to refresh household ownership. Please try again.")
+    }
+  }, [refresh])
+
+  useEffect(() => {
+    if (user && pendingAccountDeletionUserId === user.userId) {
+      void openDeleteFlow()
+    }
+  }, [openDeleteFlow, pendingAccountDeletionUserId, user])
 
   const closeDeleteFlow = () => {
     if (deleteBusy) return
@@ -143,6 +171,9 @@ export function PrivacySecurityScreen() {
     setDeleteAcknowledged(false)
     setDeleteForm({ password: "", email: "" })
     setError("")
+    setServerOwnedHouseholds(null)
+    setOwnershipStatus("idle")
+    clearAccountDeletion()
   }
 
   const moveToConfirmation = () => {
@@ -178,14 +209,27 @@ export function PrivacySecurityScreen() {
         )
       })
       resetUserData()
+      clearAccountDeletion()
       setDeleteStage(null)
       navigate("login")
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 409) {
         setServerOwnedHouseholds(ownedHouseholdsFromError(cause))
-        await refresh().catch(() => undefined)
-        setError("You still own households.")
+        setOwnershipStatus("loading")
         setDeleteStage(1)
+        try {
+          const latestHouseholds = await refresh()
+          setServerOwnedHouseholds(
+            latestHouseholds
+              .filter((household) => household.currentUserRole === "OWNER")
+              .map(({ id, name }) => ({ id, name })),
+          )
+          setOwnershipStatus("loaded")
+          setError("You still own households.")
+        } catch {
+          setOwnershipStatus("error")
+          setError("Unable to refresh household ownership. Please try again.")
+        }
       } else {
         setError(
           cause instanceof ApiError
@@ -204,12 +248,16 @@ export function PrivacySecurityScreen() {
   ) => {
     selectHousehold(household.id)
     setDeleteStage(null)
+    if (user) beginAccountDeletion(user.userId)
     navigate(screen)
   }
 
   return (
     <div className="min-h-screen bg-slate-50 pb-8">
-      <SubpageHeader title="Privacy & Security" back={() => navigate("profile")} />
+      <SubpageHeader
+        title="Privacy & Security"
+        back={() => navigate(households.length > 0 ? "profile" : "welcome")}
+      />
       <main className="flex flex-col gap-4 px-4 pt-4">
         {reauthMessage && (
           <p role="status" className="rounded-xl bg-teal-50 p-3 text-sm text-teal-800">
@@ -381,7 +429,7 @@ export function PrivacySecurityScreen() {
           {deleteStage === null && (
             <button
               className="mt-3 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
-              onClick={openDeleteFlow}
+              onClick={() => void openDeleteFlow()}
               type="button"
             >
               Delete account
@@ -401,6 +449,10 @@ export function PrivacySecurityScreen() {
                 Account deletion is permanent. Your profile and notification data will be removed,
                 and your membership in households will end. Household chore and completion history
                 will remain for other members.
+              </p>
+              <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                Deleting a household only resolves ownership; it does not delete your account. You
+                must return here and explicitly confirm account deletion.
               </p>
               <label className="mt-4 flex items-start gap-2 text-sm text-slate-700">
                 <input
@@ -444,9 +496,20 @@ export function PrivacySecurityScreen() {
                 </div>
               )}
               {error && (
-                <p role="alert" className="mt-3 text-sm text-rose-600">
-                  {error}
-                </p>
+                <div className="mt-3">
+                  <p role="alert" className="text-sm text-rose-600">
+                    {error}
+                  </p>
+                  {ownershipStatus === "error" && (
+                    <button
+                      className="mt-2 min-h-10 text-sm font-bold text-teal-700 underline"
+                      onClick={() => void openDeleteFlow()}
+                      type="button"
+                    >
+                      Retry household check
+                    </button>
+                  )}
+                </div>
               )}
               <div className="mt-4 flex gap-2">
                 <button
@@ -459,11 +522,15 @@ export function PrivacySecurityScreen() {
                 {ownedHouseholds.length === 0 && (
                   <button
                     className="flex-1 rounded-xl bg-slate-700 px-3 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!deleteAcknowledged}
+                    disabled={
+                      !deleteAcknowledged ||
+                      ownershipStatus !== "loaded" ||
+                      ownedHouseholds.length > 0
+                    }
                     onClick={moveToConfirmation}
                     type="button"
                   >
-                    Continue
+                    {ownershipStatus === "loading" ? "Checking households…" : "Continue"}
                   </button>
                 )}
               </div>
@@ -536,6 +603,7 @@ export function PrivacySecurityScreen() {
                   className="flex-1 rounded-xl bg-rose-600 px-3 py-2.5 text-sm font-bold text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={
                     deleteBusy ||
+                    ownershipStatus !== "loaded" ||
                     deleteForm.email !== user?.email ||
                     (hasPassword && !deleteForm.password) ||
                     ownedHouseholds.length > 0
