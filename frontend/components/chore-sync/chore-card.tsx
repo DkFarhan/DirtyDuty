@@ -47,7 +47,11 @@ function assignmentTime(assignment: AssignmentDTO, householdTimezone: string) {
 
 function assigneeLabel(assignment: AssignmentDTO, currentUserId: string) {
   if (!assignment.assignees.length) return "No assignee"
-  const names = assignment.assignees.map(({ userId, displayName }) =>
+  const assignees = [
+    ...assignment.assignees.filter(({ userId }) => userId === currentUserId),
+    ...assignment.assignees.filter(({ userId }) => userId !== currentUserId),
+  ]
+  const names = assignees.map(({ userId, displayName }) =>
     userId === currentUserId ? "You" : displayName,
   )
   return `Assigned to ${names.join(", ")}`

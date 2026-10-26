@@ -273,12 +273,11 @@ public class OccurrenceService {
               schedule.getChore().getTitle()
                   + " has been added to your recurring chores. You'll receive reminders before each due date.");
         } else if (rotating) {
-          variables.put("notification_title", "You've joined a chore rotation!");
+          variables.put("notification_title", "New rotating chore assigned");
           variables.put(
               "notification_message",
-              "You'll be reminded when it's your turn to complete "
-                  + schedule.getChore().getTitle()
-                  + ".");
+              schedule.getChore().getTitle()
+                  + " has been added to your rotating chores. We'll remind you when it's your turn.");
         }
         notificationEventService.publish(
             new NotificationEvent(

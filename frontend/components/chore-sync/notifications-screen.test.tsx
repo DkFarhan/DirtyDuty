@@ -176,6 +176,10 @@ describe("notifications screen", () => {
     )
     expect(screen.getByText("1 unread")).toBeTruthy()
     expect(screen.queryByText("CHORES")).toBeNull()
+    expect(screen.queryByText("high")).toBeNull()
+    expect(screen.getByText("Please complete the kitchen chore.")).toBeTruthy()
+    expect(screen.getByText("Unread")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Mark as read" })).toBeTruthy()
     expect(screen.getByLabelText("Quiet hours start")).toHaveProperty("value", "21:30")
 
     fireEvent.click(screen.getByRole("button", { name: "Mark as read" }))
