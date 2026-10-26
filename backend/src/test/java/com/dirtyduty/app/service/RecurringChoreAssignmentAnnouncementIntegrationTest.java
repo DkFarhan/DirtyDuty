@@ -189,13 +189,13 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
           .isEqualTo(
               "FIXED".equals(strategy)
                   ? "New daily chore assigned"
-                  : "You've joined a chore rotation!");
+                  : "New rotating chore assigned");
       assertThat(notificationMessage(scheduleId, firstUser))
           .as(strategy)
           .contains(
               "FIXED".equals(strategy)
                   ? "has been added to your recurring chores"
-                  : "You'll be reminded when it's your turn");
+                  : "has been added to your rotating chores. We'll remind you when it's your turn.");
 
       synchronizeSchedule(schedule.getId());
       assertThat(announcementCount(scheduleId)).as(strategy).isEqualTo(2);
@@ -226,7 +226,8 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
     assertThat(notificationCount(scheduleId, secondUser)).isEqualTo(1);
     assertThat(notificationCount(scheduleId, thirdUser)).isEqualTo(1);
     assertThat(notificationMessage(scheduleId, firstUser))
-        .isEqualTo("You'll be reminded when it's your turn to complete Random recurring chore.");
+        .isEqualTo(
+            "Random recurring chore has been added to your rotating chores. We'll remind you when it's your turn.");
     assertThat(notificationReferenceType(scheduleId, firstUser)).isEqualTo("CHORE_SCHEDULE");
     assertThat(notificationReferenceId(scheduleId, firstUser)).isEqualTo(scheduleId);
   }

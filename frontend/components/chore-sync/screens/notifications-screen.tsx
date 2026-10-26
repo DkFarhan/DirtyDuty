@@ -463,9 +463,9 @@ export function NotificationsScreen() {
                       className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${read ? "bg-slate-200" : "bg-teal-500"}`}
                     />
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <h2
-                          className={`text-sm ${read ? "font-semibold text-slate-700 dark:text-slate-200" : "font-bold text-slate-900 dark:text-white"}`}
+                          className={`min-w-0 break-words text-sm ${read ? "font-semibold text-slate-700 dark:text-slate-200" : "font-bold text-slate-900 dark:text-white"}`}
                         >
                           {item.title}
                         </h2>
@@ -490,9 +490,6 @@ export function NotificationsScreen() {
                         </button>
                       )}
                     </div>
-                    <span className="rounded-full bg-white/80 px-2 py-1 text-[9px] font-bold uppercase text-slate-500 dark:bg-slate-700 dark:text-slate-200">
-                      {item.priority.toLowerCase()}
-                    </span>
                   </div>
                 </article>
               )
