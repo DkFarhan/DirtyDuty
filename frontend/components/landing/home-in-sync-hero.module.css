@@ -41,6 +41,12 @@
 .desktopArt video,
 .mobileArt video {
   z-index: 1;
+  visibility: hidden;
+}
+
+.desktopArt video[data-playing="true"],
+.mobileArt video[data-playing="true"] {
+  visibility: visible;
 }
 
 .desktopHits {
@@ -328,12 +334,5 @@
   }
   .mobileNav nav {
     gap: 9px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .desktopArt video,
-  .mobileArt video {
-    display: none;
   }
 }

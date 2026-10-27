@@ -1,3 +1,6 @@
+"use client"
+
+import { useEffect, useRef, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import styles from "./home-in-sync-hero.module.css"
@@ -5,28 +8,70 @@ import styles from "./home-in-sync-hero.module.css"
 const media = "/landing/media"
 
 export function HomeInSyncHero() {
+  const [activeVideo, setActiveVideo] = useState<"desktop" | "mobile" | null>(null)
+  const [playingVideo, setPlayingVideo] = useState<"desktop" | "mobile" | null>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
+
+  useEffect(() => {
+    const mobileQuery = window.matchMedia("(max-width: 760px)")
+    const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)")
+    const updateActiveVideo = () => {
+      setActiveVideo(reducedMotionQuery.matches ? null : mobileQuery.matches ? "mobile" : "desktop")
+    }
+
+    updateActiveVideo()
+    mobileQuery.addEventListener("change", updateActiveVideo)
+    reducedMotionQuery.addEventListener("change", updateActiveVideo)
+    window.addEventListener("resize", updateActiveVideo)
+    return () => {
+      mobileQuery.removeEventListener("change", updateActiveVideo)
+      reducedMotionQuery.removeEventListener("change", updateActiveVideo)
+      window.removeEventListener("resize", updateActiveVideo)
+    }
+  }, [])
+
+  useEffect(() => {
+    setPlayingVideo(null)
+    const video = videoRef.current
+    if (!video || !activeVideo) return
+
+    let cancelled = false
+    video.muted = true
+    video.defaultMuted = true
+    void video.play().then(
+      () => {
+        if (!cancelled) setPlayingVideo(activeVideo)
+      },
+      () => {
+        if (!cancelled) video.pause()
+      },
+    )
+    return () => {
+      cancelled = true
+      video.pause()
+    }
+  }, [activeVideo])
+
   return (
     <main className={styles.page}>
       <section className={styles.hero} id="top" aria-labelledby="hero-title">
         <div className={styles.desktopArt} aria-hidden="true">
-          <Image
-            src={`${media}/hero-desktop.webp`}
-            alt=""
-            fill
-            priority
-            unoptimized
-            sizes="100vw"
-          />
-          <video
-            muted
-            autoPlay
-            loop
-            playsInline
-            preload="metadata"
-            poster={`${media}/hero-desktop.webp`}
-          >
-            <source src={`${media}/hero-desktop.mp4`} type="video/mp4" />
-          </video>
+          <Image src={`${media}/hero-desktop.webp`} alt="" fill unoptimized sizes="100vw" />
+          {activeVideo === "desktop" && (
+            <video
+              ref={videoRef}
+              aria-hidden="true"
+              data-playing={playingVideo === "desktop"}
+              loop
+              muted
+              playsInline
+              preload="none"
+              poster={`${media}/hero-desktop.webp`}
+              onError={() => setPlayingVideo(null)}
+            >
+              <source src={`${media}/hero-desktop.mp4`} type="video/mp4" />
+            </video>
+          )}
         </div>
         {/* Desktop art is an approved flattened concept. Hit regions are a temporary preview aid;
             replace embedded copy with accessible HTML before public launch. */}
@@ -81,16 +126,21 @@ export function HomeInSyncHero() {
             unoptimized
             sizes="(max-width: 760px) 100vw, 390px"
           />
-          <video
-            muted
-            autoPlay
-            loop
-            playsInline
-            preload="metadata"
-            poster={`${media}/hero-mobile.webp`}
-          >
-            <source src={`${media}/hero-mobile.mp4`} type="video/mp4" />
-          </video>
+          {activeVideo === "mobile" && (
+            <video
+              ref={videoRef}
+              aria-hidden="true"
+              data-playing={playingVideo === "mobile"}
+              loop
+              muted
+              playsInline
+              preload="none"
+              poster={`${media}/hero-mobile.webp`}
+              onError={() => setPlayingVideo(null)}
+            >
+              <source src={`${media}/hero-mobile.mp4`} type="video/mp4" />
+            </video>
+          )}
         </div>
         <span className={styles.scroll}>SCROLL TO EXPLORE</span>
       </section>
