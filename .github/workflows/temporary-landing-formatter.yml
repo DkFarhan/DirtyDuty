@@ -1,0 +1,37 @@
+name: Temporary Landing Formatter
+
+on:
+  push:
+    branches:
+      - feat/home-in-sync-landing-hero
+
+permissions:
+  contents: read
+
+jobs:
+  print-exact-format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.3.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+      - name: Print exactly formatted hero files for recovery
+        working-directory: frontend
+        run: |
+          pnpm exec prettier --write components/landing/home-in-sync-hero.tsx components/landing/home-in-sync-hero.module.css
+          echo '===LANDING_TSX_BASE64_START==='
+          base64 -w0 components/landing/home-in-sync-hero.tsx
+          echo
+          echo '===LANDING_TSX_BASE64_END==='
+          echo '===LANDING_CSS_BASE64_START==='
+          base64 -w0 components/landing/home-in-sync-hero.module.css
+          echo
+          echo '===LANDING_CSS_BASE64_END==='
+          pnpm exec prettier --check components/landing/home-in-sync-hero.tsx components/landing/home-in-sync-hero.module.css
