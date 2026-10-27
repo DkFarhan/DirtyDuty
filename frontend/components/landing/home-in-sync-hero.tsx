@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
+import { Check, Smartphone, UsersRound } from "lucide-react"
 import styles from "./home-in-sync-hero.module.css"
 
 const media = "/landing/media"
@@ -55,67 +56,90 @@ export function HomeInSyncHero() {
   return (
     <main className={styles.page}>
       <section className={styles.hero} id="top" aria-labelledby="hero-title">
-        <div className={styles.desktopArt} aria-hidden="true">
-          <Image src={`${media}/hero-desktop.webp`} alt="" fill unoptimized sizes="100vw" />
-          {activeVideo === "desktop" && (
-            <video
-              ref={videoRef}
-              aria-hidden="true"
-              data-playing={playingVideo === "desktop"}
-              loop
-              muted
-              playsInline
-              preload="none"
-              poster={`${media}/hero-desktop.webp`}
-              onError={() => setPlayingVideo(null)}
-            >
-              <source src={`${media}/hero-desktop.mp4`} type="video/mp4" />
-            </video>
-          )}
-        </div>
-        {/* Desktop art is an approved flattened concept. Hit regions are a temporary preview aid;
-            replace embedded copy with accessible HTML before public launch. */}
-        <nav className={styles.desktopHits} aria-label="Desktop marketing navigation">
-          <a className={styles.brandHit} href="#top" aria-label="DirtyDuty home" />
-          <a className={styles.howHit} href="#how-it-works" aria-label="How it works" />
-          <a className={styles.storyHit} href="#our-story" aria-label="Our story" />
-          <a className={styles.featuresHit} href="#features" aria-label="Features" />
-          <a className={styles.faqHit} href="#faqs" aria-label="FAQs" />
-          <Link className={styles.signHit} href="/" aria-label="Sign in" />
-          <Link className={styles.startHit} href="/join" aria-label="Get started" />
-          <Link className={styles.primaryHit} href="/join" aria-label="Get started for free" />
-          <a className={styles.secondaryHit} href="#how-it-works" aria-label="See how it works" />
-        </nav>
-        <h1 id="hero-title" className={styles.srOnly}>
-          Home, in sync.
-        </h1>
-        <header className={styles.mobileNav}>
-          <a className={styles.brand} href="#top">
-            dirty<span>duty</span>
-          </a>
-          <nav aria-label="Mobile marketing navigation">
-            <Link href="/">Sign in</Link>
-            <Link className={styles.smallButton} href="/join">
-              Get started →
-            </Link>
-          </nav>
-        </header>
-        <div className={styles.mobileContent}>
-          <p className={styles.eyebrow}>SHARED HOMES. HAPPIER DAYS.</p>
-          <p className={styles.mobileTitle} aria-hidden="true">
-            HOME,<span>IN SYNC.</span>
-          </p>
-          <p className={styles.description}>
-            A simple way to share chores, keep things fair, and make more time for what really
-            matters.
-          </p>
-          <div className={styles.actions}>
-            <Link className={styles.primary} href="/join">
-              Get started for free →
-            </Link>
-            <a className={styles.secondary} href="#how-it-works">
-              See how it works
+        <div className={styles.desktopCanvas}>
+          <div className={styles.desktopMedia} aria-hidden="true">
+            <Image src={`${media}/hero-desktop.webp`} alt="" fill unoptimized sizes="100vw" />
+            {activeVideo === "desktop" && (
+              <video
+                ref={videoRef}
+                data-playing={playingVideo === "desktop"}
+                loop
+                muted
+                playsInline
+                preload="none"
+                poster={`${media}/hero-desktop.webp`}
+                onError={() => setPlayingVideo(null)}
+              >
+                <source src={`${media}/hero-desktop.mp4`} type="video/mp4" />
+              </video>
+            )}
+          </div>
+          <header className={styles.header}>
+            <a className={styles.brand} href="#top" aria-label="DirtyDuty home">
+              dirty<span>duty</span>
             </a>
+            <nav className={styles.primaryNav} aria-label="Main navigation">
+              <a href="#how-it-works">How it works</a>
+              <a href="#our-story">Our story</a>
+              <a href="#features">Features</a>
+              <a href="#faqs">FAQs</a>
+            </nav>
+            <nav className={styles.accountNav} aria-label="Account navigation">
+              <Link href="/">Sign in</Link>
+              <Link className={styles.topCta} href="/join">
+                Get started <span aria-hidden="true">→</span>
+              </Link>
+            </nav>
+          </header>
+          <div className={styles.heroCopy}>
+            <p className={styles.eyebrow}>SHARED HOMES. HAPPIER DAYS.</p>
+            <h1 className={styles.title} id="hero-title">
+              HOME,<span>IN SYNC.</span>
+            </h1>
+            <p className={styles.description}>
+              A simple way to share chores, keep things fair,
+              <br className={styles.desktopBreak} />
+              and make more time for what really matters.
+            </p>
+            <div className={styles.actions}>
+              <Link className={`${styles.button} ${styles.primary}`} href="/join">
+                Get started for free <span aria-hidden="true">→</span>
+              </Link>
+              <a className={`${styles.button} ${styles.secondary}`} href="#how-it-works">
+                <span className={styles.secondaryIcon} aria-hidden="true">
+                  ↗
+                </span>
+                See how it works
+              </a>
+            </div>
+            <ul className={styles.proofPoints} aria-label="DirtyDuty at a glance">
+              <li>
+                <Check aria-hidden="true" />
+                <span>Free to use</span>
+              </li>
+              <li>
+                <UsersRound aria-hidden="true" />
+                <span>
+                  Perfect for
+                  <br />
+                  roommates and families
+                </span>
+              </li>
+              <li>
+                <Smartphone aria-hidden="true" />
+                <span>
+                  Works on
+                  <br />
+                  all devices (PWA)
+                </span>
+              </li>
+            </ul>
+          </div>
+          <div className={styles.scroll}>
+            <span className={styles.scrollMark} aria-hidden="true">
+              ◌
+            </span>
+            <span>SCROLL TO EXPLORE</span>
           </div>
         </div>
         <div className={styles.mobileArt} aria-hidden="true">
@@ -129,7 +153,6 @@ export function HomeInSyncHero() {
           {activeVideo === "mobile" && (
             <video
               ref={videoRef}
-              aria-hidden="true"
               data-playing={playingVideo === "mobile"}
               loop
               muted
@@ -142,10 +165,9 @@ export function HomeInSyncHero() {
             </video>
           )}
         </div>
-        <span className={styles.scroll}>SCROLL TO EXPLORE</span>
       </section>
       <section className={styles.details} id="how-it-works">
-        <p className={styles.eyebrow}>THE IDEA</p>
+        <p className={styles.detailsEyebrow}>THE IDEA</p>
         <h2>Less chasing. More living.</h2>
         <p>
           Bring your household together, share chores, and keep responsibilities visible to
