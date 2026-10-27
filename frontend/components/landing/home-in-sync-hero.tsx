@@ -39,11 +39,7 @@ export function HomeInSyncHero() {
           <Link className={styles.signHit} href="/" aria-label="Sign in" />
           <Link className={styles.startHit} href="/join" aria-label="Get started" />
           <Link className={styles.primaryHit} href="/join" aria-label="Get started for free" />
-          <a
-            className={styles.secondaryHit}
-            href="#how-it-works"
-            aria-label="See how it works"
-          />
+          <a className={styles.secondaryHit} href="#how-it-works" aria-label="See how it works" />
         </nav>
         <h1 id="hero-title" className={styles.srOnly}>
           Home, in sync.
