@@ -415,10 +415,10 @@
   }
 
   .mobileArt {
-    position: absolute;
-    inset: 364px 0 auto;
+    inset: 0;
+    width: 100%;
     display: block;
-    height: 480px;
+    height: 100%;
     overflow: hidden;
     z-index: 0;
   }
@@ -426,23 +426,6 @@
   .mobileArt img,
   .mobileArt video {
     object-fit: cover;
-  }
-
-  .mobileArt::after {
-    position: absolute;
-    inset: 0;
-    z-index: 2;
-    background: linear-gradient(
-      180deg,
-      #061925 0%,
-      #061925 10%,
-      #061925f2 24%,
-      #061925b3 40%,
-      #06192533 58%,
-      transparent 70%
-    );
-    content: "";
-    pointer-events: none;
   }
 
   .scroll {
@@ -462,11 +445,6 @@
 @media (min-width: 400px) and (max-width: 760px) and (min-height: 900px) {
   .hero {
     min-height: max(932px, 100svh);
-  }
-
-  .mobileArt {
-    top: 430px;
-    height: 502px;
   }
 
   .title {
