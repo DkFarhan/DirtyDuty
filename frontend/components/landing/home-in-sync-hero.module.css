@@ -138,13 +138,15 @@
 }
 
 .details {
-  padding: 70px max(24px, calc((100vw - 1060px)/2));
+  padding: 70px max(24px, calc((100vw - 1060px) / 2));
   scroll-margin-top: 24px;
   border-bottom: 1px solid #16434a;
 }
 
 .details h2 {
-  font: 400 clamp(38px, 5vw, 68px)/1 Georgia, serif;
+  font:
+    400 clamp(38px, 5vw, 68px)/1 Georgia,
+    serif;
   letter-spacing: -0.04em;
   margin: 10px 0 22px;
 }
@@ -169,7 +171,7 @@
 @media (max-width: 760px) {
   .hero {
     height: auto;
-    min-height: max(844px,100svh);
+    min-height: max(844px, 100svh);
   }
   .desktopArt,
   .desktopHits {
@@ -218,7 +220,9 @@
     padding: 43px 22px 0;
   }
   .mobileTitle {
-    font: 400 72px/0.99 Georgia, serif;
+    font:
+      400 72px/0.99 Georgia,
+      serif;
     letter-spacing: -0.063em;
     white-space: nowrap;
     margin: 19px 0 33px;
@@ -277,7 +281,15 @@
     position: absolute;
     inset: 0;
     z-index: 2;
-    background: linear-gradient(180deg, #061925 0%, #061925 10%, #061925f2 24%, #061925b3 40%, #06192533 58%, transparent 70%);
+    background: linear-gradient(
+      180deg,
+      #061925 0%,
+      #061925 10%,
+      #061925f2 24%,
+      #061925b3 40%,
+      #06192533 58%,
+      transparent 70%
+    );
   }
   .scroll {
     display: block;
@@ -293,7 +305,7 @@
 
 @media (min-width: 400px) and (max-width: 760px) and (min-height: 900px) {
   .hero {
-    min-height: max(932px,100svh);
+    min-height: max(932px, 100svh);
   }
   .mobileArt {
     top: 430px;
