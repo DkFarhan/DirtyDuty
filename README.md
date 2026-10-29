@@ -198,6 +198,14 @@ pnpm test -- --run
 pnpm build
 ```
 
+While `pnpm dev` is running, the isolated Home redesign can be previewed at
+`/design-preview`. Its Dark and Light controls use deterministic sample data and
+do not change the production Home or the saved application theme. The route
+returns 404 outside development.
+
+The matching My Chores preview is available at `/design-preview/my-chores` with
+independent Dark/Light, Upcoming/Completed, and state controls.
+
 ### Backend
 
 ```bash

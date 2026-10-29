@@ -1,0 +1,85 @@
+.previewRoot {
+  position: relative;
+  min-height: 100vh;
+  background: #061923;
+}
+
+.previewControls {
+  position: fixed;
+  z-index: 30;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px;
+  border: 1px solid rgb(255 255 255 / 32%);
+  border-radius: 999px;
+  background: rgb(6 25 35 / 88%);
+  box-shadow: 0 4px 18px rgb(0 12 18 / 28%);
+  backdrop-filter: blur(10px);
+}
+
+.themeControls {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 8%);
+}
+
+.previewControls button,
+.previewControls select {
+  min-height: 32px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #d3e9e7;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.previewControls button[aria-pressed="true"] {
+  background: #76e9de;
+  color: #061923;
+}
+
+.previewControls select {
+  max-width: 150px;
+  outline-color: #76e9de;
+  text-transform: capitalize;
+}
+
+.previewControls option {
+  background: #061923;
+  color: #f7f7f0;
+  text-transform: capitalize;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+@media (max-width: 520px) {
+  .previewControls {
+    top: 5px;
+    right: 5px;
+    gap: 4px;
+  }
+
+  .previewControls button,
+  .previewControls select {
+    min-height: 30px;
+    padding-inline: 8px;
+    font-size: 11px;
+  }
+}
