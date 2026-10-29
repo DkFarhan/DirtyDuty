@@ -786,9 +786,7 @@
 }
 
 .upcomingCategory,
-.upcomingDate,
-.upcomingAssignees,
-.upcomingDuration {
+.upcomingDate {
   position: absolute;
   left: 63px;
   overflow: hidden;
@@ -813,6 +811,16 @@
   line-height: 16px;
 }
 
+.upcomingAssignees,
+.upcomingDuration {
+  position: absolute;
+  left: 13px;
+  overflow: hidden;
+  margin: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .upcomingDivider {
   position: absolute;
   top: 87px;
@@ -828,7 +836,7 @@
 
 .upcomingAssignees {
   top: 101px;
-  max-width: calc(100% - 128px);
+  max-width: calc(100% - 136px);
   color: var(--upcoming-title);
   font-size: 12px;
   font-weight: 500;
