@@ -6,9 +6,9 @@
   --accent: #79e7de;
   --tabs-surface: rgb(22 59 68 / 63%);
   --tabs-border: rgb(152 209 206 / 33%);
-  --selected-tab: rgb(102 217 206 / 24%);
-  --selected-tab-border: transparent;
-  --selected-tab-text: #c2fcf4;
+  --selected-tab: oklch(0.26 0.035 190);
+  --selected-tab-border: oklch(0.62 0.12 185 / 75%);
+  --selected-tab-text: oklch(0.88 0.09 185);
   --unselected-tab-text: #9fb9bd;
   --overdue: #ffad9a;
   --overdue-surface: #4a2933;
@@ -409,6 +409,12 @@
   background: var(--selected-tab);
   color: var(--selected-tab-text);
   font-weight: 700;
+}
+
+.screen .tabs .tab[aria-selected="true"] {
+  border-color: var(--selected-tab-border) !important;
+  background: var(--selected-tab) !important;
+  color: var(--selected-tab-text) !important;
 }
 
 .tab:focus-visible,

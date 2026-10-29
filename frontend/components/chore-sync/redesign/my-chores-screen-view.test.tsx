@@ -89,6 +89,35 @@ describe("MyChoresScreenView", () => {
     expect(container.firstElementChild?.getAttribute("data-preview-theme")).toBe("dark")
   })
 
+  it("applies the selected tab styling consistently in both themes", () => {
+    const { rerender } = renderScreen()
+
+    for (const theme of ["dark", "light"] as const) {
+      for (const tab of ["upcoming", "completed"] as const) {
+        rerender(
+          <MyChoresScreenView
+            activeDestination="my-chores"
+            onCompleteChore={vi.fn()}
+            onNavigate={vi.fn()}
+            onRetry={vi.fn()}
+            onSelectTab={vi.fn()}
+            tab={tab}
+            theme={theme}
+            viewModel={myChoresPreviewFixture}
+          />,
+        )
+
+        for (const value of ["upcoming", "completed"] as const) {
+          const element = screen.getByRole("tab", {
+            name: value === "upcoming" ? "Upcoming" : "Completed",
+          })
+          expect(element.getAttribute("aria-selected")).toBe(String(tab === value))
+          expect(element.classList.contains(styles.selectedTab)).toBe(tab === value)
+        }
+      }
+    }
+  })
+
   it("selects Completed with explicit counts, attribution, and no completion controls", () => {
     const onSelectTab = vi.fn()
     const { rerender } = renderScreen({
