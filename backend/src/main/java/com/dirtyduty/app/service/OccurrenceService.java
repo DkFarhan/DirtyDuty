@@ -75,11 +75,17 @@ public class OccurrenceService {
 
   @Transactional
   public void synchronizeSchedule(ChoreSchedule schedule) {
-    synchronizeSchedule(schedule, false);
+    synchronizeSchedule(schedule, false, false);
   }
 
   @Transactional
   public void synchronizeSchedule(ChoreSchedule schedule, boolean updatePendingAssignees) {
+    synchronizeSchedule(schedule, updatePendingAssignees, true);
+  }
+
+  @Transactional
+  public void synchronizeSchedule(
+      ChoreSchedule schedule, boolean updatePendingAssignees, boolean userInitiatedEdit) {
     jdbc.queryForObject(
         "SELECT id FROM chore_schedules WHERE id=? FOR UPDATE", UUID.class, schedule.getId());
     Household household = schedule.getHousehold();
@@ -103,6 +109,16 @@ public class OccurrenceService {
           dates.add(date);
         }
       }
+    }
+
+    if (enabled && "FREQ=ONCE".equals(schedule.getRecurrenceRule())) {
+      synchronizeOneTimeSchedule(
+          schedule,
+          household,
+          dates.contains(schedule.getStartsOn()),
+          updatePendingAssignees,
+          userInitiatedEdit);
+      return;
     }
 
     List<FutureOccurrence> existingFuture =
@@ -229,6 +245,275 @@ public class OccurrenceService {
     if (!"FREQ=ONCE".equals(schedule.getRecurrenceRule())) {
       publishNewRecurringAssigneeAnnouncements(schedule, today);
     }
+  }
+
+  @Transactional
+  public void validateScheduleFrequencyChange(
+      ChoreSchedule schedule, String previousRule, String updatedRule) {
+    if ("FREQ=ONCE".equals(updatedRule)
+        && previousRule != null
+        && !"FREQ=ONCE".equals(previousRule)) {
+      boolean hasAssignmentHistory =
+          jdbc.queryForObject(
+              "SELECT EXISTS(SELECT 1 FROM chore_assignments WHERE schedule_id=?)",
+              Boolean.class,
+              schedule.getId());
+      boolean hasRecurringAnnouncement =
+          jdbc.queryForObject(
+              "SELECT EXISTS(SELECT 1 FROM recurring_chore_assignment_announcements WHERE schedule_id=?)",
+              Boolean.class,
+              schedule.getId());
+      if (hasAssignmentHistory || hasRecurringAnnouncement) {
+        throw new InvalidHouseholdException(
+            "A recurring chore with existing assignment history cannot be converted to one-time. Create a separate one-time chore to preserve its history.");
+      }
+    }
+  }
+
+  private void synchronizeOneTimeSchedule(
+      ChoreSchedule schedule,
+      Household household,
+      boolean createOccurrence,
+      boolean updatePendingAssignees,
+      boolean userInitiatedEdit) {
+    List<OneTimeOccurrence> existing =
+        jdbc.query(
+            """
+                SELECT id, scheduled_for, due_at, status
+                FROM chore_assignments
+                WHERE schedule_id=? AND household_id=?
+                ORDER BY scheduled_for, created_at, id
+                """,
+            (rs, row) ->
+                new OneTimeOccurrence(
+                    rs.getObject("id", UUID.class),
+                    rs.getObject("scheduled_for", LocalDate.class),
+                    rs.getObject("due_at", OffsetDateTime.class),
+                    rs.getString("status")),
+            schedule.getId(),
+            household.getId());
+
+    List<OneTimeOccurrence> submitted =
+        existing.stream().filter(occurrence -> "SUBMITTED".equals(occurrence.status())).toList();
+    if (submitted.size() > 1) {
+      if (userInitiatedEdit) {
+        throw new InvalidHouseholdException(
+            "This schedule has multiple submitted assignments. Resolve them before changing its due date.");
+      }
+      return;
+    }
+    if (!submitted.isEmpty()) {
+      if (userInitiatedEdit
+          && existing.stream().anyMatch(occurrence -> "PENDING".equals(occurrence.status()))) {
+        throw new InvalidHouseholdException(
+            "This schedule has submitted and pending assignments that require review before changing its due date.");
+      }
+      return;
+    }
+
+    if (existing.stream()
+            .anyMatch(
+                occurrence ->
+                    "COMPLETED".equals(occurrence.status())
+                        || "SKIPPED".equals(occurrence.status()))
+        || existing.stream()
+            .anyMatch(
+                occurrence ->
+                    occurrence.scheduledFor().equals(schedule.getStartsOn())
+                        && "CANCELLED".equals(occurrence.status()))) {
+      if (existing.stream()
+          .anyMatch(
+              occurrence ->
+                  occurrence.scheduledFor().equals(schedule.getStartsOn())
+                      && "CANCELLED".equals(occurrence.status()))) {
+        if (userInitiatedEdit) {
+          throw new InvalidHouseholdException(
+              "The selected due date has a cancelled assignment. Choose another due date.");
+        }
+        return;
+      }
+      if (userInitiatedEdit
+          && existing.stream().anyMatch(occurrence -> "PENDING".equals(occurrence.status()))) {
+        throw new InvalidHouseholdException(
+            "This schedule has completed work and pending assignments that require review before changing its due date.");
+      }
+      return;
+    }
+
+    OneTimeOccurrence target =
+        existing.stream()
+            .filter(occurrence -> occurrence.scheduledFor().equals(schedule.getStartsOn()))
+            .findFirst()
+            .orElse(null);
+    if (target != null && !"PENDING".equals(target.status())) {
+      if (userInitiatedEdit) {
+        throw new InvalidHouseholdException(
+            "The selected due date has a non-pending assignment. Choose another due date.");
+      }
+      return;
+    }
+
+    List<OneTimeOccurrence> pending =
+        existing.stream().filter(occurrence -> "PENDING".equals(occurrence.status())).toList();
+    if (pending.isEmpty()) {
+      if (createOccurrence && target == null) {
+        createOneTimeOccurrence(schedule, household, schedule.getStartsOn());
+      }
+      return;
+    }
+
+    OneTimeOccurrence occurrence = target != null ? target : pending.getFirst();
+    cancelDuplicatePendingOccurrences(existing, occurrence.id());
+
+    LocalDate scheduledFor = schedule.getStartsOn();
+    ZoneId zone = ZoneId.of(schedule.getTimezone());
+    OffsetDateTime dueAt =
+        schedule.getDueTime() == null ? null : dueAt(scheduledFor, schedule.getDueTime(), zone);
+    if (!occurrence.scheduledFor().equals(scheduledFor)
+        || !java.util.Objects.equals(occurrence.dueAt(), dueAt)) {
+      cancelPendingOccurrenceReminders(occurrence.id());
+    }
+    Chore chore = schedule.getChore();
+    jdbc.update(
+        """
+            UPDATE chore_assignments
+            SET scheduled_for=?, due_at=?, title_snapshot=?, priority_snapshot=?,
+                difficulty_snapshot=?, estimated_minutes_snapshot=?, updated_at=NOW()
+            WHERE id=? AND status='PENDING'
+            """,
+        scheduledFor,
+        dueAt,
+        chore.getTitle(),
+        chore.getDefaultPriority().name(),
+        chore.getDifficulty(),
+        chore.getEstimatedMinutes(),
+        occurrence.id());
+    if (updatePendingAssignees) {
+      updateOneTimeAssignees(schedule, household, occurrence.id(), scheduledFor);
+    }
+    ensureLegacyAssigneeRelation(occurrence.id(), household.getId());
+  }
+
+  private void createOneTimeOccurrence(
+      ChoreSchedule schedule, Household household, LocalDate scheduledFor) {
+    Chore chore = schedule.getChore();
+    List<UUID> assignees = selectedAssignees(schedule, scheduledFor);
+    OffsetDateTime dueAt =
+        schedule.getDueTime() == null
+            ? null
+            : dueAt(scheduledFor, schedule.getDueTime(), ZoneId.of(schedule.getTimezone()));
+    UUID occurrenceId = UUID.randomUUID();
+    int inserted =
+        jdbc.update(
+            """
+                INSERT INTO chore_assignments
+                    (id, household_id, chore_id, schedule_id, assigned_to_user_id,
+                     scheduled_for, due_at, status, title_snapshot, priority_snapshot,
+                     difficulty_snapshot, estimated_minutes_snapshot)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?)
+                ON CONFLICT (schedule_id, scheduled_for) WHERE schedule_id IS NOT NULL DO NOTHING
+                """,
+            occurrenceId,
+            household.getId(),
+            chore.getId(),
+            schedule.getId(),
+            assignees.isEmpty() ? null : assignees.getFirst(),
+            scheduledFor,
+            dueAt,
+            chore.getTitle(),
+            chore.getDefaultPriority().name(),
+            chore.getDifficulty(),
+            chore.getEstimatedMinutes());
+    if (inserted == 0) {
+      return;
+    }
+    insertAssignees(occurrenceId, household.getId(), assignees);
+    notificationEventService.publish(
+        new NotificationEvent(
+            "CHORE_ASSIGNED",
+            null,
+            household.getId(),
+            "CHORE_ASSIGNMENT",
+            occurrenceId,
+            "CHORE_REMINDER",
+            java.util.Map.of("chore_name", chore.getTitle()),
+            assignees));
+  }
+
+  private void updateOneTimeAssignees(
+      ChoreSchedule schedule, Household household, UUID occurrenceId, LocalDate scheduledFor) {
+    List<UUID> assignees = selectedAssignees(schedule, scheduledFor);
+    jdbc.update("DELETE FROM chore_assignment_assignees WHERE assignment_id=?", occurrenceId);
+    jdbc.update(
+        "UPDATE chore_assignments SET assigned_to_user_id=? WHERE id=?",
+        assignees.isEmpty() ? null : assignees.getFirst(),
+        occurrenceId);
+    insertAssignees(occurrenceId, household.getId(), assignees);
+  }
+
+  private void insertAssignees(UUID occurrenceId, UUID householdId, List<UUID> assignees) {
+    for (UUID userId : assignees) {
+      jdbc.update(
+          """
+              INSERT INTO chore_assignment_assignees
+                  (household_id, assignment_id, user_id)
+              VALUES (?, ?, ?) ON CONFLICT (assignment_id, user_id) DO NOTHING
+              """,
+          householdId,
+          occurrenceId,
+          userId);
+    }
+  }
+
+  private void cancelDuplicatePendingOccurrences(
+      List<OneTimeOccurrence> existing, UUID preservedOccurrenceId) {
+    for (OneTimeOccurrence occurrence : existing) {
+      if ("PENDING".equals(occurrence.status())
+          && !java.util.Objects.equals(occurrence.id(), preservedOccurrenceId)) {
+        jdbc.update(
+            "UPDATE chore_assignments SET status='CANCELLED', updated_at=NOW() "
+                + "WHERE id=? AND status='PENDING'",
+            occurrence.id());
+        cancelObsoleteOccurrenceNotifications(occurrence.id());
+      }
+    }
+  }
+
+  private void cancelObsoleteOccurrenceNotifications(UUID occurrenceId) {
+    jdbc.update(
+        """
+            UPDATE notifications SET status='CANCELLED'
+            WHERE reference_type='CHORE_ASSIGNMENT' AND reference_id=? AND status='PENDING'
+            """,
+        occurrenceId);
+    jdbc.update(
+        """
+            UPDATE notification_deliveries d SET status='CANCELLED'
+            FROM notifications n
+            WHERE d.notification_id=n.id AND n.reference_type='CHORE_ASSIGNMENT'
+              AND n.reference_id=? AND d.status IN ('PENDING','FAILED')
+            """,
+        occurrenceId);
+  }
+
+  private void cancelPendingOccurrenceReminders(UUID occurrenceId) {
+    jdbc.update(
+        """
+            UPDATE notifications SET status='CANCELLED'
+            WHERE reference_type='CHORE_ASSIGNMENT' AND reference_id=? AND status='PENDING'
+              AND type IN ('CHORE_DUE_SOON','CHORE_DUE_NOW','CHORE_OVERDUE')
+            """,
+        occurrenceId);
+    jdbc.update(
+        """
+            UPDATE notification_deliveries d SET status='CANCELLED'
+            FROM notifications n
+            WHERE d.notification_id=n.id AND n.reference_type='CHORE_ASSIGNMENT'
+              AND n.reference_id=?
+              AND n.type IN ('CHORE_DUE_SOON','CHORE_DUE_NOW','CHORE_OVERDUE')
+              AND d.status IN ('PENDING','FAILED')
+            """,
+        occurrenceId);
   }
 
   private void publishNewRecurringAssigneeAnnouncements(ChoreSchedule schedule, LocalDate today) {
@@ -839,4 +1124,7 @@ public class OccurrenceService {
   }
 
   private record FutureOccurrence(UUID id, LocalDate scheduledFor) {}
+
+  private record OneTimeOccurrence(
+      UUID id, LocalDate scheduledFor, OffsetDateTime dueAt, String status) {}
 }

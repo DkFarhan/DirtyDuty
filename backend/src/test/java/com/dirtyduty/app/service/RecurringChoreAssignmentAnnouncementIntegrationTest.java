@@ -1,9 +1,11 @@
 package com.dirtyduty.app.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.dirtyduty.app.entity.ChoreSchedule;
 import com.dirtyduty.app.entity.User;
+import com.dirtyduty.app.exception.InvalidHouseholdException;
 import com.dirtyduty.app.notification.NotificationEvent;
 import com.dirtyduty.app.notification.NotificationEventService;
 import com.dirtyduty.app.notification.NotificationScheduler;
@@ -12,6 +14,7 @@ import com.dirtyduty.app.repository.UserRepository;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.List;
@@ -144,6 +147,549 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
         .isEqualTo(oneTimeAssignmentId);
     synchronizeScheduleForChore(oneTimeChoreId);
     assertThat(announcementCount(oneTimeScheduleId)).isEqualTo(1);
+  }
+
+  @Test
+  void overdueOneTimeAssignmentIsRescheduledWithoutCreatingAnotherActiveAssignment() {
+    UUID userId = createUser("reschedule");
+    householdId = createHousehold(userId);
+    UUID choreId = createChore(userId, "Overdue one-time chore");
+    UUID scheduleId = createSchedule(choreId, "FREQ=ONCE", "FIXED", List.of(userId));
+    ChoreSchedule schedule = loadSchedule(choreId);
+    LocalDate today = LocalDate.now(ZoneOffset.UTC);
+    LocalDate previousDate = today.minusDays(1);
+    LocalTime dueTime = LocalTime.of(23, 35);
+    schedule.setStartsOn(previousDate);
+    schedule.setDueTime(dueTime);
+    scheduleRepository.saveAndFlush(schedule);
+    UUID assignmentId =
+        createAssignment(
+            scheduleId,
+            choreId,
+            previousDate,
+            previousDate.atTime(dueTime).atOffset(ZoneOffset.UTC),
+            "PENDING",
+            userId);
+
+    schedule.setStartsOn(today);
+    scheduleRepository.saveAndFlush(schedule);
+    synchronizeSchedule(scheduleId);
+
+    assertThat(activeAssignmentCount(scheduleId)).isEqualTo(1);
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT id FROM chore_assignments WHERE schedule_id=? AND status='PENDING'",
+                UUID.class,
+                scheduleId))
+        .isEqualTo(assignmentId);
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT scheduled_for FROM chore_assignments WHERE id=?",
+                LocalDate.class,
+                assignmentId))
+        .isEqualTo(today);
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT due_at FROM chore_assignments WHERE id=?",
+                OffsetDateTime.class,
+                assignmentId))
+        .isEqualTo(today.atTime(dueTime).atOffset(ZoneOffset.UTC));
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT user_id FROM chore_assignment_assignees WHERE assignment_id=?",
+                UUID.class,
+                assignmentId))
+        .isEqualTo(userId);
+    assertThat(announcementCount(scheduleId)).isZero();
+    synchronizeSchedule(scheduleId);
+    assertThat(activeAssignmentCount(scheduleId)).isEqualTo(1);
+    assertThat(occurrenceCount(scheduleId)).isEqualTo(1);
+    assertThat(announcementCount(scheduleId)).isZero();
+  }
+
+  @Test
+  void oneTimeTimeChangeKeepsAssignmentAndCancelsObsoleteReminders() {
+    UUID userId = createUser("time-change");
+    householdId = createHousehold(userId);
+    UUID choreId = createChore(userId, "One-time time change");
+    UUID scheduleId = createSchedule(choreId, "FREQ=ONCE", "FIXED", List.of(userId));
+    ChoreSchedule schedule = loadSchedule(choreId);
+    ZoneId zone = ZoneId.of("America/Los_Angeles");
+    LocalDate scheduledFor = LocalDate.now(zone);
+    LocalTime originalTime = LocalTime.of(20, 0);
+    schedule.setTimezone(zone.getId());
+    schedule.setStartsOn(scheduledFor);
+    schedule.setDueTime(originalTime);
+    scheduleRepository.saveAndFlush(schedule);
+    synchronizeSchedule(scheduleId);
+    UUID assignmentId =
+        jdbc.queryForObject(
+            "SELECT id FROM chore_assignments WHERE schedule_id=?", UUID.class, scheduleId);
+    publishReminderEvent(assignmentId, userId, "CHORE_DUE_SOON", "CHORE_REMINDER");
+    UUID reminderId =
+        jdbc.queryForObject(
+            "SELECT id FROM notifications WHERE reference_id=? AND type='CHORE_DUE_SOON'",
+            UUID.class,
+            assignmentId);
+    markNotificationPending(reminderId);
+
+    LocalTime updatedTime = LocalTime.of(21, 15);
+    schedule.setDueTime(updatedTime);
+    scheduleRepository.saveAndFlush(schedule);
+    synchronizeSchedule(scheduleId);
+
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT id FROM chore_assignments WHERE schedule_id=? AND status='PENDING'",
+                UUID.class,
+                scheduleId))
+        .isEqualTo(assignmentId);
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT due_at FROM chore_assignments WHERE id=?",
+                OffsetDateTime.class,
+                assignmentId))
+        .isEqualTo(OccurrenceService.dueAt(scheduledFor, updatedTime, zone));
+    assertThat(notificationStatus(reminderId)).isEqualTo("CANCELLED");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT status FROM notification_deliveries WHERE notification_id=? AND channel='IN_APP'",
+                String.class,
+                reminderId))
+        .isEqualTo("CANCELLED");
+    assertThat(announcementCount(scheduleId)).isEqualTo(1);
+    synchronizeSchedule(scheduleId);
+    assertThat(activeAssignmentCount(scheduleId)).isEqualTo(1);
+    assertThat(announcementCount(scheduleId)).isEqualTo(1);
+  }
+
+  @Test
+  void oneTimeDestinationCollisionKeepsDestinationAndCancelsObsoletePendingOccurrence() {
+    UUID userId = createUser("destination");
+    householdId = createHousehold(userId);
+    UUID choreId = createChore(userId, "Destination collision");
+    UUID scheduleId = createSchedule(choreId, "FREQ=ONCE", "FIXED", List.of(userId));
+    ChoreSchedule schedule = loadSchedule(choreId);
+    LocalDate targetDate = LocalDate.now(ZoneOffset.UTC);
+    LocalDate previousDate = targetDate.minusDays(1);
+    schedule.setStartsOn(previousDate);
+    scheduleRepository.saveAndFlush(schedule);
+    UUID previousAssignment =
+        createAssignment(
+            scheduleId,
+            choreId,
+            previousDate,
+            previousDate.atTime(23, 35).atOffset(ZoneOffset.UTC),
+            "PENDING",
+            userId);
+    UUID targetAssignment =
+        createAssignment(
+            scheduleId,
+            choreId,
+            targetDate,
+            targetDate.atTime(23, 35).atOffset(ZoneOffset.UTC),
+            "PENDING",
+            userId);
+    publishReminderEvent(previousAssignment, userId, "CHORE_ASSIGNED", "CHORE_REMINDER");
+    UUID obsoleteAssignmentNotice =
+        jdbc.queryForObject(
+            "SELECT id FROM notifications WHERE reference_id=? AND type='CHORE_ASSIGNED'",
+            UUID.class,
+            previousAssignment);
+    markNotificationPending(obsoleteAssignmentNotice);
+
+    schedule.setStartsOn(targetDate);
+    scheduleRepository.saveAndFlush(schedule);
+    synchronizeSchedule(scheduleId);
+
+    assertThat(activeAssignmentCount(scheduleId)).isEqualTo(1);
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT status FROM chore_assignments WHERE id=?",
+                String.class,
+                previousAssignment))
+        .isEqualTo("CANCELLED");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT status FROM chore_assignments WHERE id=?", String.class, targetAssignment))
+        .isEqualTo("PENDING");
+    assertThat(notificationStatus(obsoleteAssignmentNotice)).isEqualTo("CANCELLED");
+    assertThat(announcementCount(scheduleId)).isEqualTo(1);
+    synchronizeSchedule(scheduleId);
+    assertThat(occurrenceCount(scheduleId)).isEqualTo(2);
+    assertThat(activeAssignmentCount(scheduleId)).isEqualTo(1);
+    assertThat(announcementCount(scheduleId)).isEqualTo(1);
+  }
+
+  @Test
+  void dashboardSyncAndScheduleEditPreservePendingWorkAtCancelledDestination() {
+    UUID userId = createUser("cancelled-destination");
+    householdId = createHousehold(userId);
+    UUID choreId = createChore(userId, "Cancelled destination");
+    UUID scheduleId = createSchedule(choreId, "FREQ=ONCE", "FIXED", List.of(userId));
+    ChoreSchedule schedule = loadSchedule(choreId);
+    LocalDate targetDate = LocalDate.now(ZoneOffset.UTC);
+    LocalDate previousDate = targetDate.minusDays(1);
+    schedule.setStartsOn(previousDate);
+    scheduleRepository.saveAndFlush(schedule);
+    UUID pendingAssignment =
+        createAssignment(
+            scheduleId,
+            choreId,
+            previousDate,
+            previousDate.atTime(23, 35).atOffset(ZoneOffset.UTC),
+            "PENDING",
+            userId);
+    UUID cancelledAssignment =
+        createAssignment(
+            scheduleId,
+            choreId,
+            targetDate,
+            targetDate.atTime(23, 35).atOffset(ZoneOffset.UTC),
+            "CANCELLED",
+            userId);
+    schedule.setStartsOn(targetDate);
+    scheduleRepository.saveAndFlush(schedule);
+
+    generateHousehold();
+
+    assertThat(activeAssignmentCount(scheduleId)).isEqualTo(1);
+    assertThatThrownBy(() -> synchronizeSchedule(scheduleId, false, true))
+        .isInstanceOf(InvalidHouseholdException.class)
+        .hasMessageContaining("cancelled assignment");
+    generateHousehold();
+
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT status FROM chore_assignments WHERE id=?", String.class, pendingAssignment))
+        .isEqualTo("PENDING");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT scheduled_for FROM chore_assignments WHERE id=?",
+                LocalDate.class,
+                pendingAssignment))
+        .isEqualTo(previousDate);
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT status FROM chore_assignments WHERE id=?",
+                String.class,
+                cancelledAssignment))
+        .isEqualTo("CANCELLED");
+    assertThat(activeAssignmentCount(scheduleId)).isEqualTo(1);
+  }
+
+  @Test
+  void dashboardSyncAndScheduleEditPreserveMultipleSubmittedAssignments() {
+    UUID userId = createUser("multiple-submitted");
+    householdId = createHousehold(userId);
+    UUID choreId = createChore(userId, "Multiple submitted assignments");
+    UUID scheduleId = createSchedule(choreId, "FREQ=ONCE", "FIXED", List.of(userId));
+    ChoreSchedule schedule = loadSchedule(choreId);
+    LocalDate targetDate = LocalDate.now(ZoneOffset.UTC);
+    LocalDate previousDate = targetDate.minusDays(1);
+    schedule.setStartsOn(previousDate);
+    scheduleRepository.saveAndFlush(schedule);
+    UUID submittedAssignment =
+        createAssignment(
+            scheduleId,
+            choreId,
+            previousDate,
+            previousDate.atTime(23, 35).atOffset(ZoneOffset.UTC),
+            "SUBMITTED",
+            userId);
+    UUID targetSubmittedAssignment =
+        createAssignment(
+            scheduleId,
+            choreId,
+            targetDate,
+            targetDate.atTime(23, 35).atOffset(ZoneOffset.UTC),
+            "SUBMITTED",
+            userId);
+    schedule.setStartsOn(targetDate);
+    scheduleRepository.saveAndFlush(schedule);
+
+    generateHousehold();
+
+    assertThat(activeAssignmentCount(scheduleId)).isEqualTo(2);
+    assertThatThrownBy(() -> synchronizeSchedule(scheduleId, false, true))
+        .isInstanceOf(InvalidHouseholdException.class)
+        .hasMessageContaining("multiple submitted assignments");
+    generateHousehold();
+
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT scheduled_for FROM chore_assignments WHERE id=?",
+                LocalDate.class,
+                submittedAssignment))
+        .isEqualTo(previousDate);
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT status FROM chore_assignments WHERE id=?",
+                String.class,
+                submittedAssignment))
+        .isEqualTo("SUBMITTED");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT scheduled_for FROM chore_assignments WHERE id=?",
+                LocalDate.class,
+                targetSubmittedAssignment))
+        .isEqualTo(targetDate);
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT status FROM chore_assignments WHERE id=?",
+                String.class,
+                targetSubmittedAssignment))
+        .isEqualTo("SUBMITTED");
+  }
+
+  @Test
+  void oneTimeScheduleWithMultipleStalePendingAssignmentsIsReconciledIdempotently() {
+    UUID userId = createUser("multiple-stale");
+    householdId = createHousehold(userId);
+    UUID choreId = createChore(userId, "Multiple stale assignments");
+    UUID scheduleId = createSchedule(choreId, "FREQ=ONCE", "FIXED", List.of(userId));
+    ChoreSchedule schedule = loadSchedule(choreId);
+    LocalDate targetDate = LocalDate.now(ZoneOffset.UTC);
+    LocalDate yesterday = targetDate.minusDays(1);
+    LocalDate twoDaysAgo = targetDate.minusDays(2);
+    schedule.setStartsOn(twoDaysAgo);
+    scheduleRepository.saveAndFlush(schedule);
+    UUID olderAssignment =
+        createAssignment(
+            scheduleId,
+            choreId,
+            twoDaysAgo,
+            twoDaysAgo.atTime(23, 35).atOffset(ZoneOffset.UTC),
+            "PENDING",
+            userId);
+    UUID newerAssignment =
+        createAssignment(
+            scheduleId,
+            choreId,
+            yesterday,
+            yesterday.atTime(23, 35).atOffset(ZoneOffset.UTC),
+            "PENDING",
+            userId);
+
+    schedule.setStartsOn(targetDate);
+    scheduleRepository.saveAndFlush(schedule);
+    synchronizeSchedule(scheduleId);
+
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT status FROM chore_assignments WHERE id=?", String.class, olderAssignment))
+        .isEqualTo("PENDING");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT status FROM chore_assignments WHERE id=?", String.class, newerAssignment))
+        .isEqualTo("CANCELLED");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT scheduled_for FROM chore_assignments WHERE id=?",
+                LocalDate.class,
+                olderAssignment))
+        .isEqualTo(targetDate);
+    assertThat(occurrenceCount(scheduleId)).isEqualTo(2);
+    assertThat(activeAssignmentCount(scheduleId)).isEqualTo(1);
+    assertThat(announcementCount(scheduleId)).isZero();
+    synchronizeSchedule(scheduleId);
+    assertThat(occurrenceCount(scheduleId)).isEqualTo(2);
+    assertThat(activeAssignmentCount(scheduleId)).isEqualTo(1);
+  }
+
+  @Test
+  void oneTimeScheduleDoesNotReopenSubmittedCompletedOrCancelledAssignments() {
+    UUID userId = createUser("terminal-state");
+    householdId = createHousehold(userId);
+    LocalDate targetDate = LocalDate.now(ZoneOffset.UTC);
+    LocalDate previousDate = targetDate.minusDays(1);
+
+    UUID submittedChore = createChore(userId, "Submitted work");
+    UUID submittedSchedule = createSchedule(submittedChore, "FREQ=ONCE", "FIXED", List.of(userId));
+    ChoreSchedule submittedScheduleEntity = loadSchedule(submittedChore);
+    submittedScheduleEntity.setStartsOn(previousDate);
+    scheduleRepository.saveAndFlush(submittedScheduleEntity);
+    UUID submittedAssignment =
+        createAssignment(
+            submittedSchedule,
+            submittedChore,
+            previousDate,
+            previousDate.atTime(23, 35).atOffset(ZoneOffset.UTC),
+            "SUBMITTED",
+            userId);
+    submittedScheduleEntity.setStartsOn(targetDate);
+    scheduleRepository.saveAndFlush(submittedScheduleEntity);
+    synchronizeSchedule(submittedSchedule);
+
+    assertThat(occurrenceCount(submittedSchedule)).isEqualTo(1);
+    assertThat(activeAssignmentCount(submittedSchedule)).isEqualTo(1);
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT status FROM chore_assignments WHERE id=?",
+                String.class,
+                submittedAssignment))
+        .isEqualTo("SUBMITTED");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT scheduled_for FROM chore_assignments WHERE id=?",
+                LocalDate.class,
+                submittedAssignment))
+        .isEqualTo(previousDate);
+
+    UUID completedChore = createChore(userId, "Completed work");
+    UUID completedSchedule = createSchedule(completedChore, "FREQ=ONCE", "FIXED", List.of(userId));
+    ChoreSchedule completedScheduleEntity = loadSchedule(completedChore);
+    completedScheduleEntity.setStartsOn(previousDate);
+    scheduleRepository.saveAndFlush(completedScheduleEntity);
+    UUID completedAssignment =
+        createAssignment(
+            completedSchedule,
+            completedChore,
+            previousDate,
+            previousDate.atTime(23, 35).atOffset(ZoneOffset.UTC),
+            "COMPLETED",
+            userId);
+    completedScheduleEntity.setStartsOn(targetDate);
+    scheduleRepository.saveAndFlush(completedScheduleEntity);
+    synchronizeSchedule(completedSchedule);
+
+    assertThat(occurrenceCount(completedSchedule)).isEqualTo(1);
+    assertThat(activeAssignmentCount(completedSchedule)).isZero();
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT status FROM chore_assignments WHERE id=?",
+                String.class,
+                completedAssignment))
+        .isEqualTo("COMPLETED");
+
+    UUID cancelledChore = createChore(userId, "Cancelled work");
+    UUID cancelledSchedule = createSchedule(cancelledChore, "FREQ=ONCE", "FIXED", List.of(userId));
+    ChoreSchedule cancelledScheduleEntity = loadSchedule(cancelledChore);
+    cancelledScheduleEntity.setStartsOn(previousDate);
+    scheduleRepository.saveAndFlush(cancelledScheduleEntity);
+    UUID pendingAssignment =
+        createAssignment(
+            cancelledSchedule,
+            cancelledChore,
+            previousDate,
+            previousDate.atTime(23, 35).atOffset(ZoneOffset.UTC),
+            "PENDING",
+            userId);
+    UUID cancelledAssignment =
+        createAssignment(
+            cancelledSchedule,
+            cancelledChore,
+            targetDate,
+            targetDate.atTime(23, 35).atOffset(ZoneOffset.UTC),
+            "CANCELLED",
+            userId);
+    cancelledScheduleEntity.setStartsOn(targetDate);
+    scheduleRepository.saveAndFlush(cancelledScheduleEntity);
+    synchronizeSchedule(cancelledSchedule);
+
+    assertThat(activeAssignmentCount(cancelledSchedule)).isEqualTo(1);
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT status FROM chore_assignments WHERE id=?", String.class, pendingAssignment))
+        .isEqualTo("PENDING");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT scheduled_for FROM chore_assignments WHERE id=?",
+                LocalDate.class,
+                pendingAssignment))
+        .isEqualTo(previousDate);
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT status FROM chore_assignments WHERE id=?",
+                String.class,
+                cancelledAssignment))
+        .isEqualTo("CANCELLED");
+  }
+
+  @Test
+  void recurringScheduleSynchronizationPreservesHistoricalOverdueOccurrences() {
+    UUID userId = createUser("recurring-history");
+    householdId = createHousehold(userId);
+    LocalDate previousDate = LocalDate.now(ZoneOffset.UTC).minusDays(1);
+    String byDay = previousDate.getDayOfWeek().name().substring(0, 2);
+
+    for (String recurrenceRule :
+        List.of(
+            "FREQ=DAILY", "FREQ=WEEKLY;BYDAY=" + byDay, "FREQ=WEEKLY;INTERVAL=2;BYDAY=" + byDay)) {
+      UUID choreId = createChore(userId, recurrenceRule + " obligation");
+      UUID scheduleId = createSchedule(choreId, recurrenceRule, "FIXED", List.of(userId));
+      ChoreSchedule schedule = loadSchedule(choreId);
+      schedule.setStartsOn(previousDate);
+      schedule.setDueTime(LocalTime.of(23, 35));
+      scheduleRepository.saveAndFlush(schedule);
+      UUID overdueAssignment =
+          createAssignment(
+              scheduleId,
+              choreId,
+              previousDate,
+              previousDate.atTime(23, 35).atOffset(ZoneOffset.UTC),
+              "PENDING",
+              userId);
+
+      synchronizeSchedule(scheduleId);
+
+      assertThat(
+              jdbc.queryForObject(
+                  "SELECT status FROM chore_assignments WHERE id=?",
+                  String.class,
+                  overdueAssignment))
+          .as(recurrenceRule)
+          .isEqualTo("PENDING");
+      assertThat(activeAssignmentCount(scheduleId)).as(recurrenceRule).isGreaterThan(1);
+    }
+  }
+
+  @Test
+  void recurringToOneTimeConversionWithoutLedgerIsRejectedAndHistoryRemainsSafe() {
+    UUID userId = createUser("frequency-change");
+    householdId = createHousehold(userId);
+    UUID choreId = createChore(userId, "Converted schedule");
+    UUID scheduleId = createSchedule(choreId, "FREQ=DAILY", "FIXED", List.of(userId));
+    ChoreSchedule schedule = loadSchedule(choreId);
+    LocalDate previousDate = LocalDate.now(ZoneOffset.UTC).minusDays(1);
+    schedule.setStartsOn(previousDate);
+    scheduleRepository.saveAndFlush(schedule);
+    UUID historicalAssignment =
+        createAssignment(
+            scheduleId,
+            choreId,
+            previousDate,
+            previousDate.atTime(23, 35).atOffset(ZoneOffset.UTC),
+            "PENDING",
+            userId);
+    assertThatThrownBy(
+            () ->
+                occurrenceService.validateScheduleFrequencyChange(
+                    schedule, "FREQ=DAILY", "FREQ=ONCE"))
+        .isInstanceOf(InvalidHouseholdException.class)
+        .hasMessageContaining("cannot be converted to one-time");
+
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT status FROM chore_assignments WHERE id=?",
+                String.class,
+                historicalAssignment))
+        .isEqualTo("PENDING");
+    assertThat(schedule.getRecurrenceRule()).isEqualTo("FREQ=DAILY");
+    generateHousehold();
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT status FROM chore_assignments WHERE id=?",
+                String.class,
+                historicalAssignment))
+        .isEqualTo("PENDING");
+    generateHousehold();
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT status FROM chore_assignments WHERE id=?",
+                String.class,
+                historicalAssignment))
+        .isEqualTo("PENDING");
   }
 
   @Test
@@ -477,6 +1023,13 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
             List.of(userId)));
   }
 
+  private void markNotificationPending(UUID notificationId) {
+    jdbc.update("UPDATE notifications SET status='PENDING' WHERE id=?", notificationId);
+    jdbc.update(
+        "UPDATE notification_deliveries SET status='PENDING', sent_at=NULL WHERE notification_id=?",
+        notificationId);
+  }
+
   private UUID createUser(String label) {
     UUID id = UUID.randomUUID();
     userIds.add(id);
@@ -531,6 +1084,48 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
     return id;
   }
 
+  private UUID createAssignment(
+      UUID scheduleId,
+      UUID choreId,
+      LocalDate scheduledFor,
+      OffsetDateTime dueAt,
+      String status,
+      UUID assignedUserId) {
+    UUID id = UUID.randomUUID();
+    jdbc.update(
+        """
+            INSERT INTO chore_assignments
+                (id, household_id, chore_id, schedule_id, assigned_to_user_id,
+                 scheduled_for, due_at, status, title_snapshot, priority_snapshot,
+                 difficulty_snapshot, estimated_minutes_snapshot)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'One-time snapshot', 'NORMAL', 1, 25)
+            """,
+        id,
+        householdId,
+        choreId,
+        scheduleId,
+        assignedUserId,
+        scheduledFor,
+        dueAt,
+        status);
+    jdbc.update(
+        """
+            INSERT INTO chore_assignment_assignees (household_id, assignment_id, user_id)
+            VALUES (?, ?, ?)
+            """,
+        householdId,
+        id,
+        assignedUserId);
+    return id;
+  }
+
+  private int activeAssignmentCount(UUID scheduleId) {
+    return jdbc.queryForObject(
+        "SELECT COUNT(*) FROM chore_assignments WHERE schedule_id=? AND status IN ('PENDING','SUBMITTED')",
+        Integer.class,
+        scheduleId);
+  }
+
   private UUID createSchedule(
       UUID choreId, String recurrenceRule, String strategy, List<UUID> participantIds) {
     return createSchedule(choreId, recurrenceRule, strategy, participantIds, 1);
@@ -579,16 +1174,27 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
   }
 
   private void synchronizeSchedule(UUID scheduleId) {
-    synchronizeSchedule(scheduleId, false);
+    synchronizeSchedule(scheduleId, false, false);
   }
 
   private void synchronizeSchedule(UUID scheduleId, boolean updatePendingAssignees) {
+    synchronizeSchedule(scheduleId, updatePendingAssignees, false);
+  }
+
+  private void synchronizeSchedule(
+      UUID scheduleId, boolean updatePendingAssignees, boolean userInitiatedEdit) {
     new TransactionTemplate(transactionManager)
         .executeWithoutResult(
             status -> {
               ChoreSchedule schedule = scheduleRepository.findById(scheduleId).orElseThrow();
-              occurrenceService.synchronizeSchedule(schedule, updatePendingAssignees);
+              occurrenceService.synchronizeSchedule(
+                  schedule, updatePendingAssignees, userInitiatedEdit);
             });
+  }
+
+  private void generateHousehold() {
+    new TransactionTemplate(transactionManager)
+        .executeWithoutResult(status -> occurrenceService.generateHousehold(householdId));
   }
 
   private int announcementCount(UUID scheduleId) {

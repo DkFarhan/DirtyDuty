@@ -201,6 +201,58 @@ describe("auth API client", () => {
     expect(validationError.message).not.toContain("<img")
   })
 
+  it("shows the safe recurring-history explanation only for chore updates", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ token: "csrf-token", headerName: "X-CSRF-TOKEN" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            message:
+              "A recurring chore with existing assignment history cannot be converted to one-time. Create a separate one-time chore to preserve its history.",
+          }),
+          { status: 400, headers: { "content-type": "application/json" } },
+        ),
+      )
+
+    await expect(
+      api.put("/api/households/home-1/chores/chore-1", {
+        schedule: { recurrenceRule: "FREQ=ONCE" },
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      message:
+        "This chore has recurring assignment history and can't be changed to a one-time chore. Keep its recurring schedule or create a new one-time chore.",
+    })
+  })
+
+  it("does not expose other chore-update validation messages", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ token: "csrf-token", headerName: "X-CSRF-TOKEN" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ message: "Internal validation detail" }), {
+          status: 400,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+
+    await expect(
+      api.put("/api/households/home-1/chores/chore-1", { title: "Changed title" }),
+    ).rejects.toMatchObject({
+      status: 400,
+      message: "Please check your information and try again.",
+    })
+  })
+
   it("preserves only safe email-verification errors needed for recovery", async () => {
     fetchMock
       .mockResolvedValueOnce(

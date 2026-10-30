@@ -45,7 +45,24 @@ function errorKind(status: number): ApiErrorKind {
   return "server"
 }
 
-function messageFor(status: number, path: string, payload?: unknown): string {
+function messageFor(
+  status: number,
+  path: string,
+  payload?: unknown,
+  method: HttpMethod = "GET",
+): string {
+  if (
+    status === 400 &&
+    method === "PUT" &&
+    /^\/api\/households\/[^/]+\/chores\/[^/]+$/.test(path) &&
+    payload !== null &&
+    typeof payload === "object" &&
+    "message" in payload &&
+    payload.message ===
+      "A recurring chore with existing assignment history cannot be converted to one-time. Create a separate one-time chore to preserve its history."
+  ) {
+    return "This chore has recurring assignment history and can't be changed to a one-time chore. Keep its recurring schedule or create a new one-time chore."
+  }
   if (status === 429 && (path === "/api/auth/login" || path === "/api/auth/google/link")) {
     return "Too many sign-in attempts. Please wait and try again, or reset your password."
   }
@@ -165,7 +182,7 @@ async function request<T>(path: string, options: ApiRequestOptions = {}): Promis
     if (response.status === 403) csrfState = null
     const payload = await readPayload(response)
     throw new ApiError(
-      messageFor(response.status, path, payload),
+      messageFor(response.status, path, payload, method),
       response.status,
       errorKind(response.status),
       payload,
