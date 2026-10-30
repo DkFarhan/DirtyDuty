@@ -1802,6 +1802,53 @@ class HouseholdControllerIntegrationTest {
                         }
                         """
                         .formatted(today, owner.userId(), nonAssignee.userId())))
+        .andExpect(status().isBadRequest());
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT recurrence_rule FROM chore_schedules WHERE chore_id=?",
+                String.class,
+                choreId))
+        .isEqualTo("FREQ=DAILY");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT ends_on FROM chore_schedules WHERE chore_id=?", LocalDate.class, choreId))
+        .isEqualTo(startsOn.plusDays(1));
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT status FROM chore_assignments WHERE id=?",
+                String.class,
+                assignmentIds.getFirst()))
+        .isEqualTo("COMPLETED");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT status FROM chore_assignments WHERE id=?",
+                String.class,
+                assignmentIds.getLast()))
+        .isEqualTo("PENDING");
+
+    mockMvc
+        .perform(
+            put(base + "/chores/" + choreId)
+                .cookie(owner.cookie())
+                .header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content(
+                    """
+                        {
+                          "title":"Clean together",
+                          "schedule":{
+                            "recurrenceRule":"FREQ=DAILY",
+                            "timezone":"UTC",
+                            "startsOn":"%s",
+                            "endsOn":"%s",
+                            "dueTime":"20:00",
+                            "assignmentStrategy":"FIXED",
+                            "participantUserIds":["%s","%s"],
+                            "peopleNeeded":2
+                          }
+                        }
+                        """
+                        .formatted(startsOn, startsOn, owner.userId(), nonAssignee.userId())))
         .andExpect(status().isOk());
     assertThat(
             jdbcTemplate.queryForObject(
