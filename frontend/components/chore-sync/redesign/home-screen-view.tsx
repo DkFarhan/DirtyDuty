@@ -14,6 +14,11 @@ export interface HomeChoreViewModel {
   scheduledLabel: string
   durationLabel?: string
   assignedTo: string
+  status?: "PENDING" | "COMPLETED" | "CANCELLED"
+  completedBy?: string | null
+  overdue?: boolean
+  canComplete?: boolean
+  completing?: boolean
 }
 
 export interface HomeUpcomingChoreViewModel {
@@ -23,9 +28,24 @@ export interface HomeUpcomingChoreViewModel {
   timeLabel: string
 }
 
+export interface HomeUpcomingGroupViewModel {
+  dateLabel: string
+  chores: HomeUpcomingChoreViewModel[]
+}
+
+export interface HomePushNoticeViewModel {
+  heading: string
+  message: string | null
+  actionLabel: string
+}
+
 export interface HomeScreenViewModel {
   status: HomeViewStatus
   errorMessage?: string
+  refreshError?: string
+  actionError?: string
+  notificationCountError?: string
+  pushNotice?: HomePushNoticeViewModel | null
   displayName: string
   greeting: string
   dateLabel: string
@@ -44,9 +64,11 @@ export interface HomeScreenViewModel {
     overdueCount: number
   }
   attentionChore: HomeChoreViewModel | null
+  additionalAttentionChores?: HomeChoreViewModel[]
   todayChores: HomeChoreViewModel[]
   upcomingDateLabel: string
   upcomingChores: HomeUpcomingChoreViewModel[]
+  upcomingGroups?: HomeUpcomingGroupViewModel[]
 }
 
 export interface HomeScreenViewProps {
@@ -55,6 +77,8 @@ export interface HomeScreenViewProps {
   activeDestination: HomeNavigationDestination
   onCompleteChore: (choreId: string) => void
   onRetry: () => void
+  onRetryNotificationCount?: () => void
+  onPushAction?: () => void
   onOpenNotifications: () => void
   onNavigate: (destination: HomeNavigationDestination) => void
 }
@@ -124,13 +148,28 @@ function HomeNavigation({
 function ChoreCard({
   chore,
   onComplete,
+  attention = false,
+  today = false,
 }: {
   chore: HomeChoreViewModel
   onComplete: (choreId: string) => void
+  attention?: boolean
+  today?: boolean
 }) {
+  const canComplete =
+    chore.canComplete !== false && chore.status !== "COMPLETED" && chore.status !== "CANCELLED"
+  const cardClassName = [
+    styles.attentionCard,
+    today && styles.todayCard,
+    today && chore.overdue && chore.status === "PENDING" && styles.todayOverdueCard,
+  ]
+    .filter(Boolean)
+    .join(" ")
   return (
-    <article className={styles.attentionCard}>
-      <span className={styles.overdueBadge}>OVERDUE</span>
+    <article className={cardClassName} data-chore-id={chore.id}>
+      {(chore.overdue || (attention && chore.status === undefined)) && (
+        <span className={styles.overdueBadge}>OVERDUE</span>
+      )}
       <h3 className={styles.choreTitle}>{chore.title}</h3>
       <p className={styles.choreMeta}>
         {chore.category}
@@ -144,10 +183,24 @@ function ChoreCard({
         </p>
       )}
       <p className={styles.assignedTo}>Assigned to {chore.assignedTo}</p>
-      <button className={styles.completeButton} onClick={() => onComplete(chore.id)} type="button">
-        <span aria-hidden="true" className={styles.completeIcon} />
-        Mark complete
-      </button>
+      {chore.status === "COMPLETED" && (
+        <p className={styles.choreStatus}>
+          Completed{chore.completedBy ? ` by ${chore.completedBy}` : ""}
+        </p>
+      )}
+      {chore.status === "CANCELLED" && <p className={styles.choreStatus}>Cancelled</p>}
+      {canComplete && (
+        <button
+          aria-busy={chore.completing}
+          className={styles.completeButton}
+          disabled={chore.completing}
+          onClick={() => onComplete(chore.id)}
+          type="button"
+        >
+          {!chore.completing && <span aria-hidden="true" className={styles.completeIcon} />}
+          {chore.completing ? "Completing..." : "Mark complete"}
+        </button>
+      )}
     </article>
   )
 }
@@ -179,6 +232,8 @@ export function HomeScreenView({
   activeDestination,
   onCompleteChore,
   onRetry,
+  onRetryNotificationCount = onRetry,
+  onPushAction = onRetry,
   onOpenNotifications,
   onNavigate,
 }: HomeScreenViewProps) {
@@ -194,6 +249,15 @@ export function HomeScreenView({
     "--completion": `${householdProgress}%`,
   } as CSSProperties
   const attentionCount = viewModel.personalWeek.overdueCount
+  const attentionChores = [
+    ...(viewModel.attentionChore ? [viewModel.attentionChore] : []),
+    ...(viewModel.additionalAttentionChores ?? []),
+  ]
+  const upcomingGroups =
+    viewModel.upcomingGroups ??
+    (viewModel.upcomingChores.length > 0
+      ? [{ dateLabel: viewModel.upcomingDateLabel, chores: viewModel.upcomingChores }]
+      : [])
 
   return (
     <div
@@ -254,6 +318,44 @@ export function HomeScreenView({
           </p>
         </header>
 
+        {viewModel.pushNotice && (
+          <section
+            aria-label="Push notification status"
+            aria-live="polite"
+            className={styles.pushNotice}
+          >
+            <div>
+              <h2>{viewModel.pushNotice.heading}</h2>
+              {viewModel.pushNotice.message && <p>{viewModel.pushNotice.message}</p>}
+            </div>
+            <button onClick={onPushAction} type="button">
+              {viewModel.pushNotice.actionLabel}
+            </button>
+          </section>
+        )}
+
+        {(viewModel.refreshError || viewModel.actionError || viewModel.notificationCountError) && (
+          <section className={styles.feedbackNotices}>
+            {viewModel.refreshError && (
+              <div role="alert">
+                <p>{viewModel.refreshError}</p>
+                <button onClick={onRetry} type="button">
+                  Retry
+                </button>
+              </div>
+            )}
+            {viewModel.actionError && <p role="alert">{viewModel.actionError}</p>}
+            {viewModel.notificationCountError && (
+              <div role="alert">
+                <p>{viewModel.notificationCountError}</p>
+                <button onClick={onRetryNotificationCount} type="button">
+                  Retry
+                </button>
+              </div>
+            )}
+          </section>
+        )}
+
         <section aria-label="Household weekly progress" className={styles.householdHero}>
           <span aria-hidden="true" className={styles.householdAmbient} />
           <p className={styles.heroEyebrow}>EVERYONE AT HOME&nbsp;&nbsp; / &nbsp;&nbsp;THIS WEEK</p>
@@ -291,20 +393,24 @@ export function HomeScreenView({
             {viewModel.personalWeek.title}
           </h2>
           <p className={styles.personalMessage}>{viewModel.personalWeek.message}</p>
-          <div className={styles.personalProgressLabel}>
-            <span>
-              {viewModel.personalWeek.completedCount} of {viewModel.personalWeek.assignedCount}{" "}
-              completed
-            </span>
-            <span>{personalProgress}%</span>
-          </div>
-          <div
-            aria-label={`${personalProgress}% of assigned chores completed`}
-            className={styles.personalProgressTrack}
-            role="img"
-          >
-            <span style={{ width: `${personalProgress}%` }} />
-          </div>
+          {viewModel.personalWeek.assignedCount > 0 && (
+            <>
+              <div className={styles.personalProgressLabel}>
+                <span>
+                  {viewModel.personalWeek.completedCount} of {viewModel.personalWeek.assignedCount}{" "}
+                  completed
+                </span>
+                <span>{personalProgress}%</span>
+              </div>
+              <div
+                aria-label={`${personalProgress}% of assigned chores completed`}
+                className={styles.personalProgressTrack}
+                role="img"
+              >
+                <span style={{ width: `${personalProgress}%` }} />
+              </div>
+            </>
+          )}
           <dl className={styles.personalStats}>
             <div>
               <dd>{paddedCount(viewModel.personalWeek.assignedCount)}</dd>
@@ -346,7 +452,7 @@ export function HomeScreenView({
 
         {viewModel.status === "loaded" && (
           <>
-            {viewModel.attentionChore && (
+            {attentionChores.length > 0 && (
               <section aria-labelledby="attention-title" className={styles.attentionSection}>
                 <SectionHeading
                   count={attentionCount}
@@ -354,7 +460,16 @@ export function HomeScreenView({
                   id="attention-title"
                   title="Needs attention"
                 />
-                <ChoreCard chore={viewModel.attentionChore} onComplete={onCompleteChore} />
+                <div className={styles.attentionList}>
+                  {attentionChores.map((chore) => (
+                    <ChoreCard
+                      attention
+                      chore={chore}
+                      key={chore.id}
+                      onComplete={onCompleteChore}
+                    />
+                  ))}
+                </div>
               </section>
             )}
 
@@ -376,7 +491,7 @@ export function HomeScreenView({
               ) : (
                 <div className={styles.todayList}>
                   {viewModel.todayChores.map((chore) => (
-                    <ChoreCard chore={chore} key={chore.id} onComplete={onCompleteChore} />
+                    <ChoreCard chore={chore} key={chore.id} onComplete={onCompleteChore} today />
                   ))}
                 </div>
               )}
@@ -389,25 +504,29 @@ export function HomeScreenView({
                 id="up-next-title"
                 title="Up next"
               />
-              {viewModel.upcomingChores.length === 0 ? (
+              {upcomingGroups.length === 0 ? (
                 <p className={styles.upcomingEmpty}>Nothing else is coming up this week.</p>
               ) : (
-                <div className={styles.upcomingList}>
-                  <p className={styles.upcomingDate}>{viewModel.upcomingDateLabel}</p>
-                  {viewModel.upcomingChores.map((chore, index) => (
-                    <article className={styles.upcomingItem} key={chore.id}>
-                      <span aria-hidden="true" className={styles.timelineStop}>
-                        <span className={styles.timelineStopCore} />
-                      </span>
-                      <div className={styles.upcomingCopy}>
-                        <h3>{chore.title}</h3>
-                        <p>{chore.category}</p>
-                      </div>
-                      <time className={styles.upcomingTime}>{chore.timeLabel}</time>
-                      {index < viewModel.upcomingChores.length - 1 && (
-                        <span aria-hidden="true" className={styles.timelineDivider} />
-                      )}
-                    </article>
+                <div className={styles.upcomingGroups}>
+                  {upcomingGroups.map((group) => (
+                    <div className={styles.upcomingList} key={group.dateLabel}>
+                      <p className={styles.upcomingDate}>{group.dateLabel}</p>
+                      {group.chores.map((chore, index) => (
+                        <article className={styles.upcomingItem} key={chore.id}>
+                          <span aria-hidden="true" className={styles.timelineStop}>
+                            <span className={styles.timelineStopCore} />
+                          </span>
+                          <div className={styles.upcomingCopy}>
+                            <h3>{chore.title}</h3>
+                            <p>{chore.category}</p>
+                          </div>
+                          <time className={styles.upcomingTime}>{chore.timeLabel}</time>
+                          {index < group.chores.length - 1 && (
+                            <span aria-hidden="true" className={styles.timelineDivider} />
+                          )}
+                        </article>
+                      ))}
+                    </div>
                   ))}
                   <p className={styles.upcomingFootnote}>
                     That&apos;s what&apos;s coming up this week.

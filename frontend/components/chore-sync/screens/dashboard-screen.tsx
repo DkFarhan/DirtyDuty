@@ -25,6 +25,12 @@ import {
 } from "@/lib/household/assignment-state"
 import { usePushSubscriptionHealth } from "@/lib/notifications/push-health"
 import {
+  HomeScreenView,
+  type HomeNavigationDestination,
+  type HomeVisualTheme,
+} from "../redesign/home-screen-view"
+import { createHomeApplicationViewModel } from "../redesign/home-application-adapter"
+import {
   formatUpcomingDateLabel,
   getLocalDateKey,
   getUpcomingAssignments,
@@ -38,7 +44,13 @@ function greetingForNow() {
   return hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening"
 }
 
-export function DashboardScreen() {
+export function DashboardScreen({
+  redesigned = false,
+  theme = "dark",
+}: {
+  redesigned?: boolean
+  theme?: HomeVisualTheme
+} = {}) {
   const { state, navigate, openNotifications } = useChoreSync()
   const {
     state: pushHealth,
@@ -298,6 +310,7 @@ export function DashboardScreen() {
   const personalState = getWeekSummaryState(personalCounts)
   const visibleStatus =
     household && dashboardHouseholdId !== household.id && status !== "error" ? "loading" : status
+  const currentDashboard = household && dashboardHouseholdId === household.id ? dashboard : null
   const dateKey = getLocalDateKey(new Date(), household?.timezone)
   const personalMessage = getWeekSummaryMessage(
     personalState,
@@ -334,6 +347,59 @@ export function DashboardScreen() {
               border: "border-l-slate-300 dark:border-l-slate-600",
               icon: "text-slate-700 dark:text-slate-300",
             }
+
+  if (redesigned) {
+    const viewModel = createHomeApplicationViewModel({
+      dashboard: currentDashboard,
+      householdId: household?.id ?? null,
+      householdName: household?.name ?? "Your household",
+      householdTimezone: household?.timezone ?? "UTC",
+      currentUserId: state.currentUser.id,
+      displayName: state.currentUser.name,
+      notificationCount: unreadCount,
+      status: visibleStatus,
+      errorMessage: error,
+      refreshError,
+      actionError,
+      notificationCountError,
+      completingIds,
+      pushHealth,
+    })
+    const onNavigate = (destination: HomeNavigationDestination) =>
+      navigate(destination === "home" ? "dashboard" : destination)
+    const onPushAction = () => {
+      if (pushHealth.reason === "check-failed") {
+        void refreshPushHealth(true)
+      } else if (pushHealth.reason === "permission-denied") {
+        openNotifications("dashboard")
+      } else {
+        void restorePush()
+      }
+    }
+
+    return (
+      <>
+        <HomeScreenView
+          activeDestination="home"
+          onCompleteChore={(id) => void completeAssignment(id)}
+          onNavigate={onNavigate}
+          onOpenNotifications={() => openNotifications("dashboard")}
+          onPushAction={onPushAction}
+          onRetry={() => void loadDashboard()}
+          onRetryNotificationCount={() => void loadUnreadCount()}
+          theme={theme}
+          viewModel={viewModel}
+        />
+        {household && canInvite && (
+          <InviteHousemateDialog
+            household={inviteHousehold ?? household}
+            onOpenChange={setInviteOpen}
+            open={inviteHousehold !== null}
+          />
+        )}
+      </>
+    )
+  }
 
   return (
     <div className="flex min-h-screen flex-col bg-stone-50 pb-20 dark:bg-slate-950">

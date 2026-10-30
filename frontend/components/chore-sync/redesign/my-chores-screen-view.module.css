@@ -787,6 +787,28 @@
   background: url("./assets/my-chores/dark-priority.svg") no-repeat;
 }
 
+.upcomingStatus {
+  position: absolute;
+  top: 14px;
+  right: 15px;
+  max-width: 100px;
+  overflow: hidden;
+  padding: 3px 8px;
+  border-radius: 10px;
+  background: var(--overdue-surface);
+  color: var(--overdue);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cancelledStatus {
+  background: var(--tabs-surface);
+  color: var(--body-text);
+}
+
 .lightTheme .priorityIndicator {
   background-image: url("./assets/my-chores/light-priority.svg");
 }

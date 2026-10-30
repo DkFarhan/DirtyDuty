@@ -206,6 +206,22 @@ returns 404 outside development.
 The matching My Chores preview is available at `/design-preview/my-chores` with
 independent Dark/Light, Upcoming/Completed, and state controls.
 
+#### Local integration of the approved redesigns
+
+The real Home and My Chores redesign integrations remain disabled by default.
+To try either behind the existing authentication and application data flows,
+set one or both private variables in the ignored `frontend/.env.local` file:
+
+```dotenv
+DIRTYDUTY_REDESIGNED_HOME=true
+DIRTYDUTY_REDESIGNED_MY_CHORES=true
+```
+
+Restart `pnpm dev` after changing the variables. Each flag is independent and
+only honored when `NODE_ENV` is `development`; they are not `NEXT_PUBLIC_*`
+values and cannot enable the redesigned screens in production. Remove a line or
+set it to `false` to return to the original screen without reverting code.
+
 ### Backend
 
 ```bash

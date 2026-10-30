@@ -10,13 +10,20 @@ import { optimisticAssignmentCompletion } from "@/lib/household/assignment-state
 import { cn } from "@/lib/utils"
 import { BottomNav } from "../bottom-nav"
 import { ServerAssignmentCard } from "../chore-card"
+import { MyChoresScreenView, type MyChoresTab } from "../redesign/my-chores-screen-view"
+import { createMyChoresApplicationViewModel } from "../redesign/my-chores-application-adapter"
+import type { HomeNavigationDestination, HomeVisualTheme } from "../redesign/home-screen-view"
 
-type Tab = "upcoming" | "completed"
-
-export function MyChoresScreen() {
+export function MyChoresScreen({
+  redesigned = false,
+  theme = "dark",
+}: {
+  redesigned?: boolean
+  theme?: HomeVisualTheme
+} = {}) {
   const { state, navigate } = useChoreSync()
   const { activeHousehold: household } = useHouseholds()
-  const [tab, setTab] = useState<Tab>("upcoming")
+  const [tab, setTab] = useState<MyChoresTab>("upcoming")
   const [upcoming, setUpcoming] = useState<AssignmentDTO[]>([])
   const [completed, setCompleted] = useState<AssignmentDTO[]>([])
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading")
@@ -230,6 +237,36 @@ export function MyChoresScreen() {
       block: "center",
     })
   }, [displayed, targetAssignmentId, visibleStatus])
+
+  if (redesigned) {
+    const viewModel = createMyChoresApplicationViewModel({
+      upcoming,
+      completed,
+      currentUserId: state.currentUser.id,
+      householdTimezone: household?.timezone ?? "UTC",
+      householdId: household?.id ?? null,
+      completingIds,
+      status: visibleStatus,
+      errorMessage: error,
+      refreshError,
+      actionError,
+    })
+    const onNavigate = (destination: HomeNavigationDestination) =>
+      navigate(destination === "home" ? "dashboard" : destination)
+
+    return (
+      <MyChoresScreenView
+        activeDestination="my-chores"
+        onCompleteChore={(id) => void completeAssignment(id)}
+        onNavigate={onNavigate}
+        onRetry={() => void loadChores()}
+        onSelectTab={setTab}
+        tab={tab}
+        theme={theme}
+        viewModel={viewModel}
+      />
+    )
+  }
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-50 pb-20">

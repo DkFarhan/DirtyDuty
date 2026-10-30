@@ -160,6 +160,187 @@ describe("HomeScreenView", () => {
     expect(onRetry).toHaveBeenCalledOnce()
   })
 
+  it("renders every overdue item and omits completion for completed or cancelled chores", () => {
+    const viewModel = {
+      ...homePreviewFixture,
+      additionalAttentionChores: [
+        {
+          ...homePreviewFixture.attentionChore!,
+          id: "preview-second-overdue",
+          title: "Second overdue",
+          canComplete: false,
+        },
+      ],
+      todayChores: [
+        {
+          id: "preview-completed-today",
+          title: "Completed today",
+          category: "Kitchen",
+          scheduledLabel: "Today",
+          assignedTo: "You",
+          status: "COMPLETED" as const,
+          canComplete: true,
+        },
+        {
+          id: "preview-cancelled-today",
+          title: "Cancelled today",
+          category: "Kitchen",
+          scheduledLabel: "Today",
+          assignedTo: "You",
+          status: "CANCELLED" as const,
+          canComplete: true,
+        },
+      ],
+    }
+
+    const { container } = renderHome({ viewModel })
+
+    expect(screen.getByRole("heading", { name: "Second overdue" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Completed today" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Cancelled today" })).toBeTruthy()
+    expect(
+      container.querySelector('[data-chore-id="preview-completed-today"]')?.textContent,
+    ).toContain("Completed")
+    expect(
+      container.querySelector('[data-chore-id="preview-cancelled-today"]')?.textContent,
+    ).toContain("Cancelled")
+    expect(screen.getAllByRole("button", { name: "Mark complete" })).toHaveLength(1)
+  })
+
+  it("renders Today cards with short, wrapping, and non-completable content in natural order", () => {
+    const viewModel = {
+      ...homePreviewFixture,
+      todayChores: [
+        {
+          id: "today-short",
+          title: "Wipe table",
+          category: "Kitchen",
+          scheduledLabel: "Today",
+          assignedTo: "You",
+          status: "PENDING" as const,
+          overdue: false,
+          canComplete: true,
+        },
+        {
+          id: "today-detailed",
+          title: "Deep clean the shared kitchen counters and dining area",
+          category: "Kitchen",
+          scheduledLabel: "Today · 6:00 PM",
+          durationLabel: "About 45 min",
+          assignedTo: "You, Sam, and Alex",
+          status: "PENDING" as const,
+          overdue: true,
+          canComplete: true,
+        },
+        {
+          id: "today-other-member",
+          title: "Take out recycling",
+          category: "Trash",
+          scheduledLabel: "Today",
+          assignedTo: "Sam",
+          durationLabel: "About 10 min",
+          status: "PENDING" as const,
+          overdue: false,
+          canComplete: false,
+        },
+      ],
+    }
+
+    const { container } = renderHome({ viewModel })
+    const todayList = container.querySelector(`.${styles.todayList}`)
+    const todayCards = todayList?.querySelectorAll(`.${styles.attentionCard}`)
+
+    expect(todayCards).toHaveLength(3)
+    expect(todayCards?.[0].textContent).toContain("Wipe table")
+    expect(todayCards?.[0].classList.contains(styles.todayCard)).toBe(true)
+    expect(todayCards?.[0].classList.contains(styles.todayOverdueCard)).toBe(false)
+    expect(todayCards?.[0].querySelector(`.${styles.duration}`)).toBeNull()
+    expect(todayCards?.[1].classList.contains(styles.todayOverdueCard)).toBe(true)
+    expect(todayCards?.[1].textContent).toContain(
+      "Deep clean the shared kitchen counters and dining area",
+    )
+    expect(todayCards?.[1].textContent).toContain("You, Sam, and Alex")
+    expect(todayCards?.[1].textContent).toContain("About 45 min")
+    expect(todayCards?.[2].textContent).toContain("Assigned to Sam")
+    expect(todayCards?.[2].classList.contains(styles.todayOverdueCard)).toBe(false)
+    expect(todayCards?.[2].textContent).toContain("About 10 min")
+    expect(todayList?.querySelectorAll(`.${styles.completeButton}`)).toHaveLength(2)
+    expect(
+      container.querySelector(`.${styles.attentionSection} .${styles.attentionCard}`),
+    ).toBeTruthy()
+  })
+
+  it("wires push-health and independent retry actions", () => {
+    const onRetry = vi.fn()
+    const onRetryNotificationCount = vi.fn()
+    const onPushAction = vi.fn()
+    render(
+      <HomeScreenView
+        activeDestination="home"
+        onCompleteChore={vi.fn()}
+        onNavigate={vi.fn()}
+        onOpenNotifications={vi.fn()}
+        onPushAction={onPushAction}
+        onRetry={onRetry}
+        onRetryNotificationCount={onRetryNotificationCount}
+        theme="dark"
+        viewModel={{
+          ...homePreviewFixture,
+          pushNotice: {
+            heading: "Notifications need attention",
+            message: "Sync this browser to continue receiving reminders.",
+            actionLabel: "Sync this browser",
+          },
+          refreshError: "Unable to refresh your dashboard.",
+          notificationCountError: "Unable to refresh notifications.",
+        }}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Sync this browser" }))
+    const retryButtons = screen.getAllByRole("button", { name: "Retry" })
+    fireEvent.click(retryButtons[0])
+    fireEvent.click(retryButtons[1])
+
+    expect(onPushAction).toHaveBeenCalledOnce()
+    expect(onRetry).toHaveBeenCalledOnce()
+    expect(onRetryNotificationCount).toHaveBeenCalledOnce()
+  })
+
+  it("renders a long light-mode push warning and keeps its action keyboard accessible", () => {
+    const onPushAction = vi.fn()
+    const message =
+      "This browser no longer has a push subscription. Reconnect this browser to restore chore reminders and household updates."
+    render(
+      <HomeScreenView
+        activeDestination="home"
+        onCompleteChore={vi.fn()}
+        onNavigate={vi.fn()}
+        onOpenNotifications={vi.fn()}
+        onPushAction={onPushAction}
+        onRetry={vi.fn()}
+        theme="light"
+        viewModel={{
+          ...homePreviewFixture,
+          pushNotice: {
+            heading: "Notifications need attention",
+            message,
+            actionLabel: "Restore notifications",
+          },
+        }}
+      />,
+    )
+
+    expect(screen.getByRole("region", { name: "Push notification status" }).textContent).toContain(
+      message,
+    )
+    const action = screen.getByRole("button", { name: "Restore notifications" })
+    action.focus()
+    expect(document.activeElement).toBe(action)
+    fireEvent.click(action)
+    expect(onPushAction).toHaveBeenCalledOnce()
+  })
+
   it("switches between both modes with the preview controls", () => {
     render(<HomeDesignPreview />)
 

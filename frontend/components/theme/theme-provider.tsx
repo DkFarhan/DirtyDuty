@@ -6,6 +6,7 @@ export type Theme = "light" | "dark" | "system"
 
 type ThemeContextValue = {
   theme: Theme
+  resolvedTheme: Exclude<Theme, "system">
   setTheme: (theme: Theme) => void
   setPresentationLight: (forceLight: boolean) => void
 }
@@ -38,8 +39,10 @@ function applyTheme(theme: Theme) {
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>("system")
+  const [systemPrefersDark, setSystemPrefersDark] = useState(false)
   const [presentationLight, setPresentationLightState] = useState(false)
   const [initialized, setInitialized] = useState(false)
+  const resolvedTheme = theme === "system" ? (systemPrefersDark ? "dark" : "light") : theme
 
   useEffect(() => {
     const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY)
@@ -56,12 +59,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   useEffect(() => {
-    if (!initialized) return
-    applyTheme(presentationLight ? "light" : theme)
-    if (presentationLight || theme !== "system" || typeof window.matchMedia !== "function") return
-
+    if (typeof window.matchMedia !== "function") return
     const media = window.matchMedia("(prefers-color-scheme: dark)")
-    const onColorSchemeChange = () => applyTheme(presentationLight ? "light" : "system")
+    setSystemPrefersDark(media.matches)
+    const onColorSchemeChange = (event: MediaQueryListEvent) => setSystemPrefersDark(event.matches)
+
     if (typeof media.addEventListener === "function") {
       media.addEventListener("change", onColorSchemeChange)
       return () => media.removeEventListener("change", onColorSchemeChange)
@@ -69,7 +71,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
     media.addListener(onColorSchemeChange)
     return () => media.removeListener(onColorSchemeChange)
-  }, [initialized, presentationLight, theme])
+  }, [])
+
+  useEffect(() => {
+    if (!initialized) return
+    applyTheme(presentationLight ? "light" : resolvedTheme)
+  }, [initialized, presentationLight, resolvedTheme])
 
   const setTheme = useCallback((nextTheme: Theme) => {
     window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme)
@@ -85,8 +92,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   )
 
   const value = useMemo(
-    () => ({ theme, setTheme, setPresentationLight }),
-    [setPresentationLight, setTheme, theme],
+    () => ({ theme, resolvedTheme, setTheme, setPresentationLight }),
+    [resolvedTheme, setPresentationLight, setTheme, theme],
   )
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
 }
