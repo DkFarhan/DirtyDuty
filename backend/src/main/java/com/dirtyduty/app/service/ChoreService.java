@@ -285,6 +285,9 @@ public class ChoreService {
         choreScheduleRepository
             .findByChore_IdAndHousehold_Id(chore.getId(), householdId)
             .orElseGet(() -> createSchedule(chore, household));
+    String previousRecurrenceRule = schedule.getRecurrenceRule();
+    occurrenceService.validateScheduleFrequencyChange(
+        schedule, previousRecurrenceRule, recurrenceRule);
     boolean assignmentConfigChanged =
         schedule.getId() != null
             && (schedule.getAssignmentStrategy() != strategy
@@ -303,7 +306,7 @@ public class ChoreService {
     schedule.setStrategyConfig(config);
     schedule.setActive(chore.isActive());
     choreScheduleRepository.saveAndFlush(schedule);
-    occurrenceService.synchronizeSchedule(schedule, assignmentConfigChanged);
+    occurrenceService.synchronizeSchedule(schedule, assignmentConfigChanged, true);
   }
 
   private boolean isSupportedRecurrenceRule(String recurrenceRule) {

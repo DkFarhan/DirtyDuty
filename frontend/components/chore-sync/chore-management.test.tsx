@@ -282,6 +282,52 @@ describe("chore management", () => {
     })
   })
 
+  it("shows a clear inline message when recurring history blocks a one-time edit", async () => {
+    await openHousehold()
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([savedChore]))
+      .mockResolvedValueOnce(jsonResponse(options))
+    await enterChores()
+    await screen.findByRole("heading", { name: "Clean Kitchen" })
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Clean Kitchen" }))
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(options))
+      .mockResolvedValueOnce(jsonResponse(savedChore))
+      .mockResolvedValueOnce(jsonResponse({ token: "edit-csrf", headerName: "X-CSRF-TOKEN" }))
+      .mockResolvedValueOnce(
+        jsonResponse(
+          {
+            message:
+              "A recurring chore with existing assignment history cannot be converted to one-time. Create a separate one-time chore to preserve its history.",
+          },
+          400,
+        ),
+      )
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }))
+
+    await screen.findByRole("heading", { name: "Edit Chore" })
+    fireEvent.click(screen.getByRole("button", { name: "One time" }))
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }))
+
+    expect(await screen.findByRole("alert")).toHaveProperty(
+      "textContent",
+      "This chore has recurring assignment history and can't be changed to a one-time chore. Keep its recurring schedule or create a new one-time chore.",
+    )
+    expect(screen.getByRole("heading", { name: "Edit Chore" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "One time" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    )
+    const updateRequest = fetchMock.mock.calls.find(
+      ([url, request]) =>
+        url === "http://localhost:8080/api/households/home-1/chores/chore-1" &&
+        request?.method === "PUT",
+    )
+    expect(JSON.parse(String(updateRequest?.[1]?.body))).toMatchObject({
+      schedule: { recurrenceRule: "FREQ=ONCE" },
+    })
+  })
+
   it("confirms archive, preserves the chore through the lifecycle API, and removes it from the active list", async () => {
     await openHousehold()
     fetchMock
