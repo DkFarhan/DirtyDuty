@@ -4,7 +4,7 @@ import { CheckIcon } from "./icons"
 import { PriorityBadge, PriorityDot } from "./primitives"
 import { categoryIcon, type AssignmentDTO } from "@/lib/household/chores"
 
-function assignmentDate(assignment: AssignmentDTO, householdTimezone: string) {
+export function assignmentDate(assignment: AssignmentDTO, householdTimezone: string) {
   const scheduledDate = /^(\d{4})-(\d{2})-(\d{2})/.exec(assignment.scheduledFor)
   const dateLabel = scheduledDate
     ? new Intl.DateTimeFormat(undefined, {
@@ -34,7 +34,7 @@ function assignmentDate(assignment: AssignmentDTO, householdTimezone: string) {
   return `${dateLabel} · ${timeLabel}`
 }
 
-function assignmentTime(assignment: AssignmentDTO, householdTimezone: string) {
+export function assignmentTime(assignment: AssignmentDTO, householdTimezone: string) {
   if (!assignment.dueAt) return null
   const dueDate = new Date(assignment.dueAt)
   if (Number.isNaN(dueDate.getTime())) return null
@@ -45,7 +45,7 @@ function assignmentTime(assignment: AssignmentDTO, householdTimezone: string) {
   }).format(dueDate)
 }
 
-function assigneeLabel(assignment: AssignmentDTO, currentUserId: string) {
+export function assignmentAssigneeNames(assignment: AssignmentDTO, currentUserId: string) {
   if (!assignment.assignees.length) return "No assignee"
   const assignees = [
     ...assignment.assignees.filter(({ userId }) => userId === currentUserId),
@@ -54,7 +54,11 @@ function assigneeLabel(assignment: AssignmentDTO, currentUserId: string) {
   const names = assignees.map(({ userId, displayName }) =>
     userId === currentUserId ? "You" : displayName,
   )
-  return `Assigned to ${names.join(", ")}`
+  return names.join(", ")
+}
+
+function assigneeLabel(assignment: AssignmentDTO, currentUserId: string) {
+  return `Assigned to ${assignmentAssigneeNames(assignment, currentUserId)}`
 }
 
 function assignmentPriority(priority: AssignmentDTO["priority"]) {

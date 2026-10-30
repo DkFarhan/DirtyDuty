@@ -55,7 +55,13 @@ const screenTargets = new Map<string, Screen>([
   ["legal-acceptance", "legal-acceptance"],
 ])
 
-function ScreenRouter() {
+function ScreenRouter({
+  redesignedHomeEnabled,
+  redesignedMyChoresEnabled,
+}: {
+  redesignedHomeEnabled: boolean
+  redesignedMyChoresEnabled: boolean
+}) {
   const {
     screen,
     adminTab,
@@ -65,7 +71,7 @@ function ScreenRouter() {
     clearAccountDeletion,
   } = useChoreSync()
   const { user, isAuthenticated, isLoading, authError, refreshUser, features } = useAuth()
-  const { setPresentationLight } = useTheme()
+  const { setPresentationLight, resolvedTheme } = useTheme()
   const skipNextRouteGuard = useRef(false)
   const {
     households,
@@ -252,9 +258,9 @@ function ScreenRouter() {
     case "join-household":
       return <JoinHouseholdScreen />
     case "dashboard":
-      return <DashboardScreen />
+      return <DashboardScreen redesigned={redesignedHomeEnabled} theme={resolvedTheme} />
     case "my-chores":
-      return <MyChoresScreen />
+      return <MyChoresScreen redesigned={redesignedMyChoresEnabled} theme={resolvedTheme} />
     case "household":
       return <HouseholdScreen />
     case "admin":
@@ -284,6 +290,33 @@ function ScreenRouter() {
   }
 }
 
+function AppFrame({
+  children,
+  redesignedHomeEnabled,
+  redesignedMyChoresEnabled,
+}: {
+  children: React.ReactNode
+  redesignedHomeEnabled: boolean
+  redesignedMyChoresEnabled: boolean
+}) {
+  const { screen } = useChoreSync()
+  const useWideFrame =
+    (screen === "dashboard" && redesignedHomeEnabled) ||
+    (screen === "my-chores" && redesignedMyChoresEnabled)
+
+  return (
+    <div className="min-h-screen bg-slate-200 flex items-start justify-center">
+      <div
+        className={`w-full bg-white min-h-screen relative overflow-hidden ${
+          useWideFrame ? "max-w-none shadow-none" : "max-w-sm shadow-2xl"
+        }`}
+      >
+        {children}
+      </div>
+    </div>
+  )
+}
+
 function HouseholdRefreshNotice() {
   const { error, refresh, status } = useHouseholds()
   if (!error || status === "loading" || status === "error") return null
@@ -305,7 +338,15 @@ function HouseholdRefreshNotice() {
   )
 }
 
-export function AppShell({ initialScreen = "login" }: { initialScreen?: Screen }) {
+export function AppShell({
+  initialScreen = "login",
+  redesignedHomeEnabled = false,
+  redesignedMyChoresEnabled = false,
+}: {
+  initialScreen?: Screen
+  redesignedHomeEnabled?: boolean
+  redesignedMyChoresEnabled?: boolean
+}) {
   return (
     <ThemeProvider>
       <AuthProvider>
@@ -313,14 +354,18 @@ export function AppShell({ initialScreen = "login" }: { initialScreen?: Screen }
           <HouseholdProvider>
             <ChoreSyncProvider initialScreen={initialScreen}>
               <PushSubscriptionHealthProvider>
-                <div className="min-h-screen bg-slate-200 flex items-start justify-center">
-                  <div className="w-full max-w-sm bg-white min-h-screen relative overflow-hidden shadow-2xl">
-                    <AppLaunchGate>
-                      <HouseholdRefreshNotice />
-                      <ScreenRouter />
-                    </AppLaunchGate>
-                  </div>
-                </div>
+                <AppFrame
+                  redesignedHomeEnabled={redesignedHomeEnabled}
+                  redesignedMyChoresEnabled={redesignedMyChoresEnabled}
+                >
+                  <AppLaunchGate>
+                    <HouseholdRefreshNotice />
+                    <ScreenRouter
+                      redesignedHomeEnabled={redesignedHomeEnabled}
+                      redesignedMyChoresEnabled={redesignedMyChoresEnabled}
+                    />
+                  </AppLaunchGate>
+                </AppFrame>
               </PushSubscriptionHealthProvider>
             </ChoreSyncProvider>
           </HouseholdProvider>

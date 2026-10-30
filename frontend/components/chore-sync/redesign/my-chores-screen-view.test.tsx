@@ -151,6 +151,35 @@ describe("MyChoresScreenView", () => {
     )
   })
 
+  it("keeps denied and cancelled assignments visible without offering completion", () => {
+    const { container } = renderScreen({
+      viewModel: {
+        ...myChoresPreviewFixture,
+        attentionChore: null,
+        upcomingChores: [
+          {
+            ...myChoresPreviewFixture.upcomingChores[0],
+            title: "Not completable",
+            canComplete: false,
+          },
+          {
+            ...myChoresPreviewFixture.upcomingChores[1],
+            title: "Cancelled chore",
+            status: "CANCELLED",
+            canComplete: true,
+          },
+        ],
+      },
+    })
+
+    expect(container.querySelector("#assignment-preview-kitchen-floor")).not.toBeNull()
+    expect(screen.getByText("Not completable")).toBeTruthy()
+    expect(screen.getByText("Cancelled chore")).toBeTruthy()
+    expect(screen.getByText("Cancelled")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Complete Not completable" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Complete Cancelled chore" })).toBeNull()
+  })
+
   it("renders empty Upcoming and Completed variants", () => {
     const { rerender } = renderScreen({
       viewModel: {

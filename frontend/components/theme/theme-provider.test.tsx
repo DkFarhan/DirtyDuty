@@ -9,11 +9,12 @@ const mediaListeners = new Set<(event: MediaQueryListEvent) => void>()
 let prefersDark = false
 
 function TestTheme() {
-  const { theme } = useTheme()
+  const { theme, resolvedTheme } = useTheme()
   return (
     <>
       <ThemeSelector />
       <output data-testid="selected-theme">{theme}</output>
+      <output data-testid="resolved-theme">{resolvedTheme}</output>
     </>
   )
 }
@@ -68,6 +69,7 @@ describe("theme selection", () => {
     await waitFor(() =>
       expect(screen.getByRole<HTMLInputElement>("radio", { name: "System" }).checked).toBe(true),
     )
+    expect(screen.getByTestId("resolved-theme").textContent).toBe("light")
     expect(
       screen.getByRole("radio", { name: "System" }).closest("label")?.getAttribute("data-selected"),
     ).toBe("true")
@@ -83,6 +85,7 @@ describe("theme selection", () => {
     await waitFor(() => {
       expect(screen.getByRole<HTMLInputElement>("radio", { name: "Light" }).checked).toBe(true)
       expect(document.documentElement.classList.contains("light")).toBe(true)
+      expect(screen.getByTestId("resolved-theme").textContent).toBe("light")
     })
     expect(localStorage.getItem(themeStorageKey)).toBe("light")
   })
@@ -94,6 +97,7 @@ describe("theme selection", () => {
     await waitFor(() => {
       expect(screen.getByRole<HTMLInputElement>("radio", { name: "Dark" }).checked).toBe(true)
       expect(document.documentElement.classList.contains("dark")).toBe(true)
+      expect(screen.getByTestId("resolved-theme").textContent).toBe("dark")
     })
     expect(
       screen.getByRole("radio", { name: "Dark" }).closest("label")?.getAttribute("data-selected"),
@@ -104,7 +108,10 @@ describe("theme selection", () => {
   it("restores the saved preference after remount", async () => {
     const first = renderTheme()
     fireEvent.click(screen.getByRole("radio", { name: "Dark" }))
-    await waitFor(() => expect(document.documentElement.classList.contains("dark")).toBe(true))
+    await waitFor(() => {
+      expect(document.documentElement.classList.contains("dark")).toBe(true)
+      expect(screen.getByTestId("resolved-theme").textContent).toBe("dark")
+    })
     first.unmount()
 
     renderTheme()
@@ -120,7 +127,10 @@ describe("theme selection", () => {
 
     prefersDark = true
     mediaListeners.forEach((listener) => listener({ matches: true } as MediaQueryListEvent))
-    await waitFor(() => expect(document.documentElement.classList.contains("dark")).toBe(true))
+    await waitFor(() => {
+      expect(document.documentElement.classList.contains("dark")).toBe(true)
+      expect(screen.getByTestId("resolved-theme").textContent).toBe("dark")
+    })
 
     fireEvent.click(screen.getByRole("radio", { name: "Light" }))
     prefersDark = false
@@ -138,11 +148,15 @@ describe("theme selection", () => {
     await waitFor(() => {
       expect(screen.getByRole<HTMLInputElement>("radio", { name: "System" }).checked).toBe(true)
       expect(document.documentElement.classList.contains("light")).toBe(true)
+      expect(screen.getByTestId("resolved-theme").textContent).toBe("light")
     })
 
     prefersDark = true
     mediaListeners.forEach((listener) => listener({ matches: true } as MediaQueryListEvent))
-    await waitFor(() => expect(document.documentElement.classList.contains("dark")).toBe(true))
+    await waitFor(() => {
+      expect(document.documentElement.classList.contains("dark")).toBe(true)
+      expect(screen.getByTestId("resolved-theme").textContent).toBe("dark")
+    })
     expect(localStorage.getItem(themeStorageKey)).toBe("system")
   })
 })

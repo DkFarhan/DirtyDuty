@@ -74,6 +74,10 @@ function jsonResponse(payload: unknown, status = 200) {
 async function startAtDashboard(
   data: Partial<HouseholdDashboard> = dashboard,
   householdData = household,
+  redesignFlags: {
+    redesignedHomeEnabled?: boolean
+    redesignedMyChoresEnabled?: boolean
+  } = {},
 ) {
   fetchMock.mockImplementation(async (input) => {
     const url = String(input)
@@ -85,7 +89,7 @@ async function startAtDashboard(
     if (url.endsWith("/api/notifications/unread-count")) return jsonResponse({ count: 0 })
     return jsonResponse({}, 404)
   })
-  render(<AppShell />)
+  render(<AppShell {...redesignFlags} />)
   await screen.findByRole("heading", { name: "Today" }, { timeout: 3_000 })
 }
 
@@ -975,5 +979,180 @@ describe("server-backed chore data", () => {
     }).format(new Date(Date.UTC(2026, 8, 27, 12)))
     expect(screen.getByText(scheduledDay)).toBeTruthy()
     expect(screen.queryByText(new RegExp(`${scheduledDay} ·`))).toBeNull()
+  })
+
+  it("uses the approved views with shared server data and synchronizes completions across screens", async () => {
+    const assignments = [
+      { ...pendingAssignment, overdue: false },
+      {
+        ...pendingAssignment,
+        id: "assignment-2",
+        choreId: "chore-2",
+        title: "Sweep Living Room",
+        categoryName: "Living Room",
+        categoryIcon: "🪴",
+        overdue: false,
+      },
+    ]
+    const completedIds = new Set<string>()
+    const createDashboard = (): HouseholdDashboard => {
+      const currentAssignments = assignments.map((assignment) =>
+        completedIds.has(assignment.id)
+          ? {
+              ...assignment,
+              status: "COMPLETED" as const,
+              canComplete: false,
+              completedByDisplayName: user.displayName,
+            }
+          : assignment,
+      )
+      return {
+        weekSummary: {
+          completedCount: completedIds.size,
+          totalCount: assignments.length,
+          completionPercentage: Math.round((completedIds.size / assignments.length) * 100),
+        },
+        today: currentAssignments,
+        thisWeek: currentAssignments,
+        overdue: [],
+      }
+    }
+
+    await startAtDashboard(createDashboard(), household, {
+      redesignedHomeEnabled: true,
+      redesignedMyChoresEnabled: true,
+    })
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = String(input)
+      const method = init?.method ?? "GET"
+      if (url.endsWith("/api/auth/csrf")) {
+        return jsonResponse({ token: "redesign-csrf", headerName: "X-CSRF-TOKEN" })
+      }
+      if (url.endsWith(`/api/households/${household.id}/dashboard`)) {
+        return jsonResponse(createDashboard())
+      }
+      if (url.endsWith(`/api/households/${household.id}/my-chores?status=UPCOMING`)) {
+        return jsonResponse(
+          assignments
+            .filter((assignment) => !completedIds.has(assignment.id))
+            .map((assignment) => ({ ...assignment, overdue: false })),
+        )
+      }
+      if (url.endsWith(`/api/households/${household.id}/my-chores?status=COMPLETED`)) {
+        return jsonResponse(
+          assignments
+            .filter((assignment) => completedIds.has(assignment.id))
+            .map((assignment) => ({
+              ...assignment,
+              status: "COMPLETED",
+              canComplete: false,
+              overdue: false,
+              completedByDisplayName: user.displayName,
+            })),
+        )
+      }
+      if (url.includes(`/api/households/${household.id}/assignments/`) && method === "POST") {
+        const assignmentId = url.split("/").at(-2)
+        const completedAssignment = assignments.find(({ id }) => id === assignmentId)
+        if (!completedAssignment) return jsonResponse({ message: "Unknown assignment." }, 404)
+        completedIds.add(completedAssignment.id)
+        return jsonResponse({
+          ...completedAssignment,
+          status: "COMPLETED",
+          canComplete: false,
+          overdue: false,
+          completedByDisplayName: user.displayName,
+        })
+      }
+      if (url.endsWith("/api/notifications/preferences")) {
+        return jsonResponse({ pushEnabled: false })
+      }
+      if (url.endsWith("/api/notifications/unread-count")) {
+        return jsonResponse({ count: 0 })
+      }
+      return jsonResponse({}, 404)
+    })
+
+    expect(screen.getByRole("heading", { name: "Jahid." })).toBeTruthy()
+    const homeCompleteButtons = screen.getAllByRole("button", { name: "Mark complete" })
+    expect(homeCompleteButtons).toHaveLength(2)
+    fireEvent.click(homeCompleteButtons[0])
+    fireEvent.click(homeCompleteButtons[0])
+
+    await waitFor(() => {
+      expect(completedIds.has("assignment-1")).toBe(true)
+      expect(screen.getByText("1 of 2 chores completed")).toBeTruthy()
+    })
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url, request]) =>
+          String(url).endsWith("/assignments/assignment-1/complete") && request?.method === "POST",
+      ),
+    ).toHaveLength(1)
+
+    fireEvent.click(screen.getByRole("button", { name: "My Chores" }))
+    expect(await screen.findByRole("heading", { name: "My chores." })).toBeTruthy()
+    expect(await screen.findByText("Sweep Living Room")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Complete Sweep Living Room" }))
+    await waitFor(() => expect(completedIds.has("assignment-2")).toBe(true))
+    fireEvent.click(screen.getByRole("tab", { name: "Completed" }))
+    expect(await screen.findAllByText("Completed by Jahid")).toHaveLength(2)
+
+    fireEvent.click(screen.getByRole("button", { name: "Home" }))
+    expect(await screen.findByText("2 of 2 chores completed")).toBeTruthy()
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url, request]) =>
+          String(url).endsWith("/assignments/assignment-2/complete") && request?.method === "POST",
+      ),
+    ).toHaveLength(1)
+  })
+
+  it("rolls back a failed completion in redesigned My Chores and exposes the error", async () => {
+    await startAtDashboard(
+      {
+        weekSummary: { completedCount: 0, totalCount: 0, completionPercentage: 0 },
+        today: [],
+        thisWeek: [],
+      },
+      household,
+      { redesignedMyChoresEnabled: true },
+    )
+    const pending = { ...pendingAssignment, overdue: false }
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = String(input)
+      if (url.endsWith("/api/auth/csrf")) {
+        return jsonResponse({ token: "rollback-csrf", headerName: "X-CSRF-TOKEN" })
+      }
+      if (url.endsWith(`/api/households/${household.id}/my-chores?status=UPCOMING`)) {
+        return jsonResponse([pending])
+      }
+      if (url.endsWith(`/api/households/${household.id}/my-chores?status=COMPLETED`)) {
+        return jsonResponse([])
+      }
+      if (
+        url.endsWith(`/api/households/${household.id}/assignments/${pending.id}/complete`) &&
+        init?.method === "POST"
+      ) {
+        return jsonResponse({ message: "Completion rejected." }, 500)
+      }
+      return jsonResponse({}, 404)
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "My Chores" }))
+    expect(await screen.findByRole("heading", { name: "My chores." })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Complete Clean Kitchen" }))
+
+    expect(await screen.findByRole("alert")).toBeTruthy()
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Complete Clean Kitchen" })).toBeTruthy()
+      expect(screen.getByText("1")).toBeTruthy()
+    })
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url, request]) =>
+          String(url).endsWith(`/assignments/${pending.id}/complete`) && request?.method === "POST",
+      ),
+    ).toHaveLength(1)
   })
 })

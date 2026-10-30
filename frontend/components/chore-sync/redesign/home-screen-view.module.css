@@ -635,6 +635,123 @@
   margin: 20px 16px 0;
 }
 
+.attentionList > .attentionCard:not(:first-child) {
+  margin-top: 14px;
+}
+
+.attentionList .attentionCard {
+  min-height: 0;
+}
+
+.pushNotice,
+.feedbackNotices {
+  position: relative;
+  z-index: 1;
+  margin: 14px 16px 0;
+}
+
+.pushNotice {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: 17px;
+  background: color-mix(in srgb, var(--hero-bg) 82%, transparent);
+  color: var(--main-text);
+}
+
+.lightTheme .pushNotice {
+  border-color: #9a641f;
+  background: #fff4dc;
+  color: #243b3d;
+  margin-bottom: 14px;
+}
+
+.lightTheme .pushNotice > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pushNotice h2,
+.pushNotice p,
+.feedbackNotices p {
+  margin: 0;
+}
+
+.pushNotice h2 {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 18px;
+}
+
+.pushNotice p {
+  margin-top: 3px;
+  color: var(--secondary-text);
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.lightTheme .pushNotice p {
+  color: #46585a;
+}
+
+.pushNotice button,
+.feedbackNotices button {
+  flex: 0 0 auto;
+  padding: 7px 9px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.lightTheme .pushNotice button {
+  border-color: #0d706c;
+  background: #0d706c;
+  color: #fff;
+}
+
+.lightTheme .pushNotice button:focus-visible {
+  outline: 2px solid #17383d;
+  outline-offset: 3px;
+}
+
+.feedbackNotices {
+  display: grid;
+  gap: 7px;
+}
+
+.feedbackNotices > div,
+.feedbackNotices > p {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  border-radius: 13px;
+  background: var(--danger-surface);
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.feedbackNotices p {
+  flex: 1;
+}
+
+.choreStatus {
+  margin: 10px 0 0;
+  color: var(--secondary-text);
+  font-size: 12px;
+  line-height: 16px;
+}
+
 .sectionHeading {
   display: flex;
   min-height: 35px;
@@ -855,6 +972,19 @@
 
 .todayList .attentionCard {
   margin-top: 0;
+  min-height: 0;
+}
+
+.todayList .todayCard::before {
+  background: color-mix(in srgb, var(--accent) 56%, transparent);
+}
+
+.todayList .todayCard.todayOverdueCard::before {
+  background: var(--danger);
+}
+
+.lightTheme .todayList .todayCard {
+  border-color: rgb(13 112 108 / 23%);
 }
 
 .upcomingSection {
