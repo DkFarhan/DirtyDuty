@@ -10,6 +10,8 @@ import { MemberActionDialog, MemberCard, memberColor, type MemberAction } from "
 import { ChevronRightIcon } from "../icons"
 import { SectionHeader } from "../primitives"
 import { InviteHousemateDialog } from "../invite-housemate-dialog"
+import { HouseholdScreenView, type HouseholdVisualTheme } from "../redesign/household-screen-view"
+import { createHouseholdApplicationViewModel } from "../redesign/household-application-adapter"
 
 const adminActions = [
   { icon: "➕", label: "Invite Member", sub: "Share an invite code", action: "invite" },
@@ -17,7 +19,13 @@ const adminActions = [
   { icon: "⚙️", label: "Household Settings", sub: "Edit household details", action: "settings" },
 ]
 
-export function HouseholdScreen() {
+export function HouseholdScreen({
+  redesigned = false,
+  theme = "light",
+}: {
+  redesigned?: boolean
+  theme?: HouseholdVisualTheme
+}) {
   const { state, navigate, pendingAccountDeletionUserId, clearAccountDeletion } = useChoreSync()
   const { households, activeHousehold, refresh, removeHousehold } = useHouseholds()
   const household = activeHousehold ?? households[0]
@@ -28,6 +36,7 @@ export function HouseholdScreen() {
   const [selectedNewOwnerId, setSelectedNewOwnerId] = useState("")
   const [leaveError, setLeaveError] = useState<string | null>(null)
   const [leaveBusy, setLeaveBusy] = useState(false)
+  const leaveSubmissionInProgress = useRef(false)
   const [members, setMembers] = useState<HouseholdMemberDTO[]>([])
   const [memberStatus, setMemberStatus] = useState<"loading" | "loaded" | "error">("loading")
   const [memberError, setMemberError] = useState<string | null>(null)
@@ -40,6 +49,7 @@ export function HouseholdScreen() {
     action: MemberAction
     member: HouseholdMemberDTO
   } | null>(null)
+  const [openMemberMenuId, setOpenMemberMenuId] = useState<string | null>(null)
   const [confirmText, setConfirmText] = useState("")
   const [memberActionError, setMemberActionError] = useState<string | null>(null)
   const [busyMemberId, setBusyMemberId] = useState<string | null>(null)
@@ -92,6 +102,7 @@ export function HouseholdScreen() {
   const handleMemberAction = useCallback(
     (action: MemberAction, member: HouseholdMemberDTO) => {
       if (!household) return
+      setOpenMemberMenuId(null)
       setMemberActionError(null)
       setPendingMemberAction({ action, member })
       if (action !== "transfer") return
@@ -171,15 +182,20 @@ export function HouseholdScreen() {
   }
 
   const leaveHousehold = useCallback(async () => {
-    if (!household || leaveBusy) return
-    const newOwnerUserId = household.currentUserRole === "OWNER" ? selectedNewOwnerId : undefined
+    if (!household || leaveBusy || leaveSubmissionInProgress.current) return
+    const isOwner = household.currentUserRole === "OWNER"
     if (
-      household.currentUserRole === "OWNER" &&
-      !eligibleNewOwners.some((member) => member.userId === newOwnerUserId)
+      (isOwner && leaveFlow !== "owner-confirm") ||
+      (!isOwner && leaveFlow !== "member-confirm")
     ) {
+      return
+    }
+    const newOwnerUserId = isOwner ? selectedNewOwnerId : undefined
+    if (isOwner && !eligibleNewOwners.some((member) => member.userId === newOwnerUserId)) {
       setLeaveError("Select an active household member to become the new owner.")
       return
     }
+    leaveSubmissionInProgress.current = true
     setLeaveBusy(true)
     setLeaveError(null)
     try {
@@ -196,11 +212,13 @@ export function HouseholdScreen() {
           : "Unable to leave this household. Please try again.",
       )
     } finally {
+      leaveSubmissionInProgress.current = false
       setLeaveBusy(false)
     }
   }, [
     eligibleNewOwners,
     household,
+    leaveFlow,
     leaveBusy,
     navigate,
     refresh,
@@ -222,6 +240,80 @@ export function HouseholdScreen() {
       : memberErrorHouseholdId === household.id
         ? "error"
         : "loading"
+
+  if (redesigned) {
+    const householdViewModel = createHouseholdApplicationViewModel({
+      household: household ?? null,
+      members: membersHouseholdId === household?.id ? members : [],
+      currentUserId: state.currentUser.id,
+      status: visibleMemberStatus,
+      errorMessage: visibleMemberStatus === "error" ? memberError : null,
+      refreshError:
+        visibleMemberStatus === "loaded" && membersHouseholdId === household?.id
+          ? memberRefreshError
+          : null,
+    })
+    return (
+      <>
+        <HouseholdScreenView
+          activeDestination="household"
+          busyMemberId={busyMemberId}
+          confirmText={confirmText}
+          leaveBusy={leaveBusy}
+          leaveError={leaveError}
+          leaveFlow={leaveFlow}
+          memberActionError={memberActionError}
+          onChangeConfirmText={setConfirmText}
+          onCloseLeave={() => {
+            setLeaveFlow("closed")
+            setLeaveError(null)
+          }}
+          onBackToSuccessorSelection={() => {
+            setLeaveError(null)
+            setLeaveFlow("owner-select")
+          }}
+          onCloseMemberAction={() => {
+            setPendingMemberAction(null)
+            setConfirmText("")
+            setMemberActionError(null)
+            setOpenMemberMenuId(null)
+            if (pendingAccountDeletionUserId === state.currentUser.id) clearAccountDeletion()
+          }}
+          onConfirmLeave={() => void leaveHousehold()}
+          onConfirmMemberAction={() => void commitMemberAction()}
+          onContinueOwnerLeave={() => {
+            setLeaveError(null)
+            setLeaveFlow("owner-confirm")
+          }}
+          onHouseholdSettings={() => navigate("household-settings")}
+          onManageChores={() => navigate("admin", "chores")}
+          onMemberAction={handleMemberAction}
+          onNavigate={(destination) => navigate(destination)}
+          onOpenInvite={() => setInviteOpen(true)}
+          onOpenLeave={openLeaveFlow}
+          onRetry={() => void loadMembers()}
+          onSelectSuccessor={setSelectedNewOwnerId}
+          onToggleMemberMenu={(memberId) =>
+            setOpenMemberMenuId((openId) => (openId === memberId ? null : memberId))
+          }
+          openMemberMenuId={openMemberMenuId}
+          pendingMemberAction={pendingMemberAction}
+          selectedNewOwnerId={selectedNewOwnerId}
+          theme={theme}
+          viewModel={householdViewModel}
+        />
+        {household && canManage && (
+          <InviteHousemateDialog
+            household={household}
+            onOpenChange={setInviteDialogOpen}
+            open={inviteOpen}
+            redesigned
+            theme={theme}
+          />
+        )}
+      </>
+    )
+  }
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 pb-20">

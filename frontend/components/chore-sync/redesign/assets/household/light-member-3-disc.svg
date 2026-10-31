@@ -1,0 +1,12 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="44" height="44" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Member 3 / portrait / subtle gradient disc">
+<circle cx="22" cy="22" r="22" fill="url(#paint0_linear_0_44)"/>
+<circle cx="22" cy="22" r="21.5" stroke="#EAFFFF" stroke-opacity="0.24"/>
+</g>
+<defs>
+<linearGradient id="paint0_linear_0_44" x1="-1.57046" y1="19.1163" x2="44.4603" y2="35.3625" gradientUnits="userSpaceOnUse">
+<stop stop-color="#BC8840"/>
+<stop offset="1" stop-color="#BC8840"/>
+</linearGradient>
+</defs>
+</svg>

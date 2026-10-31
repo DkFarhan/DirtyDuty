@@ -58,9 +58,11 @@ const screenTargets = new Map<string, Screen>([
 function ScreenRouter({
   redesignedHomeEnabled,
   redesignedMyChoresEnabled,
+  redesignedHouseholdEnabled,
 }: {
   redesignedHomeEnabled: boolean
   redesignedMyChoresEnabled: boolean
+  redesignedHouseholdEnabled: boolean
 }) {
   const {
     screen,
@@ -262,19 +264,27 @@ function ScreenRouter({
     case "my-chores":
       return <MyChoresScreen redesigned={redesignedMyChoresEnabled} theme={resolvedTheme} />
     case "household":
-      return <HouseholdScreen />
+      return <HouseholdScreen redesigned={redesignedHouseholdEnabled} theme={resolvedTheme} />
     case "admin":
-      return <AdminScreen initialTab={adminTab} />
+      return (
+        <AdminScreen
+          initialTab={adminTab}
+          redesigned={redesignedHouseholdEnabled}
+          theme={resolvedTheme}
+        />
+      )
     case "create-chore":
-      return <ChoreFormScreen />
+      return <ChoreFormScreen redesigned={redesignedHouseholdEnabled} theme={resolvedTheme} />
     case "edit-chore":
-      return <ChoreFormScreen />
+      return <ChoreFormScreen redesigned={redesignedHouseholdEnabled} theme={resolvedTheme} />
     case "profile":
       return <ProfileScreen />
     case "appearance":
       return <AppearanceScreen />
     case "household-settings":
-      return <HouseholdSettingsScreen />
+      return (
+        <HouseholdSettingsScreen redesigned={redesignedHouseholdEnabled} theme={resolvedTheme} />
+      )
     case "notifications":
       return <NotificationsScreen />
     case "edit-profile":
@@ -294,15 +304,23 @@ function AppFrame({
   children,
   redesignedHomeEnabled,
   redesignedMyChoresEnabled,
+  redesignedHouseholdEnabled,
 }: {
   children: React.ReactNode
   redesignedHomeEnabled: boolean
   redesignedMyChoresEnabled: boolean
+  redesignedHouseholdEnabled: boolean
 }) {
   const { screen } = useChoreSync()
   const useWideFrame =
     (screen === "dashboard" && redesignedHomeEnabled) ||
-    (screen === "my-chores" && redesignedMyChoresEnabled)
+    (screen === "my-chores" && redesignedMyChoresEnabled) ||
+    ((screen === "household" ||
+      screen === "admin" ||
+      screen === "household-settings" ||
+      screen === "create-chore" ||
+      screen === "edit-chore") &&
+      redesignedHouseholdEnabled)
 
   return (
     <div className="min-h-screen bg-slate-200 flex items-start justify-center">
@@ -342,10 +360,12 @@ export function AppShell({
   initialScreen = "login",
   redesignedHomeEnabled = false,
   redesignedMyChoresEnabled = false,
+  redesignedHouseholdEnabled = false,
 }: {
   initialScreen?: Screen
   redesignedHomeEnabled?: boolean
   redesignedMyChoresEnabled?: boolean
+  redesignedHouseholdEnabled?: boolean
 }) {
   return (
     <ThemeProvider>
@@ -357,12 +377,14 @@ export function AppShell({
                 <AppFrame
                   redesignedHomeEnabled={redesignedHomeEnabled}
                   redesignedMyChoresEnabled={redesignedMyChoresEnabled}
+                  redesignedHouseholdEnabled={redesignedHouseholdEnabled}
                 >
                   <AppLaunchGate>
                     <HouseholdRefreshNotice />
                     <ScreenRouter
                       redesignedHomeEnabled={redesignedHomeEnabled}
                       redesignedMyChoresEnabled={redesignedMyChoresEnabled}
+                      redesignedHouseholdEnabled={redesignedHouseholdEnabled}
                     />
                   </AppLaunchGate>
                 </AppFrame>

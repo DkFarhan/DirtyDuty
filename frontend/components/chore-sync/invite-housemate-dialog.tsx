@@ -6,11 +6,14 @@ import { Check, Copy, House, X } from "lucide-react"
 import { ApiError } from "@/lib/auth/api"
 import { householdApi, type Household, type HouseholdInvitation } from "@/lib/household/api"
 import { Button } from "@/components/ui/button"
+import householdStyles from "./redesign/household-screen-view.module.css"
 
 type InviteHousemateDialogProps = {
   household: Household
   open: boolean
   onOpenChange: (open: boolean) => void
+  redesigned?: boolean
+  theme?: "dark" | "light"
 }
 
 function expirationLabel(value: string) {
@@ -27,6 +30,8 @@ export function InviteHousemateDialog({
   household,
   open,
   onOpenChange,
+  redesigned = false,
+  theme = "light",
 }: InviteHousemateDialogProps) {
   const [invitation, setInvitation] = useState<HouseholdInvitation | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
@@ -122,51 +127,138 @@ export function InviteHousemateDialog({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/40 p-0 sm:items-center sm:p-4"
+      className={
+        redesigned
+          ? householdStyles.dialogBackdrop
+          : "fixed inset-0 z-50 flex items-end justify-center bg-slate-950/40 p-0 sm:items-center sm:p-4"
+      }
       onClick={() => onOpenChange(false)}
     >
       <section
         aria-labelledby="invite-housemate-title"
         aria-describedby="invite-housemate-description"
         aria-modal="true"
-        className="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-3xl border border-slate-100 bg-white p-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl sm:rounded-2xl sm:p-6"
+        className={
+          redesigned
+            ? `${householdStyles.dialogSheet} ${householdStyles.inviteDialogSheet} ${theme === "dark" ? householdStyles.darkTheme : householdStyles.lightTheme}`
+            : "max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-3xl border border-slate-100 bg-white p-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl sm:rounded-2xl sm:p-6"
+        }
         onClick={(event) => event.stopPropagation()}
         ref={dialogRef}
         role="dialog"
       >
-        <div className="mb-5 flex items-start justify-between gap-4">
-          <div className="flex min-w-0 items-start gap-3">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
-              <House aria-hidden="true" className="h-5 w-5" />
-            </span>
-            <div className="min-w-0">
-              <h2
-                id="invite-housemate-title"
-                className="font-display text-xl font-black text-slate-900"
-              >
-                Invite a housemate
-              </h2>
-              <p
-                id="invite-housemate-description"
-                className="mt-1 text-sm leading-relaxed text-slate-500"
-              >
-                Generate a secure one-time invite code for someone you want to add to{" "}
-                <span className="break-words font-semibold text-slate-700">{household.name}</span>.
-              </p>
+        {redesigned ? (
+          <>
+            <span aria-hidden="true" className={householdStyles.sheetHandle} />
+            <button
+              aria-label="Close invitation dialog"
+              className={householdStyles.sheetClose}
+              onClick={() => onOpenChange(false)}
+              ref={closeButtonRef}
+              type="button"
+            >
+              <X aria-hidden="true" size={20} />
+            </button>
+            <p className={householdStyles.sheetEyebrow}>Household invitation</p>
+            <h2 className={householdStyles.sheetTitle} id="invite-housemate-title">
+              Invite a housemate.
+            </h2>
+            <p className={householdStyles.inviteDescription} id="invite-housemate-description">
+              Generate a secure, one-time code for someone joining <strong>{household.name}</strong>
+              .
+            </p>
+          </>
+        ) : (
+          <div className="mb-5 flex items-start justify-between gap-4">
+            <div className="flex min-w-0 items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
+                <House aria-hidden="true" className="h-5 w-5" />
+              </span>
+              <div className="min-w-0">
+                <h2
+                  id="invite-housemate-title"
+                  className="font-display text-xl font-black text-slate-900"
+                >
+                  Invite a housemate
+                </h2>
+                <p
+                  id="invite-housemate-description"
+                  className="mt-1 text-sm leading-relaxed text-slate-500"
+                >
+                  Generate a secure one-time invite code for someone you want to add to{" "}
+                  <span className="break-words font-semibold text-slate-700">{household.name}</span>
+                  .
+                </p>
+              </div>
             </div>
+            <button
+              aria-label="Close invitation dialog"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+              onClick={() => onOpenChange(false)}
+              ref={closeButtonRef}
+              type="button"
+            >
+              <X aria-hidden="true" className="h-5 w-5" />
+            </button>
           </div>
-          <button
-            aria-label="Close invitation dialog"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-            onClick={() => onOpenChange(false)}
-            ref={closeButtonRef}
-            type="button"
-          >
-            <X aria-hidden="true" className="h-5 w-5" />
-          </button>
-        </div>
+        )}
 
-        {invitation ? (
+        {redesigned ? (
+          <div className={householdStyles.inviteDialogContent}>
+            {invitation ? (
+              <>
+                <p className={householdStyles.sheetEyebrow}>Invitation code</p>
+                <div className={householdStyles.inviteCodePanel}>
+                  <code>{invitation.inviteCode}</code>
+                  <button
+                    aria-label={copied ? "Invitation code copied" : "Copy invitation code"}
+                    onClick={() => void copyInvitation()}
+                    type="button"
+                  >
+                    {copied ? (
+                      <Check aria-hidden="true" size={16} />
+                    ) : (
+                      <Copy aria-hidden="true" size={16} />
+                    )}
+                    {copied ? "Copied" : "Copy"}
+                  </button>
+                </div>
+                <p className={householdStyles.inviteExpiry}>
+                  This code can be used once. Expires {expirationLabel(invitation.expiresAt)}.
+                </p>
+                {error && (
+                  <p className={householdStyles.dialogError} role="alert">
+                    {error}
+                  </p>
+                )}
+                <button
+                  className={`${householdStyles.primaryButton} ${householdStyles.invitePrimaryButton} ${householdStyles.inviteDoneButton}`}
+                  onClick={() => onOpenChange(false)}
+                  type="button"
+                >
+                  Done
+                </button>
+              </>
+            ) : (
+              <>
+                {error && (
+                  <p className={householdStyles.inviteErrorNotice} role="alert">
+                    <strong>Invite couldn’t be created</strong>
+                    No code was generated. {error}
+                  </p>
+                )}
+                <button
+                  className={`${householdStyles.primaryButton} ${householdStyles.invitePrimaryButton}`}
+                  disabled={isGenerating}
+                  onClick={() => void generateInvitation()}
+                  type="button"
+                >
+                  {isGenerating ? "Generating…" : error ? "Try again" : "Generate code"}
+                </button>
+              </>
+            )}
+          </div>
+        ) : invitation ? (
           <div className="space-y-4">
             <div>
               <p className="mb-2 text-xs font-black uppercase tracking-wider text-slate-500">
