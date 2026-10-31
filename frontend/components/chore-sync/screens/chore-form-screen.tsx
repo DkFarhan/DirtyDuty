@@ -17,6 +17,12 @@ import {
 import { useHouseholds } from "@/lib/household/household-context"
 import { householdChoreResource, useDataSync } from "@/lib/data-sync/data-sync-context"
 import { cn } from "@/lib/utils"
+import {
+  HouseholdLiveDesignHeader,
+  HouseholdLiveDesignSectionHeading,
+  type PreviewTheme,
+} from "../redesign/household-secondary-design-preview"
+import designStyles from "../redesign/household-secondary-design-preview.module.css"
 
 const weekdays = [
   { key: "MO", short: "M" },
@@ -143,7 +149,13 @@ const groupClass = "rounded-2xl border border-slate-100 bg-white p-5 shadow-sm"
 const sectionTitleClass =
   "mb-4 font-display text-[13px] font-extrabold uppercase tracking-[0.12em] text-slate-600"
 
-export function ChoreFormScreen() {
+export function ChoreFormScreen({
+  redesigned = false,
+  theme = "light",
+}: {
+  redesigned?: boolean
+  theme?: PreviewTheme
+}) {
   const { state, screen, navigate, editingChoreId } = useChoreSync()
   const { activeHousehold: household } = useHouseholds()
   const isEditing = screen === "edit-chore"
@@ -394,25 +406,47 @@ export function ChoreFormScreen() {
           : null
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50">
-      <header className="bg-white px-4 pb-4 pt-10">
-        <div className="flex items-center gap-2">
-          <button
-            aria-label="Back to chores"
-            className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100"
-            onClick={leave}
-            type="button"
-          >
-            <ArrowLeft aria-hidden="true" className="h-5 w-5" />
-          </button>
-          <div>
-            <h1 className="font-display text-xl font-black text-slate-900">
-              {isEditing ? "Edit Chore" : "Create Chore"}
-            </h1>
-            <p className="text-xs text-slate-400">{household?.name}</p>
+    <div
+      className={`flex min-h-screen flex-col ${
+        redesigned ? `${designStyles.liveRoot} ${designStyles[theme]}` : "bg-slate-50"
+      }`}
+    >
+      {redesigned ? (
+        <HouseholdLiveDesignHeader
+          eyebrow={isEditing ? "Household · Edit routine" : "Household · New routine"}
+          heroDescription={
+            isEditing
+              ? "Update the details together. Changes will apply to future turns."
+              : "Choose the details now. You can adjust them as your home changes."
+          }
+          heroEyebrow={isEditing ? "Keep the rhythm in sync" : "A small thing, shared"}
+          heroTitle={
+            isEditing ? "Shape the routine to fit your home." : "Build a routine that feels fair."
+          }
+          household={household?.name ?? "Your household"}
+          onBack={leave}
+          title={isEditing ? "Edit a chore" : "Create a chore"}
+        />
+      ) : (
+        <header className="bg-white px-4 pb-4 pt-10">
+          <div className="flex items-center gap-2">
+            <button
+              aria-label="Back to chores"
+              className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100"
+              onClick={leave}
+              type="button"
+            >
+              <ArrowLeft aria-hidden="true" className="h-5 w-5" />
+            </button>
+            <div>
+              <h1 className="font-display text-xl font-black text-slate-900">
+                {isEditing ? "Edit Chore" : "Create Chore"}
+              </h1>
+              <p className="text-xs text-slate-400">{household?.name}</p>
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
+      )}
 
       {loading ? (
         <div aria-label="Loading chore form" className="space-y-4 px-4 py-5">
@@ -439,9 +473,20 @@ export function ChoreFormScreen() {
         </div>
       ) : !options ? null : (
         <>
-          <main className="flex-1 space-y-4 px-4 pb-28 pt-4">
-            <section className={groupClass}>
-              <h2 className={sectionTitleClass}>Chore Details</h2>
+          <main
+            className={`flex-1 space-y-4 px-4 pb-28 pt-4 ${
+              redesigned ? designStyles.liveContent : ""
+            }`}
+          >
+            <section className={cn(groupClass, redesigned && designStyles.liveCard)}>
+              {redesigned ? (
+                <HouseholdLiveDesignSectionHeading
+                  eyebrow="01 · The details"
+                  title="Name the routine"
+                />
+              ) : (
+                <h2 className={sectionTitleClass}>Chore Details</h2>
+              )}
               <div className="space-y-4">
                 <label className="block">
                   <span className="mb-1.5 block text-sm font-semibold text-slate-700">
@@ -519,8 +564,15 @@ export function ChoreFormScreen() {
               </div>
             </section>
 
-            <section className={groupClass}>
-              <h2 className={sectionTitleClass}>Assignment</h2>
+            <section className={cn(groupClass, redesigned && designStyles.liveCard)}>
+              {redesigned ? (
+                <HouseholdLiveDesignSectionHeading
+                  eyebrow="02 · A fair turn"
+                  title="Who takes this on?"
+                />
+              ) : (
+                <h2 className={sectionTitleClass}>Assignment</h2>
+              )}
               <label className="mb-4 block">
                 <span className="mb-1.5 block text-sm font-semibold text-slate-700">
                   People Needed
@@ -679,8 +731,15 @@ export function ChoreFormScreen() {
               )}
             </section>
 
-            <section className={groupClass}>
-              <h2 className={sectionTitleClass}>Schedule</h2>
+            <section className={cn(groupClass, redesigned && designStyles.liveCard)}>
+              {redesigned ? (
+                <HouseholdLiveDesignSectionHeading
+                  eyebrow="03 · The rhythm"
+                  title="When should it happen?"
+                />
+              ) : (
+                <h2 className={sectionTitleClass}>Schedule</h2>
+              )}
               <div className="space-y-4">
                 <div>
                   <p className="mb-2 text-sm font-semibold text-slate-700">Frequency</p>
@@ -832,8 +891,15 @@ export function ChoreFormScreen() {
               </div>
             </section>
 
-            <section className={groupClass}>
-              <h2 className={sectionTitleClass}>Effort &amp; Priority</h2>
+            <section className={cn(groupClass, redesigned && designStyles.liveCard)}>
+              {redesigned ? (
+                <HouseholdLiveDesignSectionHeading
+                  eyebrow="04 · The effort"
+                  title="Set a helpful baseline"
+                />
+              ) : (
+                <h2 className={sectionTitleClass}>Effort &amp; Priority</h2>
+              )}
               <div>
                 <p className="mb-2 text-sm font-semibold text-slate-700">Priority</p>
                 <div className="grid grid-cols-4 gap-1.5">
@@ -908,7 +974,13 @@ export function ChoreFormScreen() {
               </p>
             )}
           </main>
-          <div className="fixed bottom-0 left-1/2 z-40 w-full max-w-sm -translate-x-1/2 border-t border-slate-100 bg-white/95 p-3 pb-[max(.75rem,env(safe-area-inset-bottom))] backdrop-blur">
+          <div
+            className={`fixed bottom-0 z-40 w-full border-t border-slate-100 bg-white/95 p-3 pb-[max(.75rem,env(safe-area-inset-bottom))] backdrop-blur ${
+              redesigned
+                ? `left-0 max-w-none ${designStyles.liveFormFooter}`
+                : "left-1/2 max-w-sm -translate-x-1/2"
+            }`}
+          >
             <Button
               className="h-12 w-full rounded-xl bg-teal-600 font-bold text-white hover:bg-teal-700"
               disabled={saving}

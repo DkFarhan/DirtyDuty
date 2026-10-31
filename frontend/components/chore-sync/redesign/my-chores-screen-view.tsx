@@ -1,6 +1,7 @@
 "use client"
 
 import type { HomeNavigationDestination, HomeVisualTheme } from "./home-screen-view"
+import glassStyles from "../bottom-nav.module.css"
 import styles from "./my-chores-screen-view.module.css"
 
 export type MyChoresTab = "upcoming" | "completed"
@@ -74,7 +75,7 @@ function Navigation({
 }: Pick<MyChoresScreenViewProps, "activeDestination" | "theme" | "onNavigate">) {
   return (
     <nav aria-label="Preview navigation" className={styles.navigation}>
-      <div className={styles.navigationCapsule}>
+      <div className={`${styles.navigationCapsule} ${glassStyles.capsule}`}>
         <div
           aria-hidden="true"
           className={styles.activeIsland}

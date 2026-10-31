@@ -1,6 +1,7 @@
 "use client"
 
 import type { CSSProperties } from "react"
+import glassStyles from "../bottom-nav.module.css"
 import styles from "./home-screen-view.module.css"
 
 export type HomeVisualTheme = "dark" | "light"
@@ -110,7 +111,7 @@ function HomeNavigation({
 }: Pick<HomeScreenViewProps, "activeDestination" | "theme" | "onNavigate">) {
   return (
     <nav aria-label="Preview navigation" className={styles.navigation}>
-      <div className={styles.navigationCapsule}>
+      <div className={`${styles.navigationCapsule} ${glassStyles.capsule}`}>
         <div
           aria-hidden="true"
           className={`${styles.activeIsland} ${

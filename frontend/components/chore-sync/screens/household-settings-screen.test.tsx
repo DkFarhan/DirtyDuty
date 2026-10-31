@@ -155,6 +155,33 @@ describe("household settings screen", () => {
     expect(mocks.revokeInvitation).toHaveBeenLastCalledWith("home-a", "invitation-1")
   })
 
+  it("restores the original settings composition using live household and invitation data", async () => {
+    mocks.listInvitations.mockResolvedValueOnce([
+      activeInvitation,
+      { ...activeInvitation, id: "invitation-2", roleToAssign: "ADMIN" },
+      { ...activeInvitation, id: "invitation-3", roleToAssign: "OWNER" },
+    ])
+    render(<HouseholdSettingsScreen redesigned theme="light" />)
+
+    expect(await screen.findByRole("heading", { name: "Make it feel like yours." })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Home A" })).toBeTruthy()
+    expect(screen.getByLabelText("Household name")).toHaveProperty("value", "Home A")
+    expect(screen.getByText("UTC")).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Notifications" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Who can join" })).toBeTruthy()
+    expect(await screen.findAllByText("Created by Jahid")).toHaveLength(3)
+    const activeBadges = screen.getAllByText("ACTIVE")
+    expect(activeBadges).toHaveLength(3)
+    for (const badge of activeBadges) {
+      expect(badge.parentElement?.className).toContain("invitationPrimaryLine")
+    }
+    expect(screen.queryByText("member")).toBeNull()
+    expect(screen.queryByText("admin")).toBeNull()
+    expect(screen.queryByText("owner")).toBeNull()
+    expect(screen.getAllByText(/No expiry date/)).toHaveLength(3)
+    expect(screen.getByRole("button", { name: "Review deletion steps" })).toBeTruthy()
+  })
+
   it("keeps unsaved style selections through household settings reloads and applies the server style after save", async () => {
     const view = render(<HouseholdSettingsScreen />)
     const styleSelect = (await screen.findByLabelText(

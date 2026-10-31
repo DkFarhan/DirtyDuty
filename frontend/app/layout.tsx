@@ -1,6 +1,6 @@
 import { Analytics } from "@vercel/analytics/next"
 import type { Viewport } from "next"
-import { Inter, Nunito } from "next/font/google"
+import { Inter, Libre_Baskerville, Nunito } from "next/font/google"
 import "./globals.css"
 import { metadata } from "./metadata"
 
@@ -14,6 +14,12 @@ const nunito = Nunito({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700", "800", "900"],
   variable: "--font-nunito",
+})
+
+const householdSerif = Libre_Baskerville({
+  subsets: ["latin"],
+  weight: "400",
+  variable: "--font-household-serif",
 })
 
 export { metadata }
@@ -36,7 +42,11 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${nunito.variable}`} suppressHydrationWarning>
+    <html
+      lang="en"
+      className={`${inter.variable} ${nunito.variable} ${householdSerif.variable}`}
+      suppressHydrationWarning
+    >
       <head>
         <script
           dangerouslySetInnerHTML={{

@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import { Bell, LockKeyhole, UsersRound } from "lucide-react"
 import { ApiError } from "@/lib/auth/api"
 import { useChoreSync } from "@/lib/chore-sync/store"
 import { apiUrl } from "@/lib/auth/api"
@@ -14,6 +15,11 @@ import { useHouseholds } from "@/lib/household/household-context"
 import { notificationApi, type NotificationStyle } from "@/lib/notifications/api"
 import { PasswordInput } from "@/components/ui/password-input"
 import { SubpageHeader } from "./subpage-header"
+import {
+  HouseholdLiveDesignHeader,
+  type PreviewTheme,
+} from "../redesign/household-secondary-design-preview"
+import designStyles from "../redesign/household-secondary-design-preview.module.css"
 
 const notificationStyles: Array<[NotificationStyle, string]> = [
   ["NORMAL", "Normal"],
@@ -34,7 +40,38 @@ function dateLabel(value: string) {
     : new Intl.DateTimeFormat(undefined, { dateStyle: "long" }).format(date)
 }
 
-export function HouseholdSettingsScreen() {
+function invitationCreatedLabel(value: string) {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date)
+}
+
+function invitationExpiryLabel(value: string | null) {
+  if (!value) return "No expiry date"
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return `Expires ${value}`
+
+  const dateText = new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date)
+  const daysRemaining = Math.ceil((date.getTime() - Date.now()) / 86_400_000)
+  const remainingText = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(
+    daysRemaining,
+    "day",
+  )
+
+  return `Expires ${dateText} · ${remainingText}`
+}
+
+export function HouseholdSettingsScreen({
+  redesigned = false,
+  theme = "light",
+}: {
+  redesigned?: boolean
+  theme?: PreviewTheme
+}) {
   const { navigate, pendingAccountDeletionUserId, clearAccountDeletion } = useChoreSync()
   const { user, features } = useAuth()
   const { households, activeHousehold, refresh, updateHousehold, removeHousehold } = useHouseholds()
@@ -322,16 +359,50 @@ export function HouseholdSettingsScreen() {
         : "loading"
 
   return (
-    <div className="min-h-screen bg-stone-100 pb-8 text-slate-800">
-      <SubpageHeader
-        title="Household Settings"
-        subtitle={settings?.name ?? household?.name}
-        back={() => {
-          if (continuingAccountDeletion) clearAccountDeletion()
-          navigate("household")
-        }}
-      />
-      <main className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 pt-4">
+    <div
+      className={`min-h-screen pb-8 ${
+        redesigned
+          ? `${designStyles.liveRoot} ${designStyles[theme]} ${designStyles.settingsPage}`
+          : "bg-stone-100 text-slate-800"
+      }`}
+    >
+      {redesigned ? (
+        <HouseholdLiveDesignHeader
+          eyebrow="Household · Your home"
+          heroDescription="The details and defaults that shape your shared space."
+          heroEyebrow="A home, together"
+          heroIcon="house"
+          heroTitle={
+            <>
+              Make it feel
+              <br />
+              like yours.
+            </>
+          }
+          household={settings?.name ?? household?.name ?? "Your household"}
+          onBack={() => {
+            if (continuingAccountDeletion) clearAccountDeletion()
+            navigate("household")
+          }}
+          title="Household settings"
+        />
+      ) : (
+        <SubpageHeader
+          title="Household Settings"
+          subtitle={settings?.name ?? household?.name}
+          back={() => {
+            if (continuingAccountDeletion) clearAccountDeletion()
+            navigate("household")
+          }}
+        />
+      )}
+      <main
+        className={
+          redesigned
+            ? `${designStyles.liveContent} pt-4`
+            : "mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 pt-4"
+        }
+      >
         {reauthMessage && (
           <p role="status" className="rounded-xl bg-teal-50 p-3 text-sm text-teal-800">
             {reauthMessage}
@@ -359,24 +430,58 @@ export function HouseholdSettingsScreen() {
         )}
         {visibleStatus === "loaded" && settings && (
           <>
-            <section className="flex flex-col gap-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex items-start justify-between gap-3">
+            <section
+              className={
+                redesigned
+                  ? designStyles.settingsCard
+                  : "flex flex-col gap-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+              }
+            >
+              <div
+                className={
+                  redesigned ? designStyles.cardHeading : "flex items-start justify-between gap-3"
+                }
+              >
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">
-                    Household details
+                  <p
+                    className={
+                      redesigned
+                        ? designStyles.eyebrow
+                        : "text-xs font-bold uppercase tracking-[0.16em] text-slate-400"
+                    }
+                  >
+                    {redesigned ? "Your household" : "Household details"}
                   </p>
-                  <h2 className="mt-1 text-xl font-black text-slate-900">{settings.name}</h2>
+                  <h2 className={redesigned ? undefined : "mt-1 text-xl font-black text-slate-900"}>
+                    {settings.name}
+                  </h2>
                 </div>
-                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                <span
+                  className={
+                    redesigned
+                      ? designStyles.rolePill
+                      : "rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600"
+                  }
+                >
                   {settings.currentUserRole}
                 </span>
               </div>
 
-              <label className="flex flex-col gap-1.5 text-xs font-bold text-slate-500">
+              <label
+                className={
+                  redesigned
+                    ? designStyles.fieldLabel
+                    : "flex flex-col gap-1.5 text-xs font-bold text-slate-500"
+                }
+              >
                 Household name
                 <input
                   aria-label="Household name"
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-teal-500 disabled:bg-slate-50 disabled:text-slate-500"
+                  className={
+                    redesigned
+                      ? undefined
+                      : "rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-teal-500 disabled:bg-slate-50 disabled:text-slate-500"
+                  }
                   disabled={!canEdit}
                   maxLength={120}
                   onChange={(event) => {
@@ -387,11 +492,24 @@ export function HouseholdSettingsScreen() {
                 />
               </label>
 
-              <label className="flex flex-col gap-1.5 text-xs font-bold text-slate-500">
-                Description <span className="font-normal text-slate-400">(optional)</span>
+              <label
+                className={
+                  redesigned
+                    ? designStyles.fieldLabel
+                    : "flex flex-col gap-1.5 text-xs font-bold text-slate-500"
+                }
+              >
+                {redesigned ? "A little about this home" : "Description"}{" "}
+                <span className={redesigned ? undefined : "font-normal text-slate-400"}>
+                  {redesigned ? "Optional" : "(optional)"}
+                </span>
                 <textarea
                   aria-label="Household description"
-                  className="min-h-[96px] resize-y rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-teal-500 disabled:bg-slate-50 disabled:text-slate-500"
+                  className={
+                    redesigned
+                      ? undefined
+                      : "min-h-[96px] resize-y rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-teal-500 disabled:bg-slate-50 disabled:text-slate-500"
+                  }
                   disabled={!canEdit}
                   maxLength={2000}
                   onChange={(event) => {
@@ -402,68 +520,135 @@ export function HouseholdSettingsScreen() {
                 />
               </label>
 
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-xl bg-slate-50 p-3.5">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
-                    Timezone
-                  </p>
-                  <p className="mt-1 break-words text-sm font-semibold text-slate-700">
-                    {settings.timezone}
-                  </p>
+              <div className={redesigned ? designStyles.detailGrid : "grid gap-3 sm:grid-cols-2"}>
+                <div className={redesigned ? undefined : "rounded-xl bg-slate-50 p-3.5"}>
+                  {redesigned ? (
+                    <>
+                      <span>TIMEZONE</span>
+                      <strong>{settings.timezone}</strong>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                        Timezone
+                      </p>
+                      <p className="mt-1 break-words text-sm font-semibold text-slate-700">
+                        {settings.timezone}
+                      </p>
+                    </>
+                  )}
                 </div>
-                <div className="rounded-xl bg-slate-50 p-3.5">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
-                    Created
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-slate-700">
-                    {dateLabel(settings.createdAt)}
-                  </p>
+                <div className={redesigned ? undefined : "rounded-xl bg-slate-50 p-3.5"}>
+                  {redesigned ? (
+                    <>
+                      <span>STARTED</span>
+                      <strong>{dateLabel(settings.createdAt)}</strong>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                        Created
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-slate-700">
+                        {dateLabel(settings.createdAt)}
+                      </p>
+                    </>
+                  )}
                 </div>
               </div>
 
               {canEdit ? (
                 <button
-                  className="w-full rounded-xl bg-teal-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  className={
+                    redesigned
+                      ? designStyles.primaryButton
+                      : "w-full rounded-xl bg-teal-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  }
                   disabled={busy || name.trim().length < 2}
                   onClick={() => void save()}
                   type="button"
                 >
-                  {busy ? "Saving…" : "Save changes"}
+                  {busy ? "Saving…" : redesigned ? "Save household details" : "Save changes"}
                 </button>
               ) : (
-                <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-center text-xs text-slate-500">
+                <p
+                  className={
+                    redesigned
+                      ? designStyles.permissionNote
+                      : "rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-center text-xs text-slate-500"
+                  }
+                >
                   Only the household owner can edit these details.
                 </p>
               )}
               {saved && (
-                <p role="status" className="text-center text-xs font-medium text-teal-700">
+                <p
+                  role="status"
+                  className={
+                    redesigned
+                      ? designStyles.liveStatus
+                      : "text-center text-xs font-medium text-teal-700"
+                  }
+                >
                   Household settings saved.
                 </p>
               )}
               {error && (
-                <p role="alert" className="text-xs text-rose-600">
+                <p
+                  role="alert"
+                  className={redesigned ? designStyles.liveError : "text-xs text-rose-600"}
+                >
                   {error}
                 </p>
               )}
             </section>
 
-            <section className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex items-start justify-between gap-3">
+            <section
+              className={
+                redesigned
+                  ? designStyles.settingsCard
+                  : "flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+              }
+            >
+              <div
+                className={
+                  redesigned ? designStyles.cardHeading : "flex items-start justify-between gap-3"
+                }
+              >
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">
-                    Notifications
+                  <p
+                    className={
+                      redesigned
+                        ? designStyles.eyebrow
+                        : "text-xs font-bold uppercase tracking-[0.16em] text-slate-400"
+                    }
+                  >
+                    {redesigned ? "A shared default" : "Notifications"}
                   </p>
-                  <h2 className="mt-1 text-lg font-black text-slate-900">
-                    Default notification style
+                  <h2 className={redesigned ? undefined : "mt-1 text-lg font-black text-slate-900"}>
+                    {redesigned ? "Notifications" : "Default notification style"}
                   </h2>
                 </div>
+                {redesigned && (
+                  <Bell aria-hidden="true" className={designStyles.headingIcon} size={20} />
+                )}
               </div>
 
-              <label className="flex flex-col gap-1.5 text-xs font-bold text-slate-500">
-                Default style
+              <label
+                className={
+                  redesigned
+                    ? designStyles.fieldLabel
+                    : "flex flex-col gap-1.5 text-xs font-bold text-slate-500"
+                }
+              >
+                {redesigned ? "Household notification style" : "Default style"}
                 <select
                   aria-label="Default notification style"
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-900 disabled:bg-slate-50 disabled:text-slate-500"
+                  className={
+                    redesigned
+                      ? undefined
+                      : "rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-900 disabled:bg-slate-50 disabled:text-slate-500"
+                  }
                   disabled={!canEditNotificationStyle || busy}
                   onChange={(event) => {
                     if (isNotificationStyle(event.target.value)) {
@@ -484,53 +669,110 @@ export function HouseholdSettingsScreen() {
                   ))}
                 </select>
               </label>
-              <p className="text-xs text-slate-500">
-                Members can choose their own style in notification settings.
+              <p className={redesigned ? designStyles.helperText : "text-xs text-slate-500"}>
+                {redesigned
+                  ? "This is the shared household default. Each member can choose a personal style in their own notification settings."
+                  : "Members can choose their own style in notification settings."}
               </p>
               {canEditNotificationStyle && (
                 <button
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  className={
+                    redesigned
+                      ? designStyles.secondaryButton
+                      : "w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  }
                   disabled={busy}
                   onClick={() => void saveNotificationStyle()}
                   type="button"
                 >
-                  Save default notification style
+                  {redesigned ? "Save default style" : "Save default notification style"}
                 </button>
               )}
               {styleSaved && (
-                <p role="status" className="text-center text-xs font-medium text-teal-700">
+                <p
+                  role="status"
+                  className={
+                    redesigned
+                      ? designStyles.liveStatus
+                      : "text-center text-xs font-medium text-teal-700"
+                  }
+                >
                   Default style saved.
                 </p>
               )}
               {styleError && (
-                <p role="alert" className="text-xs text-rose-600">
+                <p
+                  role="alert"
+                  className={redesigned ? designStyles.liveError : "text-xs text-rose-600"}
+                >
                   {styleError}
                 </p>
               )}
             </section>
 
             {canManageInvitations && (
-              <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="flex items-center justify-between gap-3">
+              <section
+                className={
+                  redesigned
+                    ? designStyles.settingsCard
+                    : "rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+                }
+              >
+                <div
+                  className={
+                    redesigned
+                      ? designStyles.cardHeading
+                      : "flex items-center justify-between gap-3"
+                  }
+                >
                   <div>
-                    <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">
-                      Active invitations
+                    <p
+                      className={
+                        redesigned
+                          ? designStyles.eyebrow
+                          : "text-xs font-bold uppercase tracking-[0.16em] text-slate-400"
+                      }
+                    >
+                      {redesigned ? "Invitations" : "Active invitations"}
                     </p>
-                    <h2 className="mt-1 text-lg font-black text-slate-900">Manage access</h2>
+                    <h2
+                      className={redesigned ? undefined : "mt-1 text-lg font-black text-slate-900"}
+                    >
+                      {redesigned ? "Who can join" : "Manage access"}
+                    </h2>
                   </div>
+                  {redesigned && (
+                    <span className={designStyles.countPill}>{invitations.length} active</span>
+                  )}
                 </div>
 
-                <div className="mt-4 space-y-3">
+                <div className={redesigned ? undefined : "mt-4 space-y-3"}>
                   {visibleInvitationStatus === "loading" && (
-                    <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500">
+                    <p
+                      className={
+                        redesigned
+                          ? designStyles.helperText
+                          : "rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500"
+                      }
+                    >
                       Loading invitations…
                     </p>
                   )}
                   {visibleInvitationStatus === "error" && (
-                    <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-3 text-sm text-rose-700">
+                    <div
+                      className={
+                        redesigned
+                          ? designStyles.statusBanner
+                          : "rounded-xl border border-rose-100 bg-rose-50 px-3 py-3 text-sm text-rose-700"
+                      }
+                    >
                       <p role="alert">{invitationError}</p>
                       <button
-                        className="mt-2 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs font-bold text-rose-700"
+                        className={
+                          redesigned
+                            ? designStyles.textButton
+                            : "mt-2 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs font-bold text-rose-700"
+                        }
                         onClick={() => void loadInvitations()}
                         type="button"
                       >
@@ -539,12 +781,20 @@ export function HouseholdSettingsScreen() {
                     </div>
                   )}
                   {visibleInvitationStatus === "loaded" && invitationError && (
-                    <div className="flex items-center gap-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                    <div
+                      className={
+                        redesigned
+                          ? designStyles.statusBanner
+                          : "flex items-center gap-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900"
+                      }
+                    >
                       <p role="alert" className="flex-1">
                         {invitationError}
                       </p>
                       <button
-                        className="shrink-0 font-bold underline"
+                        className={
+                          redesigned ? designStyles.textButton : "shrink-0 font-bold underline"
+                        }
                         onClick={() => void loadInvitations()}
                         type="button"
                       >
@@ -553,39 +803,83 @@ export function HouseholdSettingsScreen() {
                     </div>
                   )}
                   {visibleInvitationStatus === "loaded" && invitations.length === 0 && (
-                    <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-500">
+                    <p
+                      className={
+                        redesigned
+                          ? designStyles.permissionNote
+                          : "rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-500"
+                      }
+                    >
                       No active invitations.
                     </p>
                   )}
                   {visibleInvitationStatus === "loaded" &&
                     invitations.map((invitation) => (
                       <div
-                        className="rounded-xl border border-slate-200 bg-slate-50 p-3.5"
+                        className={
+                          redesigned
+                            ? designStyles.invitationRow
+                            : "rounded-xl border border-slate-200 bg-slate-50 p-3.5"
+                        }
                         key={invitation.id}
                       >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="space-y-1 text-sm text-slate-600">
-                            <p className="font-semibold text-slate-800">
-                              Created {dateLabel(invitation.createdAt)}
-                            </p>
-                            <p>
-                              Expires {invitation.expiresAt ? dateLabel(invitation.expiresAt) : "—"}
-                            </p>
-                            <p>
-                              Status:{" "}
-                              <span className="font-medium text-slate-700">
-                                {invitation.status}
-                              </span>
-                            </p>
-                            {invitation.createdByDisplayName && (
-                              <p>Created by {invitation.createdByDisplayName}</p>
-                            )}
-                            {invitation.roleToAssign && (
-                              <p>Granted role: {invitation.roleToAssign}</p>
-                            )}
-                          </div>
+                        {redesigned && (
+                          <span className={designStyles.inviteMark}>
+                            <UsersRound aria-hidden="true" size={17} />
+                          </span>
+                        )}
+                        <div
+                          className={
+                            redesigned
+                              ? designStyles.invitationDetails
+                              : "space-y-1 text-sm text-slate-600"
+                          }
+                        >
+                          {redesigned ? (
+                            <>
+                              <div className={designStyles.invitationPrimaryLine}>
+                                <strong>
+                                  Created by{" "}
+                                  {invitation.createdByDisplayName ?? "a household member"}
+                                </strong>
+                                <span className={designStyles.invitationStatus}>
+                                  {invitation.status}
+                                </span>
+                              </div>
+                              <small>Created {invitationCreatedLabel(invitation.createdAt)}</small>
+                              <small>{invitationExpiryLabel(invitation.expiresAt)}</small>
+                            </>
+                          ) : (
+                            <>
+                              <p className="font-semibold text-slate-800">
+                                Created {dateLabel(invitation.createdAt)}
+                              </p>
+                              <p>
+                                Expires{" "}
+                                {invitation.expiresAt ? dateLabel(invitation.expiresAt) : "—"}
+                              </p>
+                              <p>
+                                Status:{" "}
+                                <span className="font-medium text-slate-700">
+                                  {invitation.status}
+                                </span>
+                              </p>
+                              {invitation.createdByDisplayName && (
+                                <p>Created by {invitation.createdByDisplayName}</p>
+                              )}
+                              {invitation.roleToAssign && (
+                                <p>Granted role: {invitation.roleToAssign}</p>
+                              )}
+                            </>
+                          )}
+                        </div>
+                        <div className={redesigned ? designStyles.invitationActions : undefined}>
                           <button
-                            className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-700 transition hover:bg-rose-50"
+                            className={
+                              redesigned
+                                ? designStyles.textDanger
+                                : "rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-700 transition hover:bg-rose-50"
+                            }
                             onClick={() => {
                               setRevokeError("")
                               setRevokeTargetId(invitation.id)
@@ -598,30 +892,68 @@ export function HouseholdSettingsScreen() {
                       </div>
                     ))}
                 </div>
+                {redesigned && (
+                  <p className={designStyles.helperText}>
+                    Only active invitations appear here. Revoking one prevents anyone from using its
+                    code.
+                  </p>
+                )}
               </section>
             )}
 
             {canEdit && (
-              <section className="rounded-2xl border border-rose-200 bg-rose-50/60 p-5 shadow-sm">
-                <p className="text-xs font-bold uppercase tracking-[0.16em] text-rose-500">
-                  Danger zone
-                </p>
-                <h2 className="mt-1 text-lg font-black text-slate-900">Delete household</h2>
-                <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                  Permanently remove this household and its data.
+              <section
+                className={
+                  redesigned
+                    ? designStyles.dangerZone
+                    : "rounded-2xl border border-rose-200 bg-rose-50/60 p-5 shadow-sm"
+                }
+              >
+                {redesigned ? (
+                  <div className={designStyles.cardHeading}>
+                    <div>
+                      <p className={designStyles.dangerEyebrow}>Irreversible</p>
+                      <h2>Delete household</h2>
+                    </div>
+                    <LockKeyhole aria-hidden="true" size={20} />
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-xs font-bold uppercase tracking-[0.16em] text-rose-500">
+                      Danger zone
+                    </p>
+                    <h2 className="mt-1 text-lg font-black text-slate-900">Delete household</h2>
+                  </>
+                )}
+                <p
+                  className={redesigned ? undefined : "mt-2 text-sm leading-relaxed text-slate-600"}
+                >
+                  {redesigned
+                    ? "Deleting removes this household and its data for everyone. If you only want to stop managing the home, transfer ownership instead."
+                    : "Permanently remove this household and its data."}
                 </p>
                 {continuingAccountDeletion && (
-                  <p className="mt-2 text-sm leading-relaxed text-amber-800">
+                  <p
+                    className={
+                      redesigned
+                        ? designStyles.helperText
+                        : "mt-2 text-sm leading-relaxed text-amber-800"
+                    }
+                  >
                     This does not delete your account. After the household is deleted, you will
                     return to Account &amp; Privacy to continue.
                   </p>
                 )}
                 <button
-                  className="mt-4 w-full rounded-xl border border-rose-200 bg-white px-3 py-2.5 text-sm font-bold text-rose-700 transition hover:bg-rose-50"
+                  className={
+                    redesigned
+                      ? designStyles.dangerOutline
+                      : "mt-4 w-full rounded-xl border border-rose-200 bg-white px-3 py-2.5 text-sm font-bold text-rose-700 transition hover:bg-rose-50"
+                  }
                   onClick={() => setDeleteOpen(true)}
                   type="button"
                 >
-                  Delete household
+                  {redesigned ? "Review deletion steps" : "Delete household"}
                 </button>
               </section>
             )}

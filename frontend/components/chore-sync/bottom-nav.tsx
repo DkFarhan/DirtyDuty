@@ -2,8 +2,8 @@
 
 import type { ComponentType, SVGProps } from "react"
 import type { Screen } from "@/lib/chore-sync/types"
-import { cn } from "@/lib/utils"
 import { HomeIcon, ListIcon, PersonIcon, UsersIcon } from "./icons"
+import styles from "./bottom-nav.module.css"
 
 export type NavKey = "dashboard" | "my-chores" | "household" | "profile"
 
@@ -26,24 +26,28 @@ const tabs: TabDef[] = [
 
 export function BottomNav({ active, navigate }: { active: NavKey; navigate: (s: Screen) => void }) {
   return (
-    <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-sm bg-white border-t border-slate-100 flex items-center h-16 px-2 z-50">
-      {tabs.map(({ id, label, icon: Icon }) => {
-        const isActive = id === active
-        return (
-          <button
-            key={id}
-            onClick={() => navigate(id)}
-            aria-current={isActive ? "page" : undefined}
-            className={cn(
-              "flex-1 flex flex-col items-center gap-0.5 py-1 transition-colors",
-              isActive ? "text-teal-600" : "text-slate-400",
-            )}
-          >
-            <Icon active={isActive} className="w-6 h-6" />
-            <span className="text-[10px] font-display font-semibold">{label}</span>
-          </button>
-        )
-      })}
+    <nav aria-label="Primary navigation" className={styles.navigation}>
+      <div className={styles.capsule}>
+        <span aria-hidden="true" className={styles.activeIsland} data-active={active} />
+        <div className={styles.items}>
+          {tabs.map(({ id, label, icon: Icon }) => {
+            const isActive = id === active
+            return (
+              <button
+                key={id}
+                onClick={() => navigate(id)}
+                aria-current={isActive ? "page" : undefined}
+                aria-label={label}
+                className={styles.item}
+                type="button"
+              >
+                <Icon active={isActive} className={styles.icon} />
+                <span className={styles.label}>{label}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
     </nav>
   )
 }

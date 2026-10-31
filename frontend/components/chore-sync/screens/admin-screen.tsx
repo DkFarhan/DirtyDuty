@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { MoreHorizontal } from "lucide-react"
+import { MoreHorizontal, Plus } from "lucide-react"
 import { useChoreSync } from "@/lib/chore-sync/store"
 import { ApiError } from "@/lib/auth/api"
 import {
@@ -14,10 +14,23 @@ import { useHouseholds } from "@/lib/household/household-context"
 import { householdChoreResource, useDataSync } from "@/lib/data-sync/data-sync-context"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { BottomNav } from "../bottom-nav"
 import { ChevronLeftIcon } from "../icons"
+import {
+  HouseholdLiveDesignHeader,
+  HouseholdLiveDesignSectionHeading,
+  type PreviewTheme,
+} from "../redesign/household-secondary-design-preview"
+import designStyles from "../redesign/household-secondary-design-preview.module.css"
 
-export function AdminScreen({ initialTab = "chores" }: { initialTab?: "members" | "chores" }) {
+export function AdminScreen({
+  initialTab = "chores",
+  redesigned = false,
+  theme = "light",
+}: {
+  initialTab?: "members" | "chores"
+  redesigned?: boolean
+  theme?: PreviewTheme
+}) {
   void initialTab
   const { navigate, editChore } = useChoreSync()
   const { activeHousehold: household } = useHouseholds()
@@ -156,44 +169,118 @@ export function AdminScreen({ initialTab = "chores" }: { initialTab?: "members" 
   }
 
   const activeHouseholdId = household?.id ?? null
+  const visibleChores = chores.filter((chore) => chore.archivedAt === null)
   const visibleChoreState =
     loadedHouseholdId.current === activeHouseholdId || choreState === "error"
       ? choreState
       : "loading"
+  const activeChoreCount = visibleChores.filter((chore) => chore.active).length
+  const pausedChoreCount = visibleChores.filter((chore) => !chore.active).length
+  const routineCountLabel = `${visibleChores.length} ${
+    visibleChores.length === 1 ? "routine" : "routines"
+  }`
 
   return (
-    <div className="flex flex-col min-h-screen bg-slate-50 pb-20">
-      <header className="border-b border-slate-100 bg-white px-5 pb-4 pt-12">
-        <div className="flex items-center gap-3 mb-1">
-          <button
-            onClick={() => navigate("household")}
-            aria-label="Back"
-            className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 transition-colors"
-          >
-            <ChevronLeftIcon className="w-5 h-5 text-slate-500" />
-          </button>
-          <div>
-            <h1 className="text-xl font-black text-slate-900 font-display">Household Management</h1>
-            <p className="text-slate-400 text-xs">{household?.name ?? "Your household"}</p>
+    <div
+      className={`flex min-h-screen flex-col ${
+        redesigned
+          ? `${designStyles.liveRoot} ${designStyles[theme]} ${designStyles.adminPage}`
+          : "bg-slate-50"
+      }`}
+    >
+      {redesigned ? (
+        <HouseholdLiveDesignHeader
+          action={
+            <button
+              aria-label="Create a chore"
+              className={designStyles.primaryButton}
+              onClick={() => navigate("create-chore")}
+              type="button"
+            >
+              <Plus aria-hidden="true" size={17} /> Create chore
+            </button>
+          }
+          eyebrow="Household · Admin tools"
+          heroDescription="Keep routines clear, shared, and easy to adjust."
+          heroEyebrow="A rhythm that works"
+          heroIcon="repeat"
+          heroTitle={
+            <>
+              Make room for
+              <br />a smoother week.
+            </>
+          }
+          household={household?.name ?? "Your household"}
+          onBack={() => navigate("household")}
+          title="Manage chores"
+        />
+      ) : (
+        <header className="border-b border-slate-100 bg-white px-5 pb-4 pt-12">
+          <div className="flex items-center gap-3 mb-1">
+            <button
+              onClick={() => navigate("household")}
+              aria-label="Back"
+              className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 transition-colors"
+            >
+              <ChevronLeftIcon className="w-5 h-5 text-slate-500" />
+            </button>
+            <div>
+              <h1 className="text-xl font-black text-slate-900 font-display">
+                Household Management
+              </h1>
+              <p className="text-slate-400 text-xs">{household?.name ?? "Your household"}</p>
+            </div>
           </div>
-        </div>
 
-        <div className="mt-4 flex items-center gap-2 border-t border-slate-100 pt-4 text-sm font-semibold text-slate-600">
-          <span aria-hidden="true">📋</span>
-          <span>Chores</span>
-        </div>
-      </header>
+          <div className="mt-4 flex items-center gap-2 border-t border-slate-100 pt-4 text-sm font-semibold text-slate-600">
+            <span aria-hidden="true">📋</span>
+            <span>Chores</span>
+          </div>
+        </header>
+      )}
 
-      <div className="px-4 pt-4">
-        <div className="flex flex-col gap-3">
-          <Button
-            aria-label="Create a chore"
-            onClick={() => navigate("create-chore")}
-            className="h-12 w-full rounded-xl bg-teal-600 text-[15px] font-bold text-white shadow-sm hover:bg-teal-700"
-            type="button"
-          >
-            <span>+</span> Create Chore
-          </Button>
+      <div className={redesigned ? designStyles.liveContent : "px-4 pt-4"}>
+        {redesigned && (
+          <>
+            <div className={designStyles.summaryGrid}>
+              <article className={designStyles.summaryCard}>
+                <span>Active</span>
+                <strong>{visibleChoreState === "loaded" ? activeChoreCount : "—"}</strong>
+                <small>Household routines</small>
+              </article>
+              <article className={designStyles.summaryCard}>
+                <span>Paused</span>
+                <strong>{visibleChoreState === "loaded" ? pausedChoreCount : "—"}</strong>
+                <small>Ready when you are</small>
+              </article>
+              <article className={designStyles.summaryCard}>
+                <span>Household</span>
+                <strong>
+                  {visibleChoreState === "loaded"
+                    ? (managementOptions?.activeMembers.length ?? "—")
+                    : "—"}
+                </strong>
+                <small>People in the rotation</small>
+              </article>
+            </div>
+            <HouseholdLiveDesignSectionHeading
+              detail={visibleChoreState === "loaded" ? routineCountLabel : "Routines"}
+              eyebrow="The shared rhythm"
+              title="Household chores"
+            />
+          </>
+        )}
+        <div className={redesigned ? designStyles.choreList : "flex flex-col gap-3"}>
+          {!redesigned && (
+            <Button
+              aria-label="Create a chore"
+              onClick={() => navigate("create-chore")}
+              className="h-12 w-full rounded-xl bg-teal-600 text-[15px] font-bold text-white shadow-sm hover:bg-teal-700"
+              type="button"
+            >
+              <span>+</span> Create Chore
+            </Button>
+          )}
           {(actionError || (visibleChoreState === "loaded" && refreshError)) && (
             <div className="flex items-center gap-3 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">
               <p role="alert" className="flex-1">
@@ -211,19 +298,37 @@ export function AdminScreen({ initialTab = "chores" }: { initialTab?: "members" 
             </div>
           )}
           {visibleChoreState === "loading" && (
-            <div aria-label="Loading chores" className="space-y-3">
+            <div
+              aria-label="Loading chores"
+              className={redesigned ? designStyles.choreList : "space-y-3"}
+            >
               {[0, 1, 2].map((item) => (
-                <div className="h-28 animate-pulse rounded-2xl bg-white shadow-sm" key={item} />
+                <div
+                  className={
+                    redesigned
+                      ? `${designStyles.choreCard} ${designStyles.skeleton}`
+                      : "h-28 animate-pulse rounded-2xl bg-white shadow-sm"
+                  }
+                  key={item}
+                />
               ))}
             </div>
           )}
           {visibleChoreState === "error" && (
-            <div className="rounded-2xl border border-slate-100 bg-white p-5 text-center shadow-sm">
+            <div
+              className={
+                redesigned
+                  ? designStyles.emptyCard
+                  : "rounded-2xl border border-slate-100 bg-white p-5 text-center shadow-sm"
+              }
+            >
+              {redesigned && <p className={designStyles.eyebrow}>A momentary pause</p>}
+              {redesigned && <h3>Chores didn’t load.</h3>}
               <p role="alert" className="text-sm text-slate-600">
                 {choreError}
               </p>
               <Button
-                className="mt-3 rounded-xl"
+                className={redesigned ? designStyles.secondaryButton : "mt-3 rounded-xl"}
                 onClick={() => void loadChores()}
                 type="button"
                 variant="outline"
@@ -232,17 +337,39 @@ export function AdminScreen({ initialTab = "chores" }: { initialTab?: "members" 
               </Button>
             </div>
           )}
-          {visibleChoreState === "loaded" && chores.length === 0 && (
-            <div className="rounded-2xl border border-slate-100 bg-white px-5 py-8 text-center shadow-sm">
-              <div aria-hidden="true" className="mb-2 text-3xl">
-                🧹
-              </div>
-              <p className="font-display font-bold text-slate-900">No chores yet</p>
+          {visibleChoreState === "loaded" && visibleChores.length === 0 && (
+            <div
+              className={
+                redesigned
+                  ? designStyles.emptyCard
+                  : "rounded-2xl border border-slate-100 bg-white px-5 py-8 text-center shadow-sm"
+              }
+            >
+              {redesigned ? (
+                <>
+                  <span aria-hidden="true" className={designStyles.emptyGlyph}>
+                    <Plus size={24} />
+                  </span>
+                  <p className={designStyles.eyebrow}>A fresh start</p>
+                  <h3>No shared chores yet.</h3>
+                </>
+              ) : (
+                <>
+                  <div aria-hidden="true" className="mb-2 text-3xl">
+                    🧹
+                  </div>
+                  <p className="font-display font-bold text-slate-900">No chores yet</p>
+                </>
+              )}
               <p className="mt-1 text-sm text-slate-400">
                 Create your first chore and keep the household moving.
               </p>
               <Button
-                className="mt-4 rounded-xl bg-teal-600 text-white hover:bg-teal-700"
+                className={
+                  redesigned
+                    ? designStyles.primaryButton
+                    : "mt-4 rounded-xl bg-teal-600 text-white hover:bg-teal-700"
+                }
                 onClick={() => navigate("create-chore")}
                 type="button"
               >
@@ -251,14 +378,20 @@ export function AdminScreen({ initialTab = "chores" }: { initialTab?: "members" 
             </div>
           )}
           {visibleChoreState === "loaded" &&
-            chores.map((chore) => {
+            visibleChores.map((chore) => {
               const category = chore.categoryId
                 ? managementOptions?.categories.find((item) => item.id === chore.categoryId)
                 : undefined
               const categoryLabel = category?.name
               const peopleNeeded = chore.schedule?.peopleNeeded ?? 1
               const participantCount = chore.schedule?.participantUserIds.length ?? 0
-              const assignment =
+              const fixedAssignee = managementOptions?.activeMembers.find(
+                (member) => member.userId === chore.schedule?.fixedAssigneeUserId,
+              )
+              const peopleLabel = `${participantCount} ${
+                participantCount === 1 ? "person" : "people"
+              }`
+              const legacyAssignment =
                 chore.schedule?.assignmentStrategy === "FIXED"
                   ? peopleNeeded === 1
                     ? `Fixed · ${managementOptions?.activeMembers.find((member) => member.userId === chore.schedule?.fixedAssigneeUserId)?.displayName ?? "Member"}`
@@ -268,59 +401,141 @@ export function AdminScreen({ initialTab = "chores" }: { initialTab?: "members" 
                     : chore.schedule?.assignmentStrategy === "RANDOM"
                       ? `Random · ${peopleNeeded}/${participantCount} people`
                       : null
+              const assignment = redesigned
+                ? chore.schedule?.assignmentStrategy === "FIXED"
+                  ? fixedAssignee
+                    ? `Fixed · ${fixedAssignee.displayName}`
+                    : "Fixed assignment"
+                  : chore.schedule?.assignmentStrategy === "ROUND_ROBIN"
+                    ? `Rotate · ${
+                        participantCount > 0
+                          ? peopleLabel
+                          : `${peopleNeeded} ${peopleNeeded === 1 ? "person" : "people"}`
+                      }`
+                    : chore.schedule?.assignmentStrategy === "RANDOM"
+                      ? `Random · ${peopleNeeded} of ${
+                          participantCount > 0 ? peopleLabel : "participants"
+                        }`
+                      : null
+                : legacyAssignment
+              const scheduleDescription = chore.schedule
+                ? [
+                    chore.schedule.recurrenceRule
+                      ? describeRecurrence(chore.schedule.recurrenceRule)
+                      : null,
+                    formatTime(chore.schedule.dueTime),
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")
+                : ""
+              const categoryScheduleParts = [categoryLabel, scheduleDescription].filter(
+                (value): value is string => Boolean(value),
+              )
+              const choreDetails = [
+                assignment,
+                Number.isFinite(chore.difficulty) ? `Effort ${chore.difficulty}/5` : null,
+                chore.estimatedMinutes ? `~${chore.estimatedMinutes} min` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")
               return (
                 <article
-                  className="relative rounded-2xl border border-slate-100 bg-white p-4 shadow-sm"
+                  className={
+                    redesigned
+                      ? designStyles.choreCard
+                      : "relative rounded-2xl border border-slate-100 bg-white p-4 shadow-sm"
+                  }
                   key={chore.id}
                 >
-                  <div className="flex items-start gap-3">
+                  <div className={redesigned ? "contents" : "flex items-start gap-3"}>
                     <span
                       aria-hidden="true"
-                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-2xl"
+                      className={
+                        redesigned
+                          ? designStyles.choreIcon
+                          : "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-2xl"
+                      }
                     >
                       {categoryIcon(category?.iconKey)}
                     </span>
-                    <div className="min-w-0 flex-1 pr-8">
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <div
+                      className={`min-w-0 flex-1 ${redesigned ? designStyles.choreInfo : "pr-8"}`}
+                    >
+                      <div
+                        className={`flex flex-wrap items-center gap-x-2 gap-y-1 ${
+                          redesigned ? designStyles.choreTitleLine : ""
+                        }`}
+                      >
                         <h3 className="min-w-0 break-words font-display text-base font-extrabold leading-snug text-slate-900">
                           {chore.title}
                         </h3>
                         <span
-                          className={cn(
-                            "shrink-0 rounded-full px-2 py-1 text-[10px] font-bold",
-                            chore.active
-                              ? "bg-emerald-50 text-emerald-700"
-                              : "bg-slate-100 text-slate-500",
-                          )}
+                          className={
+                            redesigned
+                              ? `${designStyles.statusPill} ${
+                                  chore.active ? designStyles.activePill : designStyles.pausedPill
+                                }`
+                              : cn(
+                                  "shrink-0 rounded-full px-2 py-1 text-[10px] font-bold",
+                                  chore.active
+                                    ? "bg-emerald-50 text-emerald-700"
+                                    : "bg-slate-100 text-slate-500",
+                                )
+                          }
                         >
                           {chore.active ? "Active" : "Paused"}
                         </span>
                       </div>
-                      <p className="mt-1.5 text-xs font-medium text-slate-600">
-                        {categoryLabel ?? "Uncategorized"}
-                      </p>
-                      <p className="mt-1 text-xs leading-relaxed text-slate-600">
-                        {describeRecurrence(chore.schedule?.recurrenceRule)}
-                        {formatTime(chore.schedule?.dueTime)
-                          ? ` · ${formatTime(chore.schedule?.dueTime)}`
-                          : ""}
-                      </p>
-                      {(assignment || chore.estimatedMinutes || chore.difficulty) && (
-                        <p className="mt-1 text-xs leading-relaxed text-slate-500">
-                          {[
-                            assignment,
-                            `Effort ${chore.difficulty}/5`,
-                            chore.estimatedMinutes ? `~${chore.estimatedMinutes} min` : null,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ")}
+                      {(categoryScheduleParts.length > 0 || !redesigned) && (
+                        <p
+                          className={`mt-1.5 text-xs ${
+                            redesigned ? "" : "font-medium "
+                          }text-slate-600 ${redesigned ? designStyles.metaLine : ""}`}
+                        >
+                          {redesigned ? (
+                            <>
+                              {categoryScheduleParts[0]}
+                              {categoryScheduleParts.length > 1 && (
+                                <>
+                                  {" "}
+                                  <span>·</span> {categoryScheduleParts.slice(1).join(" · ")}
+                                </>
+                              )}
+                            </>
+                          ) : (
+                            (categoryLabel ?? "Uncategorized")
+                          )}
                         </p>
+                      )}
+                      {redesigned ? (
+                        choreDetails && (
+                          <p
+                            className={`mt-1 text-xs leading-relaxed text-slate-500 ${designStyles.metaLine}`}
+                          >
+                            {choreDetails}
+                          </p>
+                        )
+                      ) : (
+                        <>
+                          <p className="mt-1 text-xs leading-relaxed text-slate-600">
+                            {scheduleDescription}
+                          </p>
+                          {(assignment || chore.estimatedMinutes || chore.difficulty) && (
+                            <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                              {choreDetails}
+                            </p>
+                          )}
+                        </>
                       )}
                     </div>
                     <button
                       aria-expanded={openMenuId === chore.id}
                       aria-label={`Actions for ${chore.title}`}
-                      className="absolute right-3 top-3 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+                      className={
+                        redesigned
+                          ? designStyles.moreButton
+                          : "absolute right-3 top-3 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+                      }
                       onClick={() => setOpenMenuId(openMenuId === chore.id ? null : chore.id)}
                       type="button"
                     >
@@ -328,7 +543,11 @@ export function AdminScreen({ initialTab = "chores" }: { initialTab?: "members" 
                     </button>
                   </div>
                   {openMenuId === chore.id && (
-                    <div className="absolute right-4 top-12 z-10 w-36 overflow-hidden rounded-xl border border-slate-100 bg-white py-1 shadow-lg">
+                    <div
+                      className={`absolute right-4 top-12 z-10 w-36 overflow-hidden rounded-xl border border-slate-100 bg-white py-1 shadow-lg ${
+                        redesigned ? designStyles.actionMenu : ""
+                      }`}
+                    >
                       <button
                         className="w-full px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
                         onClick={() => editChore(chore.id)}
@@ -370,7 +589,6 @@ export function AdminScreen({ initialTab = "chores" }: { initialTab?: "members" 
         </div>
       </div>
 
-      <BottomNav active="household" navigate={navigate} />
       {archiveChore && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
           <section
