@@ -353,6 +353,7 @@ describe("authentication screens", () => {
       await screen.findByRole("heading", { name: "Verify your email" }, { timeout: 3_000 }),
     ).toBeTruthy()
     expect(await screen.findByText(`A verification code was sent to ${user.email}.`)).toBeTruthy()
+    expect(document.querySelector("main[class*='emailPage']")?.closest(".max-w-none")).toBeTruthy()
     expect(
       screen.queryByRole("heading", { name: "What should your roommates call you?" }),
     ).toBeNull()
@@ -411,6 +412,7 @@ describe("authentication screens", () => {
         "No verification code is available yet. Request one below to continue.",
       ),
     ).toBeTruthy()
+    expect(document.querySelector("main[class*='emailPage']")?.closest(".max-w-none")).toBeTruthy()
     expect(screen.queryByText(/A verification code was sent/)).toBeNull()
     expect(
       screen.queryByRole("heading", { name: "What should your roommates call you?" }),

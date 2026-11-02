@@ -258,6 +258,91 @@ class HouseholdControllerIntegrationTest {
   }
 
   @Test
+  void householdDescriptionIsNormalizedPersistedAndReadableThroughSettings() throws Exception {
+    WebSession owner = login("descriptionowner");
+    String request =
+        objectMapper.writeValueAsString(
+            Map.of(
+                "name",
+                "Description Home",
+                "timezone",
+                "UTC",
+                "description",
+                "  A welcoming home  "));
+    MvcResult result =
+        mockMvc
+            .perform(
+                post("/api/households")
+                    .cookie(owner.cookie())
+                    .header(owner.csrfHeader(), owner.csrfToken())
+                    .contentType(APPLICATION_JSON)
+                    .content(request))
+            .andExpect(status().isCreated())
+            .andReturn();
+    UUID householdId =
+        UUID.fromString(
+            objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asText());
+
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT description FROM households WHERE id = ?", String.class, householdId))
+        .isEqualTo("A welcoming home");
+    mockMvc
+        .perform(get("/api/households/" + householdId + "/settings").cookie(owner.cookie()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.description").value("A welcoming home"));
+  }
+
+  @Test
+  void householdDescriptionAcceptsTheLimitNormalizesBlankValuesAndRejectsOversizedValues()
+      throws Exception {
+    WebSession owner = login("descriptionlimits");
+
+    UUID emptyDescriptionHousehold =
+        createHouseholdWithDescription(owner, "Empty Description", "");
+    UUID blankDescriptionHousehold =
+        createHouseholdWithDescription(owner, "Blank Description", "   \t  ");
+    UUID maxDescriptionHousehold =
+        createHouseholdWithDescription(owner, "Maximum Description", "x".repeat(2000));
+
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT description FROM households WHERE id = ?",
+                String.class,
+                emptyDescriptionHousehold))
+        .isNull();
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT description FROM households WHERE id = ?",
+                String.class,
+                blankDescriptionHousehold))
+        .isNull();
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT description FROM households WHERE id = ?",
+                String.class,
+                maxDescriptionHousehold))
+        .hasSize(2000);
+
+    mockMvc
+        .perform(
+            post("/api/households")
+                .cookie(owner.cookie())
+                .header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "name",
+                            "Oversized Description",
+                            "timezone",
+                            "UTC",
+                            "description",
+                            "x".repeat(2001)))))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
   void householdSettingsAreOwnerEditableAndMemberReadable() throws Exception {
     WebSession owner = login("settingsowner");
     WebSession member = login("settingsmember");
@@ -2757,6 +2842,24 @@ class HouseholdControllerIntegrationTest {
                     .header(session.csrfHeader(), session.csrfToken())
                     .contentType(APPLICATION_JSON)
                     .content("{\"name\":\"" + name + "\",\"timezone\":\"" + timezone + "\"}"))
+            .andExpect(status().isCreated())
+            .andReturn();
+    return UUID.fromString(
+        objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asText());
+  }
+
+  private UUID createHouseholdWithDescription(WebSession session, String name, String description)
+      throws Exception {
+    MvcResult result =
+        mockMvc
+            .perform(
+                post("/api/households")
+                    .cookie(session.cookie())
+                    .header(session.csrfHeader(), session.csrfToken())
+                    .contentType(APPLICATION_JSON)
+                    .content(
+                        objectMapper.writeValueAsString(
+                            Map.of("name", name, "timezone", "UTC", "description", description))))
             .andExpect(status().isCreated())
             .andReturn();
     return UUID.fromString(

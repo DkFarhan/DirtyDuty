@@ -9,7 +9,9 @@ public record CreateHouseholdRequest(
         String name,
     @NotBlank(message = "Timezone is required")
         @Size(max = 100, message = "Timezone must be 100 characters or fewer")
-        String timezone) {
+        String timezone,
+    @Size(max = 2000, message = "Household description must be at most 2000 characters.")
+        String description) {
 
   public CreateHouseholdRequest {
     if (name != null) {

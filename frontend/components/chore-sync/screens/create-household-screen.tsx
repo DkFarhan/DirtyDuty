@@ -18,12 +18,17 @@ export function CreateHouseholdScreen() {
 
   const handleCreate = async () => {
     if (submitting || !name.trim()) return
+    if (desc.length > 2000) {
+      setError("Household description must be at most 2000 characters.")
+      return
+    }
     setSubmitting(true)
     setError(null)
     try {
       const created = await create({
         name: name.trim(),
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        description: desc.trim() || null,
       })
       queueCreatedHouseholdInvite(created)
       navigate("dashboard")
@@ -78,7 +83,10 @@ export function CreateHouseholdScreen() {
                 <textarea
                   className={styles.textarea}
                   id="household-desc"
-                  onChange={(event) => setDesc(event.target.value)}
+                  onChange={(event) => {
+                    setDesc(event.target.value)
+                    setError(null)
+                  }}
                   placeholder="A short description of your household..."
                   rows={3}
                   value={desc}

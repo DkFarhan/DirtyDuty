@@ -25,6 +25,9 @@ public class Household {
   @Column(name = "timezone", nullable = false, length = 100)
   private String timezone = "UTC";
 
+  @Column(name = "description", columnDefinition = "TEXT")
+  private String description;
+
   @ManyToOne(fetch = FetchType.LAZY, optional = false)
   @JoinColumn(name = "created_by_user_id", nullable = false)
   private User createdByUser;

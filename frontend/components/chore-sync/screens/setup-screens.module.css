@@ -561,6 +561,423 @@
   accent-color: var(--page-accent);
 }
 
+.emailPage {
+  display: flex;
+  flex-direction: column;
+  padding: max(24px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
+}
+
+.emailShell {
+  width: min(100%, 620px);
+  margin: auto;
+  padding-block: 20px;
+}
+
+.emailHeader {
+  margin-bottom: 24px;
+}
+
+.emailLogo {
+  display: block;
+  width: 142px;
+  max-width: 100%;
+  height: auto;
+  margin: 0 0 25px;
+}
+
+.emailEyebrow {
+  margin: 0 0 10px;
+  color: var(--page-accent);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.emailDescription {
+  max-width: 500px;
+  margin: 14px 0 0;
+  color: var(--page-muted);
+  font-size: 15px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.emailAddress {
+  color: var(--page-ink);
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
+.emailCard {
+  padding: clamp(20px, 5vw, 32px);
+  border: 1px solid var(--page-line);
+  border-radius: 24px;
+  background: var(--page-surface);
+  box-shadow: 0 20px 50px rgb(3 23 30 / 7%);
+}
+
+.emailDelivery {
+  margin: 0 0 22px;
+  padding: 13px 15px;
+  border: 1px solid;
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.emailDeliverySent {
+  border-color: #b6ddd0;
+  background: #e3f4ed;
+  color: #19584f;
+}
+
+.emailDeliveryFailed,
+.emailDeliveryNone,
+.emailDeliveryPending {
+  border-color: #e4d2a7;
+  background: #fbf3df;
+  color: #634b1d;
+}
+
+.emailCodeLabel,
+.emailFieldLabel {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--page-ink);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.emailCodeInput,
+.emailTextInput {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--page-line);
+  border-radius: 14px;
+  background: var(--page-surface-strong);
+  color: var(--page-ink);
+  font: inherit;
+  font-size: 15px;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    background 150ms ease;
+}
+
+.emailCodeInput {
+  min-height: 68px;
+  margin-bottom: 12px;
+  padding: 12px clamp(10px, 3vw, 18px);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: clamp(23px, 7vw, 30px);
+  font-weight: 750;
+  letter-spacing: clamp(0.18em, 1.6vw, 0.32em);
+  text-align: center;
+}
+
+.emailTextInput {
+  min-height: 50px;
+  padding: 12px 14px;
+}
+
+.emailCodeInput:focus,
+.emailTextInput:focus {
+  border-color: var(--page-accent);
+  background: var(--page-surface-strong);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--page-accent) 17%, transparent);
+  outline: none;
+}
+
+.emailExpiry,
+.emailChecking {
+  margin: 0 0 16px;
+  color: var(--page-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.emailChecking {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.emailChecking::before {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #0d706c;
+  content: "";
+  animation: emailStatusPulse 1s ease-in-out infinite alternate;
+}
+
+.emailError {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border: 1px solid #e8bec3;
+  border-radius: 13px;
+  background: #fff0f1;
+  color: #9c2c3d;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.emailPrimaryButton,
+.emailCorrectionButton {
+  display: inline-flex;
+  width: 100%;
+  min-height: 52px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 18px;
+  border: 1px solid var(--page-accent);
+  border-radius: 15px;
+  background: var(--page-accent);
+  color: var(--page-primary-foreground);
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  transition:
+    background 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
+}
+
+.emailPrimaryButton:hover:not(:disabled),
+.emailCorrectionButton:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--page-accent) 80%, #061923);
+  background: color-mix(in srgb, var(--page-accent) 88%, #061923);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--page-accent) 16%, transparent);
+}
+
+.emailPrimaryButton:active:not(:disabled),
+.emailCorrectionButton:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.emailPrimaryButton:focus-visible,
+.emailCorrectionButton:focus-visible,
+.emailResendButton:focus-visible,
+.emailSecondaryButton:focus-visible,
+.emailSignOut:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--page-accent) 48%, transparent);
+  outline-offset: 3px;
+}
+
+.emailPrimaryButton:disabled,
+.emailCorrectionButton:disabled {
+  border-color: #b1cec4;
+  background: #b1cec4;
+  color: #284c47;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.emailResend {
+  margin-top: 21px;
+  text-align: center;
+}
+
+.emailResend > p {
+  margin: 0;
+  color: var(--page-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.emailResendButton,
+.emailSecondaryButton,
+.emailSignOut {
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--page-accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 750;
+  transition:
+    background 150ms ease,
+    color 150ms ease;
+}
+
+.emailResendButton:disabled {
+  color: #718887;
+  cursor: not-allowed;
+}
+
+.emailResendButton:hover:not(:disabled),
+.emailSecondaryButton:hover,
+.emailSignOut:hover:not(:disabled) {
+  color: #0b625f;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.emailCorrection {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--page-line);
+}
+
+.emailSecondaryButton {
+  padding: 0 4px;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.emailCorrectionForm {
+  display: grid;
+  gap: 9px;
+  margin-top: 12px;
+}
+
+.emailCorrectionForm .emailFieldLabel:not(:first-child) {
+  margin-top: 5px;
+}
+
+.emailCorrectionButton {
+  margin-top: 8px;
+}
+
+.emailSignOut {
+  display: block;
+  margin: 13px auto 0;
+  padding-inline: 16px;
+  color: var(--page-muted);
+}
+
+.emailSignOut:disabled {
+  cursor: not-allowed;
+}
+
+@keyframes emailStatusPulse {
+  to {
+    opacity: 0.35;
+  }
+}
+
+:global(.dark) .emailDescription,
+:global(.dark) .emailExpiry,
+:global(.dark) .emailChecking,
+:global(.dark) .emailResend > p {
+  color: #a7bec0;
+}
+
+:global(.dark) .emailCard {
+  background: color-mix(in srgb, var(--page-surface) 92%, transparent);
+}
+
+:global(.dark) .emailDeliverySent {
+  border-color: #346d69;
+  background: #143b3c;
+  color: #a9eee1;
+}
+
+:global(.dark) .emailDeliveryFailed,
+:global(.dark) .emailDeliveryNone,
+:global(.dark) .emailDeliveryPending {
+  border-color: #655536;
+  background: #302a1e;
+  color: #f0d99c;
+}
+
+:global(.dark) .emailCodeInput,
+:global(.dark) .emailTextInput {
+  border-color: #355a62;
+  background: #0b2731;
+  color: #f6f8f2;
+}
+
+:global(.dark) .emailCodeInput:focus,
+:global(.dark) .emailTextInput:focus {
+  border-color: #7ae8da;
+  background: var(--page-surface-strong);
+  box-shadow: 0 0 0 3px rgb(122 232 218 / 18%);
+}
+
+:global(.dark) .emailChecking::before {
+  background: #7ae8da;
+}
+
+:global(.dark) .emailError {
+  border-color: #80404d;
+  background: #3a202a;
+  color: #ffc2ca;
+}
+
+:global(.dark) .emailPrimaryButton,
+:global(.dark) .emailCorrectionButton {
+  border-color: var(--page-accent);
+  background: var(--page-accent);
+  color: var(--page-primary-foreground);
+}
+
+:global(.dark) .emailPrimaryButton:hover:not(:disabled),
+:global(.dark) .emailCorrectionButton:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--page-accent) 80%, #061923);
+  background: color-mix(in srgb, var(--page-accent) 88%, #061923);
+}
+
+:global(.dark) .emailPrimaryButton:disabled,
+:global(.dark) .emailCorrectionButton:disabled {
+  border-color: #315d5e;
+  background: #315d5e;
+  color: #f6f8f2;
+}
+
+:global(.dark) .emailPrimaryButton:focus-visible,
+:global(.dark) .emailCorrectionButton:focus-visible,
+:global(.dark) .emailResendButton:focus-visible,
+:global(.dark) .emailSecondaryButton:focus-visible,
+:global(.dark) .emailSignOut:focus-visible {
+  outline-color: color-mix(in srgb, var(--page-accent) 65%, transparent);
+}
+
+:global(.dark) .emailResendButton,
+:global(.dark) .emailSecondaryButton {
+  color: #7ae8da;
+}
+
+:global(.dark) .emailResendButton:disabled {
+  color: #91aaa9;
+}
+
+:global(.dark) .emailResendButton:hover:not(:disabled),
+:global(.dark) .emailSecondaryButton:hover {
+  color: #a7f3e7;
+}
+
+:global(.dark) .emailCorrection {
+  border-top-color: var(--page-line);
+}
+
+:global(.dark) .emailSignOut {
+  color: #a7bec0;
+}
+
+:global(.dark) .emailSignOut:hover:not(:disabled) {
+  color: #f6f8f2;
+}
+
+@media (max-width: 360px) {
+  .emailPage {
+    padding-inline: 14px;
+  }
+
+  .emailCodeInput {
+    letter-spacing: 0.16em;
+  }
+}
+
 @media (min-width: 680px) {
   .choiceGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -620,6 +1037,18 @@
   .textarea,
   .primaryButton,
   .quietButton {
+    transition: none;
+  }
+
+  .emailChecking::before {
+    animation: none;
+  }
+
+  .emailPrimaryButton,
+  .emailCorrectionButton,
+  .emailResendButton,
+  .emailSecondaryButton,
+  .emailSignOut {
     transition: none;
   }
 }
