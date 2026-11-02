@@ -2,12 +2,14 @@ export interface RedesignFeatureFlags {
   redesignedHomeEnabled: boolean
   redesignedMyChoresEnabled: boolean
   redesignedHouseholdEnabled: boolean
+  redesignedProfileEnabled: boolean
 }
 
 export interface RedesignFeatureEnvironment {
   DIRTYDUTY_REDESIGNED_HOME?: string
   DIRTYDUTY_REDESIGNED_MY_CHORES?: string
   DIRTYDUTY_REDESIGNED_HOUSEHOLD?: string
+  DIRTYDUTY_REDESIGNED_PROFILE?: string
 }
 
 export function getRedesignFeatureFlags(
@@ -16,6 +18,7 @@ export function getRedesignFeatureFlags(
     DIRTYDUTY_REDESIGNED_HOME: process.env.DIRTYDUTY_REDESIGNED_HOME,
     DIRTYDUTY_REDESIGNED_MY_CHORES: process.env.DIRTYDUTY_REDESIGNED_MY_CHORES,
     DIRTYDUTY_REDESIGNED_HOUSEHOLD: process.env.DIRTYDUTY_REDESIGNED_HOUSEHOLD,
+    DIRTYDUTY_REDESIGNED_PROFILE: process.env.DIRTYDUTY_REDESIGNED_PROFILE,
   },
 ): RedesignFeatureFlags {
   const development = nodeEnvironment === "development"
@@ -24,5 +27,6 @@ export function getRedesignFeatureFlags(
     redesignedMyChoresEnabled: development && environment.DIRTYDUTY_REDESIGNED_MY_CHORES === "true",
     redesignedHouseholdEnabled:
       development && environment.DIRTYDUTY_REDESIGNED_HOUSEHOLD === "true",
+    redesignedProfileEnabled: development && environment.DIRTYDUTY_REDESIGNED_PROFILE === "true",
   }
 }

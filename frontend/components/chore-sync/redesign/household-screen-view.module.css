@@ -92,8 +92,8 @@
   --management-tile-surface: linear-gradient(113.12deg, #fff 8.7%, #fbfefc 65.22%, #ecf8f2 95.65%);
   --management-tile-border: #c0dbd5;
   --management-icon-surface: #e0f3ed;
-  --nav-surface: rgb(247 255 252 / 81%);
-  --nav-border: rgb(255 255 255 / 88%);
+  --nav-surface: rgb(227 245 238 / 62%);
+  --nav-border: rgb(255 255 255 / 76%);
   --nav-active: rgb(206 241 231 / 96%);
   --nav-active-border: rgb(13 112 108 / 28%);
   --nav-active-text: #0d706c;
@@ -937,7 +937,7 @@
 }
 
 .scrollEndPadding {
-  height: 120px;
+  height: 0;
 }
 
 .navigation {
@@ -965,6 +965,18 @@
   -webkit-backdrop-filter: blur(11px);
   backdrop-filter: blur(11px);
   pointer-events: auto;
+}
+
+.lightTheme .navigationCapsule::before {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  right: 12%;
+  left: 12%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 94%), transparent);
+  content: "";
+  pointer-events: none;
 }
 
 .lightTheme .navigationCapsule {

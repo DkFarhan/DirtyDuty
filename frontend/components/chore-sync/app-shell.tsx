@@ -59,10 +59,12 @@ function ScreenRouter({
   redesignedHomeEnabled,
   redesignedMyChoresEnabled,
   redesignedHouseholdEnabled,
+  redesignedProfileEnabled,
 }: {
   redesignedHomeEnabled: boolean
   redesignedMyChoresEnabled: boolean
   redesignedHouseholdEnabled: boolean
+  redesignedProfileEnabled: boolean
 }) {
   const {
     screen,
@@ -278,21 +280,21 @@ function ScreenRouter({
     case "edit-chore":
       return <ChoreFormScreen redesigned={redesignedHouseholdEnabled} theme={resolvedTheme} />
     case "profile":
-      return <ProfileScreen />
+      return <ProfileScreen redesigned={redesignedProfileEnabled} theme={resolvedTheme} />
     case "appearance":
-      return <AppearanceScreen />
+      return <AppearanceScreen redesigned={redesignedProfileEnabled} theme={resolvedTheme} />
     case "household-settings":
       return (
         <HouseholdSettingsScreen redesigned={redesignedHouseholdEnabled} theme={resolvedTheme} />
       )
     case "notifications":
-      return <NotificationsScreen />
+      return <NotificationsScreen redesigned={redesignedProfileEnabled} theme={resolvedTheme} />
     case "edit-profile":
-      return <EditProfileScreen />
+      return <EditProfileScreen redesigned={redesignedProfileEnabled} theme={resolvedTheme} />
     case "privacy-security":
-      return <PrivacySecurityScreen />
+      return <PrivacySecurityScreen redesigned={redesignedProfileEnabled} theme={resolvedTheme} />
     case "help-support":
-      return <HelpSupportScreen />
+      return <HelpSupportScreen redesigned={redesignedProfileEnabled} theme={resolvedTheme} />
     case "legal-acceptance":
       return <LegalAcceptanceScreen />
     default:
@@ -305,11 +307,13 @@ function AppFrame({
   redesignedHomeEnabled,
   redesignedMyChoresEnabled,
   redesignedHouseholdEnabled,
+  redesignedProfileEnabled,
 }: {
   children: React.ReactNode
   redesignedHomeEnabled: boolean
   redesignedMyChoresEnabled: boolean
   redesignedHouseholdEnabled: boolean
+  redesignedProfileEnabled: boolean
 }) {
   const { screen } = useChoreSync()
   const useWideFrame =
@@ -320,7 +324,16 @@ function AppFrame({
       screen === "household-settings" ||
       screen === "create-chore" ||
       screen === "edit-chore") &&
-      redesignedHouseholdEnabled)
+      redesignedHouseholdEnabled) ||
+    ([
+      "profile",
+      "edit-profile",
+      "appearance",
+      "notifications",
+      "privacy-security",
+      "help-support",
+    ].includes(screen) &&
+      redesignedProfileEnabled)
 
   return (
     <div className="min-h-screen bg-slate-200 flex items-start justify-center">
@@ -361,11 +374,13 @@ export function AppShell({
   redesignedHomeEnabled = false,
   redesignedMyChoresEnabled = false,
   redesignedHouseholdEnabled = false,
+  redesignedProfileEnabled = false,
 }: {
   initialScreen?: Screen
   redesignedHomeEnabled?: boolean
   redesignedMyChoresEnabled?: boolean
   redesignedHouseholdEnabled?: boolean
+  redesignedProfileEnabled?: boolean
 }) {
   return (
     <ThemeProvider>
@@ -378,6 +393,7 @@ export function AppShell({
                   redesignedHomeEnabled={redesignedHomeEnabled}
                   redesignedMyChoresEnabled={redesignedMyChoresEnabled}
                   redesignedHouseholdEnabled={redesignedHouseholdEnabled}
+                  redesignedProfileEnabled={redesignedProfileEnabled}
                 >
                   <AppLaunchGate>
                     <HouseholdRefreshNotice />
@@ -385,6 +401,7 @@ export function AppShell({
                       redesignedHomeEnabled={redesignedHomeEnabled}
                       redesignedMyChoresEnabled={redesignedMyChoresEnabled}
                       redesignedHouseholdEnabled={redesignedHouseholdEnabled}
+                      redesignedProfileEnabled={redesignedProfileEnabled}
                     />
                   </AppLaunchGate>
                 </AppFrame>

@@ -21,17 +21,33 @@
   overflow: hidden;
   border: 1px solid rgb(255 255 255 / 88%);
   border-radius: 33px;
-  background: rgb(247 255 252 / 81%);
+  background: rgb(227 245 238 / 62%);
   box-shadow: 0 10px 24px rgb(54 83 90 / 17%);
   -webkit-backdrop-filter: blur(11px);
   backdrop-filter: blur(11px);
   pointer-events: auto;
 }
 
+.capsule::before {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  right: 12%;
+  left: 12%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 94%), transparent);
+  content: "";
+  pointer-events: none;
+}
+
 :global(.dark) .capsule {
   border-color: rgb(215 255 251 / 63%);
   background: rgb(21 56 67 / 71%);
   box-shadow: 0 9px 21px -4px rgb(0 12 18 / 38%);
+}
+
+:global(.dark) .capsule::before {
+  display: none;
 }
 
 .activeIsland {

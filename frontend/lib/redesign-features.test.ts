@@ -7,6 +7,7 @@ describe("redesign feature flags", () => {
       redesignedHomeEnabled: false,
       redesignedMyChoresEnabled: false,
       redesignedHouseholdEnabled: false,
+      redesignedProfileEnabled: false,
     })
   })
 
@@ -19,6 +20,7 @@ describe("redesign feature flags", () => {
       redesignedHomeEnabled: true,
       redesignedMyChoresEnabled: false,
       redesignedHouseholdEnabled: false,
+      redesignedProfileEnabled: false,
     })
     expect(
       getRedesignFeatureFlags("development", {
@@ -28,6 +30,7 @@ describe("redesign feature flags", () => {
       redesignedHomeEnabled: false,
       redesignedMyChoresEnabled: true,
       redesignedHouseholdEnabled: false,
+      redesignedProfileEnabled: false,
     })
     expect(
       getRedesignFeatureFlags("development", {
@@ -37,6 +40,17 @@ describe("redesign feature flags", () => {
       redesignedHomeEnabled: false,
       redesignedMyChoresEnabled: false,
       redesignedHouseholdEnabled: true,
+      redesignedProfileEnabled: false,
+    })
+    expect(
+      getRedesignFeatureFlags("development", {
+        DIRTYDUTY_REDESIGNED_PROFILE: "true",
+      }),
+    ).toEqual({
+      redesignedHomeEnabled: false,
+      redesignedMyChoresEnabled: false,
+      redesignedHouseholdEnabled: false,
+      redesignedProfileEnabled: true,
     })
   })
 
@@ -45,12 +59,14 @@ describe("redesign feature flags", () => {
       DIRTYDUTY_REDESIGNED_HOME: "true",
       DIRTYDUTY_REDESIGNED_MY_CHORES: "true",
       DIRTYDUTY_REDESIGNED_HOUSEHOLD: "true",
+      DIRTYDUTY_REDESIGNED_PROFILE: "true",
     }
 
     expect(getRedesignFeatureFlags("production", environment)).toEqual({
       redesignedHomeEnabled: false,
       redesignedMyChoresEnabled: false,
       redesignedHouseholdEnabled: false,
+      redesignedProfileEnabled: false,
     })
   })
 

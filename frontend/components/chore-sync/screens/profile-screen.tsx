@@ -7,9 +7,11 @@ import { useChoreSync } from "@/lib/chore-sync/store"
 import { notificationApi } from "@/lib/notifications/api"
 import { profileApi, type Profile } from "@/lib/profile/api"
 import { notificationResource, useDataSync } from "@/lib/data-sync/data-sync-context"
+import type { Theme } from "@/components/theme/theme-provider"
 import { BottomNav } from "../bottom-nav"
 import { ChevronRightIcon } from "../icons"
 import { Avatar } from "../primitives"
+import { ProfileScreenView } from "./profile-screen-view"
 
 const accountItems = [
   { label: "Notifications", screen: "notifications" as const },
@@ -17,7 +19,13 @@ const accountItems = [
   { label: "Appearance", screen: "appearance" as const },
 ]
 
-export function ProfileScreen() {
+export function ProfileScreen({
+  redesigned = false,
+  theme = "light",
+}: {
+  redesigned?: boolean
+  theme?: Exclude<Theme, "system">
+}) {
   const { state, navigate, openNotifications } = useChoreSync()
   const { logout } = useAuth()
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -85,6 +93,27 @@ export function ProfileScreen() {
 
   const initials =
     profile?.displayName?.trim().slice(0, 1).toUpperCase() || state.currentUser.avatar
+  if (redesigned) {
+    return (
+      <ProfileScreenView
+        error={error}
+        initials={initials}
+        isSubmitting={isSubmitting}
+        notificationError={notificationError}
+        onEdit={() => navigate("edit-profile")}
+        onNavigate={(destination) => navigate(destination)}
+        onNotifications={() => openNotifications("profile")}
+        onPrimaryNavigate={navigate}
+        onRetryNotifications={() => void loadNotificationCount()}
+        onRetryProfile={() => void loadProfile()}
+        onSignOut={() => void handleLogout()}
+        profile={profile}
+        theme={theme}
+        unreadCount={unreadCount}
+      />
+    )
+  }
+
   return (
     <div className="flex min-h-screen flex-col bg-slate-50 pb-20 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       <header className="bg-white px-5 pb-6 pt-12 dark:bg-slate-900">
