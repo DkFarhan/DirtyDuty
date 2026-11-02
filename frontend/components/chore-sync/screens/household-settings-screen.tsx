@@ -1017,7 +1017,11 @@ export function HouseholdSettingsScreen({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
           <section
             aria-modal="true"
-            className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"
+            className={
+              redesigned
+                ? designStyles.deletionDialog
+                : "w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"
+            }
             role="dialog"
           >
             {deleteStage === 1 && (
@@ -1031,21 +1035,33 @@ export function HouseholdSettingsScreen({
                 </p>
                 <div className="mt-5 flex flex-col gap-2">
                   <button
-                    className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700"
+                    className={
+                      redesigned
+                        ? designStyles.dialogNeutralAction
+                        : "rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700"
+                    }
                     onClick={() => navigate("household")}
                     type="button"
                   >
                     Transfer ownership
                   </button>
                   <button
-                    className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm font-bold text-rose-700"
+                    className={
+                      redesigned
+                        ? `${designStyles.dangerButton} ${designStyles.deletionAction} w-full`
+                        : "rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm font-bold text-rose-700"
+                    }
                     onClick={() => setDeleteStage(2)}
                     type="button"
                   >
                     Continue to deletion
                   </button>
                   <button
-                    className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700"
+                    className={
+                      redesigned
+                        ? designStyles.dialogCancelAction
+                        : "rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700"
+                    }
                     onClick={() => {
                       resetDeleteFlow()
                       if (continuingAccountDeletion) clearAccountDeletion()
@@ -1102,14 +1118,22 @@ export function HouseholdSettingsScreen({
                 </div>
                 <div className="mt-5 flex gap-2">
                   <button
-                    className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700"
+                    className={
+                      redesigned
+                        ? `${designStyles.dialogNeutralAction} flex-1`
+                        : "flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700"
+                    }
                     onClick={() => setDeleteStage(1)}
                     type="button"
                   >
                     Back
                   </button>
                   <button
-                    className="flex-1 rounded-xl bg-rose-600 px-3 py-2.5 text-sm font-bold text-white disabled:opacity-60"
+                    className={
+                      redesigned
+                        ? `${designStyles.dangerButton} ${designStyles.deletionAction} flex-1`
+                        : "flex-1 rounded-xl bg-rose-600 px-3 py-2.5 text-sm font-bold text-white disabled:opacity-60"
+                    }
                     disabled={!deleteConsent.one || !deleteConsent.two || !deleteConsent.three}
                     onClick={() => setDeleteStage(3)}
                     type="button"
@@ -1129,7 +1153,11 @@ export function HouseholdSettingsScreen({
                     Type “{household.name}” to confirm
                     <input
                       autoFocus
-                      className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-teal-400 focus:bg-white"
+                      className={
+                        redesigned
+                          ? `${designStyles.dialogInput} mt-2 w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-teal-400`
+                          : "mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-teal-400 focus:bg-white"
+                      }
                       onChange={(event) => setDeleteName(event.target.value)}
                       placeholder={household.name}
                       type="text"
@@ -1141,7 +1169,11 @@ export function HouseholdSettingsScreen({
                       Password
                       <PasswordInput
                         autoComplete="current-password"
-                        className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-teal-400 focus:bg-white"
+                        className={
+                          redesigned
+                            ? `${designStyles.dialogInput} mt-2 w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-teal-400`
+                            : "mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-teal-400 focus:bg-white"
+                        }
                         id="delete-household-password"
                         name="password"
                         onChange={(event) => setDeletePassword(event.target.value)}
@@ -1177,14 +1209,22 @@ export function HouseholdSettingsScreen({
                 )}
                 <div className="mt-5 flex gap-2">
                   <button
-                    className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700"
+                    className={
+                      redesigned
+                        ? `${designStyles.dialogNeutralAction} flex-1`
+                        : "flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700"
+                    }
                     onClick={() => setDeleteStage(2)}
                     type="button"
                   >
                     Back
                   </button>
                   <button
-                    className="flex-1 rounded-xl bg-rose-600 px-3 py-2.5 text-sm font-bold text-white disabled:opacity-60"
+                    className={
+                      redesigned
+                        ? `${designStyles.dangerButton} ${designStyles.deletionAction} flex-1`
+                        : "flex-1 rounded-xl bg-rose-600 px-3 py-2.5 text-sm font-bold text-white disabled:opacity-60"
+                    }
                     disabled={deleteBusy || !canContinueDelete}
                     onClick={() => void submitDeleteHousehold()}
                     type="button"

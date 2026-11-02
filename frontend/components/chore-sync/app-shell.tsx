@@ -317,6 +317,13 @@ function AppFrame({
 }) {
   const { screen } = useChoreSync()
   const useWideFrame =
+    [
+      "welcome",
+      "create-household",
+      "join-household",
+      "display-name-personalization",
+      "legal-acceptance",
+    ].includes(screen) ||
     (screen === "dashboard" && redesignedHomeEnabled) ||
     (screen === "my-chores" && redesignedMyChoresEnabled) ||
     ((screen === "household" ||

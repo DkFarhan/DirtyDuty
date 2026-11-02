@@ -776,6 +776,135 @@
   cursor: not-allowed;
   opacity: 0.48;
   transform: none;
+  box-shadow: none;
+}
+
+.deletionDialog {
+  width: 100%;
+  max-width: 448px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--surface-strong);
+  box-shadow: 0 24px 70px rgb(0 10 15 / 34%);
+  color: var(--ink);
+}
+
+.deletionDialog h2 {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--font-household-serif), "Libre Baskerville", Georgia, serif;
+  font-size: 19px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.deletionDialog p,
+.deletionDialog label {
+  color: var(--muted);
+}
+
+.deletionDialog [role="alert"] {
+  color: var(--danger);
+}
+
+.deletionAction {
+  border-color: #9b4050;
+  background: #9b4050;
+  color: #fff;
+  box-shadow: 0 7px 17px rgb(75 21 32 / 18%);
+}
+
+.deletionAction:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: #873646;
+  background: #873646;
+}
+
+.deletionAction:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.deletionAction:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--danger) 58%, transparent);
+  outline-offset: 3px;
+}
+
+.dark .deletionAction {
+  border-color: #984253;
+  background: #984253;
+  box-shadow: 0 7px 18px rgb(0 10 15 / 28%);
+}
+
+.dark .deletionAction:hover:not(:disabled) {
+  border-color: #843748;
+  background: #843748;
+}
+
+.deletionDialog .dialogInput {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.dialogNeutralAction,
+.dialogCancelAction {
+  display: inline-flex;
+  min-height: 43px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
+  border-radius: 13px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  transition:
+    transform 140ms ease,
+    background 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
+}
+
+.dialogNeutralAction {
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+
+.dialogCancelAction {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+}
+
+.dialogNeutralAction:hover,
+.dialogCancelAction:hover {
+  transform: translateY(-1px);
+  border-color: var(--accent);
+}
+
+.dialogCancelAction:hover {
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+
+.dialogNeutralAction:focus-visible,
+.dialogCancelAction:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: 2px;
+}
+
+.dialogNeutralAction:disabled,
+.dialogCancelAction:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  transform: none;
+}
+
+.dialogActions {
+  display: flex;
+  gap: 9px;
 }
 
 .permissionNote,
