@@ -3,6 +3,7 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import PrivacyPage from "./page"
+import styles from "@/components/chore-sync/legal-document-layout.module.css"
 
 describe("Privacy Policy page", () => {
   afterEach(() => {
@@ -29,8 +30,23 @@ describe("Privacy Policy page", () => {
         .getAllByRole("link", { name: "Terms of Service" })
         .every((link) => link.getAttribute("href") === "/terms"),
     ).toBe(true)
-    expect(document.querySelector("div.min-h-screen")?.className).toContain("dark:bg-slate-950")
-    expect(document.querySelector("article")?.className).toContain("dark:bg-slate-900")
+    expect(document.querySelector("main article")?.className).toBe(styles.article)
+    expect(document.querySelector("#privacy-at-a-glance")?.parentElement?.className).toBe(
+      styles.glance,
+    )
+  })
+
+  it("provides on-page links for the summary and every numbered section", () => {
+    render(<PrivacyPage />)
+
+    const links = screen.getByRole("navigation", { name: "On this page" }).querySelectorAll("a")
+    expect(links).toHaveLength(22)
+    expect(
+      Array.from(links).every((link) => {
+        const id = link.getAttribute("href")?.slice(1)
+        return id !== undefined && document.getElementById(id) !== null
+      }),
+    ).toBe(true)
   })
 
   it("returns to Privacy & Security when opened from that screen", async () => {

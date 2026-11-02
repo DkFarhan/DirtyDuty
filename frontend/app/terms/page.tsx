@@ -1,8 +1,12 @@
 import type { Metadata } from "next"
-import { ProductLogo } from "@/components/brand/product-logo"
 import { getSupportEmail } from "@/components/chore-sync/support-message"
-import { LegalDocumentBackLink } from "@/components/chore-sync/legal-document-back-link"
 import { LegalDocumentLink } from "@/components/chore-sync/legal-document-link"
+import {
+  LegalDocumentContents,
+  LegalDocumentLayout,
+  type LegalDocumentSectionLink,
+} from "@/components/chore-sync/legal-document-layout"
+import styles from "@/components/chore-sync/legal-document-layout.module.css"
 
 export const metadata: Metadata = {
   title: "Terms of Service | DirtyDuty",
@@ -10,44 +14,51 @@ export const metadata: Metadata = {
 }
 
 function TermsSection({ title, children }: { title: string; children: React.ReactNode }) {
+  const id = `terms-${title.split(" ")[0]}`
   return (
-    <section aria-labelledby={`terms-${title.split(" ")[0]}`} className="scroll-mt-6">
-      <h2
-        className="font-display text-lg font-extrabold leading-snug text-slate-900"
-        id={`terms-${title.split(" ")[0]}`}
-      >
-        {title}
-      </h2>
-      <div className="mt-3 space-y-3 text-sm leading-7 text-slate-600">{children}</div>
+    <section aria-labelledby={id} className={styles.section}>
+      <h2 id={id}>{title}</h2>
+      <div className={styles.sectionBody}>{children}</div>
     </section>
   )
 }
+
+const termsSections: LegalDocumentSectionLink[] = [
+  { id: "terms-1.", label: "1. Agreement to these Terms" },
+  { id: "terms-2.", label: "2. Eligibility" },
+  { id: "terms-3.", label: "3. Your account" },
+  { id: "terms-4.", label: "4. The DirtyDuty Service" },
+  { id: "terms-5.", label: "5. Households, administrators and invitations" },
+  { id: "terms-6.", label: "6. Your content" },
+  { id: "terms-7.", label: "7. Notifications and reminders" },
+  { id: "terms-8.", label: "8. Acceptable use" },
+  { id: "terms-9.", label: "9. Privacy" },
+  { id: "terms-10.", label: "10. Third-party services" },
+  { id: "terms-11.", label: "11. Availability and changes" },
+  { id: "terms-12.", label: "12. Fees" },
+  { id: "terms-13.", label: "13. Suspension and termination" },
+  { id: "terms-14.", label: "14. Account and household deletion" },
+  { id: "terms-15.", label: "15. DirtyDuty intellectual property" },
+  { id: "terms-16.", label: "16. Disclaimer" },
+  { id: "terms-17.", label: "17. Limitation of liability" },
+  { id: "terms-18.", label: "18. Changes to these Terms" },
+  { id: "terms-19.", label: "19. Governing law" },
+  { id: "terms-20.", label: "20. Contact" },
+]
 
 export default function TermsPage() {
   const supportEmail = getSupportEmail()
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800">
-      <header className="border-b border-slate-100 bg-white">
-        <div className="mx-auto flex min-h-16 max-w-4xl items-center justify-between gap-4 px-5 py-3">
-          <LegalDocumentBackLink />
-          <ProductLogo className="h-auto w-32 max-w-[45vw]" />
-        </div>
-      </header>
-
-      <main className="mx-auto w-full max-w-4xl px-5 py-8 sm:px-8 sm:py-12">
-        <article className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm sm:p-9">
-          <header className="mb-8 border-b border-slate-100 pb-6">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-teal-700">Legal</p>
-            <h1 className="mt-2 font-display text-3xl font-black leading-tight text-slate-900 sm:text-4xl">
-              DirtyDuty Terms of Service
-            </h1>
-            <p className="mt-3 text-sm font-medium text-slate-500">
-              Effective date: October 16, 2026
-            </p>
-          </header>
-
-          <div className="space-y-8">
+    <LegalDocumentLayout
+      effectiveDate="October 16, 2026"
+      eyebrow="LEGAL DOCUMENTS"
+      title="DirtyDuty Terms of Service"
+    >
+      <main className={styles.main}>
+        <article className={styles.article}>
+          <LegalDocumentContents sections={termsSections} />
+          <div className={styles.sections}>
             <TermsSection title="1. Agreement to these Terms">
               <p>
                 These Terms of Service (&quot;Terms&quot;) govern your access to and use of
@@ -112,7 +123,7 @@ export default function TermsPage() {
                 Household owners and administrators may have additional permissions, including the
                 ability to:
               </p>
-              <ul className="list-disc space-y-1 pl-5">
+              <ul>
                 <li>invite members</li>
                 <li>create and manage chores</li>
                 <li>change household settings</li>
@@ -167,7 +178,7 @@ export default function TermsPage() {
 
             <TermsSection title="8. Acceptable use">
               <p>You may not use DirtyDuty to:</p>
-              <ul className="list-disc space-y-1 pl-5">
+              <ul>
                 <li>violate applicable law</li>
                 <li>impersonate another person</li>
                 <li>harass, threaten or abuse others</li>
@@ -228,7 +239,7 @@ export default function TermsPage() {
                 operation cannot be guaranteed.
               </p>
               <p>We may:</p>
-              <ul className="list-disc space-y-1 pl-5">
+              <ul>
                 <li>maintain or update the Service</li>
                 <li>add, modify or remove features</li>
                 <li>temporarily suspend parts of the Service</li>
@@ -250,7 +261,7 @@ export default function TermsPage() {
             <TermsSection title="13. Suspension and termination">
               <p>You may stop using DirtyDuty at any time.</p>
               <p>We may suspend or terminate access if we reasonably believe that:</p>
-              <ul className="list-disc space-y-1 pl-5">
+              <ul>
                 <li>these Terms have been materially violated</li>
                 <li>an account creates a security risk</li>
                 <li>the Service is being abused</li>
@@ -318,7 +329,7 @@ export default function TermsPage() {
                 To the maximum extent permitted by law, DirtyDuty&apos;s total aggregate liability
                 relating to the Service will not exceed the greater of:
               </p>
-              <ul className="list-disc space-y-1 pl-5">
+              <ul>
                 <li>
                   the amount you paid to DirtyDuty during the 12 months before the event giving rise
                   to the claim, or
@@ -376,6 +387,6 @@ export default function TermsPage() {
           </div>
         </article>
       </main>
-    </div>
+    </LegalDocumentLayout>
   )
 }
