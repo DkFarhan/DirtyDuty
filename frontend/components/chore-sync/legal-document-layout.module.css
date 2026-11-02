@@ -96,10 +96,14 @@
 
 .effectiveDate {
   margin: 12px 0 0;
-  color: var(--text-muted);
+  color: #4b6260;
   font-size: 0.875rem;
   font-weight: 500;
   line-height: 1.6;
+}
+
+:global(.dark) .effectiveDate {
+  color: var(--text-muted);
 }
 
 .main {
@@ -176,10 +180,6 @@
   gap: 32px;
 }
 
-.section {
-  scroll-margin-top: 24px;
-}
-
 .section h2,
 .glance h2 {
   margin: 0;
@@ -189,6 +189,7 @@
   font-weight: 850;
   line-height: 1.4;
   overflow-wrap: anywhere;
+  scroll-margin-top: 24px;
 }
 
 .sectionBody,
@@ -234,7 +235,6 @@
 }
 
 .glance {
-  scroll-margin-top: 24px;
   margin-bottom: 32px;
   border: 1px solid var(--border);
   border-radius: 16px;
