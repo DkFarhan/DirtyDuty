@@ -85,7 +85,7 @@ export function ThemeSelector({ redesigned = false }: { redesigned?: boolean }) 
                 <span className="block text-sm font-semibold text-slate-900 dark:text-slate-100">
                   {label}
                 </span>
-                {description && (redesigned || value === "system") && (
+                {description && (
                   <span
                     className={
                       redesigned

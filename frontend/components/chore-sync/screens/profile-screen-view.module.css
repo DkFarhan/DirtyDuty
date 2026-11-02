@@ -81,9 +81,9 @@
   color: var(--text-primary);
 }
 
-.route :global(p),
-.route :global(label),
-.route :global(legend) {
+:where(.route) :global(p),
+:where(.route) :global(label),
+:where(.route) :global(legend) {
   color: var(--text-secondary);
 }
 

@@ -562,6 +562,7 @@ export function NotificationsScreen({
                       </p>
                       {!read && (
                         <button
+                          aria-label={`Mark ${item.title} as read`}
                           className={
                             redesigned
                               ? profileStyles.notificationMarkRead
