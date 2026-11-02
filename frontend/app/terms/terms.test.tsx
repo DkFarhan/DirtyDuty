@@ -3,6 +3,7 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import TermsPage from "./page"
+import styles from "@/components/chore-sync/legal-document-layout.module.css"
 
 describe("Terms of Service page", () => {
   afterEach(() => {
@@ -29,6 +30,20 @@ describe("Terms of Service page", () => {
       "mailto:support@dirtyduty.test",
     )
     expect(screen.getByRole("link", { name: "Back to DirtyDuty" }).getAttribute("href")).toBe("/")
+    expect(document.querySelector("main article")?.className).toBe(styles.article)
+  })
+
+  it("provides an on-page link for every numbered section", () => {
+    render(<TermsPage />)
+
+    const links = screen.getByRole("navigation", { name: "On this page" }).querySelectorAll("a")
+    expect(links).toHaveLength(20)
+    expect(
+      Array.from(links).every((link) => {
+        const id = link.getAttribute("href")?.slice(1)
+        return id !== undefined && document.getElementById(id) !== null
+      }),
+    ).toBe(true)
   })
 
   it("returns to Privacy & Security when opened from that screen", async () => {

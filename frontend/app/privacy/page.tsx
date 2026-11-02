@@ -1,8 +1,12 @@
 import type { Metadata } from "next"
-import { ProductLogo } from "@/components/brand/product-logo"
 import { getSupportEmail } from "@/components/chore-sync/support-message"
-import { LegalDocumentBackLink } from "@/components/chore-sync/legal-document-back-link"
 import { LegalDocumentLink } from "@/components/chore-sync/legal-document-link"
+import {
+  LegalDocumentContents,
+  LegalDocumentLayout,
+  type LegalDocumentSectionLink,
+} from "@/components/chore-sync/legal-document-layout"
+import styles from "@/components/chore-sync/legal-document-layout.module.css"
 
 export const metadata: Metadata = {
   title: "Privacy Policy | DirtyDuty",
@@ -12,65 +16,64 @@ export const metadata: Metadata = {
 function PolicySection({ title, children }: { title: string; children: React.ReactNode }) {
   const id = `privacy-${title.split(" ")[0].replace(".", "")}`
   return (
-    <section aria-labelledby={id} className="scroll-mt-6">
-      <h2
-        className="font-display text-lg font-extrabold leading-snug text-slate-900 dark:text-slate-100"
-        id={id}
-      >
-        {title}
-      </h2>
-      <div className="mt-3 space-y-3 text-sm leading-7 text-slate-600 dark:text-slate-300">
-        {children}
-      </div>
+    <section aria-labelledby={id} className={styles.section}>
+      <h2 id={id}>{title}</h2>
+      <div className={styles.sectionBody}>{children}</div>
     </section>
   )
 }
 
 function PolicySubheading({ children }: { children: React.ReactNode }) {
-  return <h3 className="pt-1 text-sm font-bold text-slate-800 dark:text-slate-200">{children}</h3>
+  return <h3>{children}</h3>
 }
 
 function PolicyList({ children }: { children: React.ReactNode }) {
-  return <ul className="list-disc space-y-1 pl-5">{children}</ul>
+  return <ul>{children}</ul>
 }
+
+const privacySections: LegalDocumentSectionLink[] = [
+  { id: "privacy-at-a-glance", label: "Privacy at a glance" },
+  { id: "privacy-1", label: "1. About this Privacy Policy" },
+  { id: "privacy-2", label: "2. Information we collect" },
+  { id: "privacy-3", label: "3. Information we do not intentionally collect" },
+  { id: "privacy-4", label: "4. How we use personal information" },
+  { id: "privacy-5", label: "5. Information visible to other household members" },
+  { id: "privacy-6", label: "6. How we share personal information" },
+  { id: "privacy-7", label: "7. International processing" },
+  { id: "privacy-8", label: "8. Cookies, sessions and local storage" },
+  { id: "privacy-9", label: "9. Push notifications" },
+  { id: "privacy-10", label: "10. Email communications" },
+  { id: "privacy-11", label: "11. Passwords and authentication security" },
+  { id: "privacy-12", label: "12. Data retention" },
+  { id: "privacy-13", label: "13. Account and household deletion" },
+  { id: "privacy-14", label: "14. Security safeguards" },
+  { id: "privacy-15", label: "15. Your choices" },
+  { id: "privacy-16", label: "16. Access and correction" },
+  { id: "privacy-17", label: "17. Children and minors" },
+  {
+    id: "privacy-18",
+    label: "18. No sale of personal information or behavioural advertising",
+  },
+  { id: "privacy-19", label: "19. Changes to this Privacy Policy" },
+  { id: "privacy-20", label: "20. Privacy accountability and complaints" },
+  { id: "privacy-21", label: "21. Contact us" },
+]
 
 export default function PrivacyPage() {
   const supportEmail = getSupportEmail()
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 dark:bg-slate-950 dark:text-slate-100">
-      <header className="border-b border-slate-100 bg-white dark:border-slate-800 dark:bg-slate-900">
-        <div className="mx-auto flex min-h-16 max-w-4xl items-center justify-between gap-4 px-5 py-3">
-          <LegalDocumentBackLink />
-          <ProductLogo className="h-auto w-32 max-w-[45vw]" />
-        </div>
-      </header>
-
-      <main className="mx-auto w-full max-w-3xl px-5 py-8 sm:px-8 sm:py-12">
-        <article className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-9">
-          <header className="mb-8 border-b border-slate-100 pb-6 dark:border-slate-800">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-teal-700 dark:text-teal-300">
-              Privacy
-            </p>
-            <h1 className="mt-2 font-display text-3xl font-black leading-tight text-slate-900 dark:text-slate-100 sm:text-4xl">
-              DirtyDuty Privacy Policy
-            </h1>
-            <p className="mt-3 text-sm font-medium text-slate-500 dark:text-slate-400">
-              Effective date: October 17, 2026
-            </p>
-          </header>
-
-          <section
-            aria-labelledby="privacy-at-a-glance"
-            className="mb-9 rounded-xl border border-teal-100 bg-teal-50 p-4 dark:border-teal-800 dark:bg-teal-950/40 sm:p-5"
-          >
-            <h2
-              className="font-display text-base font-extrabold text-slate-900 dark:text-slate-100"
-              id="privacy-at-a-glance"
-            >
-              Privacy at a glance
-            </h2>
-            <div className="mt-3 space-y-3 text-sm leading-7 text-slate-600 dark:text-slate-300">
+    <LegalDocumentLayout
+      effectiveDate="October 17, 2026"
+      eyebrow="PRIVACY"
+      title="DirtyDuty Privacy Policy"
+    >
+      <main className={styles.main}>
+        <article className={styles.article}>
+          <LegalDocumentContents sections={privacySections} />
+          <section aria-labelledby="privacy-at-a-glance" className={styles.glance}>
+            <h2 id="privacy-at-a-glance">Privacy at a glance</h2>
+            <div className={styles.glanceBody}>
               <p>
                 DirtyDuty is a household chore-management service. We collect only information
                 reasonably needed to provide, secure and improve the Service.
@@ -107,7 +110,7 @@ export default function PrivacyPage() {
             </div>
           </section>
 
-          <div className="space-y-8">
+          <div className={styles.sections}>
             <PolicySection title="1. About this Privacy Policy">
               <p>
                 This Privacy Policy explains how DirtyDuty collects, uses, discloses, stores and
@@ -654,6 +657,6 @@ export default function PrivacyPage() {
           </div>
         </article>
       </main>
-    </div>
+    </LegalDocumentLayout>
   )
 }
