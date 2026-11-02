@@ -8,10 +8,16 @@ import { faqCategories } from "./help-support-faq"
 
 const clipboardWriteText = vi.fn<(text: string) => Promise<void>>()
 
-function renderScreen() {
+function renderScreen({
+  redesigned = false,
+  theme = "light",
+}: {
+  redesigned?: boolean
+  theme?: "light" | "dark"
+} = {}) {
   return render(
     <ChoreSyncProvider>
-      <HelpSupportScreen />
+      <HelpSupportScreen redesigned={redesigned} theme={theme} />
     </ChoreSyncProvider>,
   )
 }
@@ -131,6 +137,54 @@ describe("help and support screen", () => {
       target: { value: "nothing matches this" },
     })
     expect(screen.getByText("No help articles match that search.")).toBeTruthy()
+  })
+
+  it("renders the approved redesigned Help structure and theme-specific assets", () => {
+    renderScreen({ redesigned: true, theme: "dark" })
+
+    expect(
+      document.querySelector('img[src="/profile-redesign/icons/help-mark-dark.svg"]'),
+    ).toBeTruthy()
+    expect(
+      document.querySelectorAll('img[src="/profile-redesign/icons/help-chevron-down-dark.svg"]')
+        .length,
+    ).toBeGreaterThan(0)
+
+    const report = screen.getByRole("region", { name: "Report a problem" })
+    const feedback = screen.getByRole("region", { name: "Send feedback" })
+    const services = screen.getByLabelText("Help desk services")
+    expect(services.textContent).toContain("QUICK ANSWERSPROBLEM REPORTSIDEAS")
+    expect(screen.getByText(/DIRTYDUTY\s+·\s+MADE FOR SHARED HOMES/)).toBeTruthy()
+    expect(report.textContent).toContain("!")
+    expect(feedback.textContent).toContain("✦")
+    expect(report.querySelector("details")).toBeTruthy()
+    expect(feedback.querySelector("details")).toBeTruthy()
+    expect(
+      within(report).getByRole("button", { name: "Open email app" }).hasAttribute("disabled"),
+    ).toBe(true)
+    expect(
+      within(report).getByRole("button", { name: "Copy message" }).hasAttribute("disabled"),
+    ).toBe(true)
+    expect(
+      within(feedback).getByRole("button", { name: "Open email app" }).hasAttribute("disabled"),
+    ).toBe(true)
+    expect(
+      within(feedback).getByRole("button", { name: "Copy message" }).hasAttribute("disabled"),
+    ).toBe(true)
+
+    const feedbackType = screen.getByLabelText<HTMLSelectElement>("Feedback type")
+    expect(feedbackType.value).toBe("General feedback")
+    expect(
+      feedback.querySelector('img[src="/profile-redesign/icons/help-chevron-down-dark.svg"]'),
+    ).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("button", { name: /^Getting Started/ }))
+    const question = screen.getByRole("button", {
+      name: "How do I join an existing household?",
+    })
+    fireEvent.click(question)
+    expect(question.getAttribute("aria-expanded")).toBe("true")
+    expect(screen.getByText(/valid invitation code/).className).not.toBe("")
   })
 
   it("validates problem fields and prepares a safe diagnostic email and copy message", async () => {

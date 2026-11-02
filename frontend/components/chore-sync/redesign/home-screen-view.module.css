@@ -49,8 +49,8 @@
   --danger: #9b4050;
   --attention-surface: #f9fefb;
   --quiet-line: #c7dfd8;
-  --nav-surface: rgb(247 255 252 / 81%);
-  --nav-border: rgb(255 255 255 / 88%);
+  --nav-surface: rgb(227 245 238 / 62%);
+  --nav-border: rgb(255 255 255 / 76%);
   --nav-active-surface: rgb(206 241 231 / 96%);
   --nav-active-border: rgb(13 112 108 / 28%);
   --nav-active-text: #0d706c;
@@ -1187,6 +1187,18 @@
   box-shadow: var(--nav-shadow);
   backdrop-filter: blur(11px);
   -webkit-backdrop-filter: blur(11px);
+}
+
+.lightTheme .navigationCapsule::before {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  right: 12%;
+  left: 12%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 94%), transparent);
+  content: "";
+  pointer-events: none;
 }
 
 .navigationItems {

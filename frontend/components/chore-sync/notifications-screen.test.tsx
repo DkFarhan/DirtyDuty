@@ -179,10 +179,11 @@ describe("notifications screen", () => {
     expect(screen.queryByText("high")).toBeNull()
     expect(screen.getByText("Please complete the kitchen chore.")).toBeTruthy()
     expect(screen.getByText("Unread")).toBeTruthy()
-    expect(screen.getByRole("button", { name: "Mark as read" })).toBeTruthy()
+    const markAsRead = screen.getByRole("button", { name: "Mark Kitchen chore due as read" })
+    expect(markAsRead.textContent).toBe("Mark as read")
     expect(screen.getByLabelText("Quiet hours start")).toHaveProperty("value", "21:30")
 
-    fireEvent.click(screen.getByRole("button", { name: "Mark as read" }))
+    fireEvent.click(markAsRead)
     await waitFor(() =>
       expect(
         screen.getByText("Kitchen chore due").closest("article")?.getAttribute("data-read"),
@@ -237,7 +238,7 @@ describe("notifications screen", () => {
     )
     const title = await screen.findByText("Kitchen chore due")
 
-    fireEvent.click(screen.getByRole("button", { name: "Mark as read" }))
+    fireEvent.click(screen.getByRole("button", { name: "Mark Kitchen chore due as read" }))
     await waitFor(() => expect(finishMarkRead).toBeTypeOf("function"))
     expect(title.closest("article")?.getAttribute("data-read")).toBe("true")
     expect(screen.getByText("You're all caught up")).toBeTruthy()
@@ -263,7 +264,7 @@ describe("notifications screen", () => {
     fireEvent.click(funnyPreference)
     expect(funnyPreference.checked).toBe(true)
 
-    fireEvent.click(screen.getByRole("button", { name: "Mark as read" }))
+    fireEvent.click(screen.getByRole("button", { name: "Mark Kitchen chore due as read" }))
     await waitFor(() =>
       expect(
         screen.getByText("Kitchen chore due").closest("article")?.getAttribute("data-read"),

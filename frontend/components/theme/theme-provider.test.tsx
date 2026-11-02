@@ -8,21 +8,21 @@ import { ThemeProvider, themeStorageKey, useTheme } from "./theme-provider"
 const mediaListeners = new Set<(event: MediaQueryListEvent) => void>()
 let prefersDark = false
 
-function TestTheme() {
+function TestTheme({ redesigned = false }: { redesigned?: boolean }) {
   const { theme, resolvedTheme } = useTheme()
   return (
     <>
-      <ThemeSelector />
+      <ThemeSelector redesigned={redesigned} />
       <output data-testid="selected-theme">{theme}</output>
       <output data-testid="resolved-theme">{resolvedTheme}</output>
     </>
   )
 }
 
-function renderTheme() {
+function renderTheme(redesigned = false) {
   return render(
     <ThemeProvider>
-      <TestTheme />
+      <TestTheme redesigned={redesigned} />
     </ThemeProvider>,
   )
 }
@@ -63,9 +63,15 @@ describe("theme selection", () => {
     expect(screen.getByRole("radio", { name: "Light" })).toBeTruthy()
     expect(screen.getByRole("radio", { name: "Dark" })).toBeTruthy()
     expect(screen.getByRole("radio", { name: "System" })).toBeTruthy()
-    expect(screen.queryByText("Always use the light theme.")).toBeNull()
-    expect(screen.queryByText("Always use the dark theme.")).toBeNull()
+    expect(screen.getByText("Bright and clear")).toBeTruthy()
+    expect(screen.getByText("Easy on the eyes")).toBeTruthy()
     expect(screen.getByText("Use your device appearance")).toBeTruthy()
+    for (const value of ["light", "dark", "system"]) {
+      const radio = screen.getByRole("radio", { name: value[0].toUpperCase() + value.slice(1) })
+      const descriptionId = radio.getAttribute("aria-describedby")
+      expect(descriptionId).toBe(`theme-description-${value}`)
+      expect(document.getElementById(descriptionId ?? "")).toBeTruthy()
+    }
     await waitFor(() =>
       expect(screen.getByRole<HTMLInputElement>("radio", { name: "System" }).checked).toBe(true),
     )
@@ -77,6 +83,24 @@ describe("theme selection", () => {
       screen.getByRole("radio", { name: "Light" }).closest("label")?.getAttribute("data-selected"),
     ).toBe("false")
   })
+
+  it.each([false, true])(
+    "references an existing description for every radio in %s mode",
+    (redesigned) => {
+      renderTheme(redesigned)
+
+      for (const [value, label, description] of [
+        ["light", "Light", "Bright and clear"],
+        ["dark", "Dark", "Easy on the eyes"],
+        ["system", "System", "Use your device appearance"],
+      ]) {
+        const radio = screen.getByRole("radio", { name: label })
+        const descriptionId = radio.getAttribute("aria-describedby")
+        expect(descriptionId).toBe(`theme-description-${value}`)
+        expect(document.getElementById(descriptionId ?? "")?.textContent).toBe(description)
+      }
+    },
+  )
 
   it("selects Light and persists the explicit preference", async () => {
     renderTheme()
