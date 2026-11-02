@@ -388,6 +388,10 @@
   padding: 18px 60px 17px 17px;
 }
 
+.choreCardMenuOpen {
+  z-index: 5;
+}
+
 .choreIcon,
 .iconPreview,
 .inviteMark,
@@ -493,6 +497,11 @@
   border-radius: 15px;
   background: var(--surface-strong);
   box-shadow: 0 16px 38px rgb(0 13 19 / 25%);
+}
+
+.actionMenuAbove {
+  top: auto;
+  bottom: calc(100% - 36px);
 }
 
 .actionMenu button {
