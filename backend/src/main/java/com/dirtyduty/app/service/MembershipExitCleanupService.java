@@ -84,6 +84,7 @@ public class MembershipExitCleanupService {
    */
   @Transactional(propagation = Propagation.MANDATORY)
   public int cleanupMembershipExit(UUID householdId, UUID userId) {
+    lockHousehold(householdId);
     entityManager.flush();
 
     List<UUID> scheduleIds =
@@ -141,7 +142,14 @@ public class MembershipExitCleanupService {
   }
 
   @Transactional(propagation = Propagation.MANDATORY)
+  public void lockHousehold(UUID householdId) {
+    // Shared lock order: household, schedules by ID, assignments by ID, then assignee rows.
+    jdbc.queryForObject("SELECT id FROM households WHERE id=? FOR UPDATE", UUID.class, householdId);
+  }
+
+  @Transactional(propagation = Propagation.MANDATORY)
   public void lockHouseholdSchedules(UUID householdId) {
+    lockHousehold(householdId);
     jdbc.query(
         "SELECT id FROM chore_schedules WHERE household_id=? ORDER BY id FOR UPDATE",
         (rs, row) -> rs.getObject("id", UUID.class),
@@ -204,7 +212,11 @@ public class MembershipExitCleanupService {
 
   private int reconcileSchedules(List<UUID> scheduleIds, UUID departingUserId) {
     int pausedSchedules = 0;
-    for (ChoreSchedule schedule : scheduleRepository.findAllById(scheduleIds)) {
+    List<ChoreSchedule> schedules = scheduleRepository.findAllById(scheduleIds);
+    for (ChoreSchedule schedule : schedules) {
+      entityManager.refresh(schedule);
+    }
+    for (ChoreSchedule schedule : schedules) {
       Map<String, Object> config =
           schedule.getStrategyConfig() == null
               ? new LinkedHashMap<>()
@@ -313,7 +325,8 @@ public class MembershipExitCleanupService {
         jdbc.update(
             """
             UPDATE chore_assignments
-            SET status='CANCELLED', assigned_to_user_id=NULL, updated_at=NOW()
+            SET status='CANCELLED', assigned_to_user_id=NULL, updated_at=NOW(),
+                cancelled_by_membership_exit=TRUE
             WHERE id=? AND status='PENDING'
             """,
             assignmentId);

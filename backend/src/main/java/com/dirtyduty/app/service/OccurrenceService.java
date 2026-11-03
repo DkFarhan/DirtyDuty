@@ -22,6 +22,8 @@ import com.dirtyduty.app.notification.NotificationEventService;
 import com.dirtyduty.app.repository.ChoreScheduleRepository;
 import com.dirtyduty.app.repository.HouseholdMembershipRepository;
 import com.dirtyduty.app.repository.UserRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import java.security.SecureRandom;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -49,6 +51,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class OccurrenceService {
   private static final SecureRandom RANDOM = new SecureRandom();
   private final JdbcTemplate jdbc;
+  private final EntityManager entityManager;
   private final ChoreScheduleRepository scheduleRepository;
   private final HouseholdMembershipRepository membershipRepository;
   private final UserRepository userRepository;
@@ -57,6 +60,7 @@ public class OccurrenceService {
 
   public OccurrenceService(
       JdbcTemplate jdbc,
+      EntityManager entityManager,
       ChoreScheduleRepository scheduleRepository,
       HouseholdMembershipRepository membershipRepository,
       UserRepository userRepository,
@@ -66,6 +70,7 @@ public class OccurrenceService {
       throw new IllegalArgumentException("Occurrence horizon must be between 1 and 90 days.");
     }
     this.jdbc = jdbc;
+    this.entityManager = entityManager;
     this.scheduleRepository = scheduleRepository;
     this.membershipRepository = membershipRepository;
     this.userRepository = userRepository;
@@ -86,6 +91,7 @@ public class OccurrenceService {
   @Transactional
   public void synchronizeSchedule(
       ChoreSchedule schedule, boolean updatePendingAssignees, boolean userInitiatedEdit) {
+    lockHousehold(schedule.getHousehold().getId());
     jdbc.queryForObject(
         "SELECT id FROM chore_schedules WHERE id=? FOR UPDATE", UUID.class, schedule.getId());
     Household household = schedule.getHousehold();
@@ -208,11 +214,21 @@ public class OccurrenceService {
             && !"CANCELLED".equals(occurrenceStatus)) {
           continue;
         }
+        boolean exitCancelled =
+            Boolean.TRUE.equals(
+                jdbc.queryForObject(
+                    "SELECT cancelled_by_membership_exit FROM chore_assignments WHERE id=?",
+                    Boolean.class,
+                    occurrenceId));
+        if (exitCancelled && !userInitiatedEdit) {
+          continue;
+        }
         jdbc.update(
             """
                         UPDATE chore_assignments
                         SET status='PENDING', due_at=?, title_snapshot=?, priority_snapshot=?,
-                            difficulty_snapshot=?, estimated_minutes_snapshot=?, updated_at=NOW()
+                            difficulty_snapshot=?, estimated_minutes_snapshot=?, updated_at=NOW(),
+                            cancelled_by_membership_exit=FALSE
                         WHERE id=? AND status IN ('PENDING','SUBMITTED','CANCELLED')
                         """,
             dueAt,
@@ -221,7 +237,7 @@ public class OccurrenceService {
             chore.getDifficulty(),
             chore.getEstimatedMinutes(),
             occurrenceId);
-        if (updatePendingAssignees) {
+        if (updatePendingAssignees || exitCancelled) {
           jdbc.update("DELETE FROM chore_assignment_assignees WHERE assignment_id=?", occurrenceId);
           jdbc.update(
               "UPDATE chore_assignments SET assigned_to_user_id=? WHERE id=?",
@@ -781,9 +797,33 @@ public class OccurrenceService {
 
   @Transactional
   public void generateHousehold(UUID householdId) {
-    for (ChoreSchedule schedule : scheduleRepository.findByHousehold_IdAndActiveTrue(householdId)) {
-      synchronizeSchedule(schedule);
+    lockHousehold(householdId);
+    List<UUID> scheduleIds =
+        jdbc.query(
+            "SELECT id FROM chore_schedules WHERE household_id=? AND is_active=TRUE ORDER BY id",
+            (rs, row) -> rs.getObject("id", UUID.class),
+            householdId);
+    for (UUID scheduleId : scheduleIds) {
+      ChoreSchedule schedule =
+          scheduleRepository
+              .findByIdForUpdate(scheduleId)
+              .orElseThrow(() -> new IllegalStateException("A locked chore schedule disappeared."));
+      entityManager.refresh(schedule, LockModeType.PESSIMISTIC_WRITE);
+      entityManager.refresh(schedule.getChore());
+      entityManager.refresh(schedule.getHousehold());
+      if (schedule.isActive()) {
+        synchronizeLockedSchedule(schedule, false, false);
+      }
     }
+  }
+
+  private void lockHousehold(UUID householdId) {
+    jdbc.queryForObject("SELECT id FROM households WHERE id=? FOR UPDATE", UUID.class, householdId);
+  }
+
+  private void synchronizeLockedSchedule(
+      ChoreSchedule schedule, boolean updatePendingAssignees, boolean userInitiatedEdit) {
+    synchronizeSchedule(schedule, updatePendingAssignees, userInitiatedEdit);
   }
 
   private List<AssignmentResponse> assignmentList(

@@ -457,6 +457,7 @@ public class HouseholdService {
   @Transactional
   public RemoveMemberResponse removeMember(
       UUID householdId, UUID targetUserId, Authentication authentication) {
+    membershipExitCleanupService.lockHousehold(householdId);
     User actorUser = resolveUser(authentication);
     HouseholdMembership actorMembership = requireActiveMembership(householdId, actorUser.getId());
     if (actorMembership.getRole() != HouseholdRole.OWNER
@@ -520,6 +521,7 @@ public class HouseholdService {
   @Transactional
   public void transferOwnership(
       UUID householdId, UUID targetUserId, Authentication authentication) {
+    membershipExitCleanupService.lockHousehold(householdId);
     User actorUser = resolveUser(authentication);
     HouseholdMembership actorMembership = requireActiveMembership(householdId, actorUser.getId());
     if (actorMembership.getRole() != HouseholdRole.OWNER) {

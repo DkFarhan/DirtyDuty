@@ -105,6 +105,7 @@ public class HouseholdSettingsService {
   @Transactional
   public void leave(
       UUID householdId, LeaveHouseholdRequest request, Authentication authentication) {
+    membershipExitCleanupService.lockHousehold(householdId);
     HouseholdMembership membership = activeMembership(householdId, authentication);
     OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
 
@@ -171,6 +172,8 @@ public class HouseholdSettingsService {
     }
     UUID householdId = membership.getHousehold().getId();
     UUID userId = membership.getUser().getId();
+    // Account deletion already locks user memberships; schedule paths never lock memberships.
+    membershipExitCleanupService.lockHousehold(householdId);
     membership.setStatus(MembershipStatus.LEFT);
     membership.setLeftAt(OffsetDateTime.now(ZoneOffset.UTC));
     membership.setRole(HouseholdRole.MEMBER);

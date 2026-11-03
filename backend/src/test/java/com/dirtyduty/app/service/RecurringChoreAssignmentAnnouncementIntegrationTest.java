@@ -3,8 +3,11 @@ package com.dirtyduty.app.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.dirtyduty.app.dto.chore.ChoreRequest;
+import com.dirtyduty.app.dto.chore.ChoreScheduleRequest;
 import com.dirtyduty.app.entity.ChoreSchedule;
 import com.dirtyduty.app.entity.User;
+import com.dirtyduty.app.entity.enums.AssignmentStrategy;
 import com.dirtyduty.app.exception.InvalidHouseholdException;
 import com.dirtyduty.app.notification.NotificationEvent;
 import com.dirtyduty.app.notification.NotificationEventService;
@@ -41,6 +44,8 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
   @Autowired private ChoreScheduleRepository scheduleRepository;
   @Autowired private UserRepository userRepository;
   @Autowired private OccurrenceService occurrenceService;
+  @Autowired private ChoreService choreService;
+  @Autowired private HouseholdSettingsService householdSettingsService;
   @Autowired private NotificationEventService notificationEventService;
   @Autowired private NotificationScheduler notificationScheduler;
   @Autowired private PlatformTransactionManager transactionManager;
@@ -57,6 +62,7 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
               + "(SELECT id FROM notification_events WHERE household_id=?)",
           householdId);
       jdbc.update("DELETE FROM notification_events WHERE household_id=?", householdId);
+      jdbc.update("DELETE FROM activity_events WHERE household_id=?", householdId);
       jdbc.update("DELETE FROM chore_completions WHERE household_id=?", householdId);
       jdbc.update("DELETE FROM chore_assignment_assignees WHERE household_id=?", householdId);
       jdbc.update("DELETE FROM chore_assignments WHERE household_id=?", householdId);
@@ -948,6 +954,10 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
                       .executeWithoutResult(
                           status -> {
                             jdbc.queryForObject(
+                                "SELECT id FROM households WHERE id=? FOR UPDATE",
+                                UUID.class,
+                                householdId);
+                            jdbc.queryForObject(
                                 "SELECT id FROM chore_schedules WHERE id=? FOR UPDATE",
                                 UUID.class,
                                 scheduleId);
@@ -975,17 +985,9 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
                           status -> {
                             exitBackendPid.set(
                                 jdbc.queryForObject("SELECT pg_backend_pid()", Integer.class));
-                            jdbc.update(
-                                """
-                                UPDATE household_memberships
-                                SET status='LEFT', left_at=NOW()
-                                WHERE household_id=? AND user_id=?
-                                """,
-                                householdId,
-                                departingUserId);
                             exitStarted.countDown();
-                            membershipExitCleanupService.cleanupMembershipExit(
-                                householdId, departingUserId);
+                            householdSettingsService.leave(
+                                householdId, null, authentication(departingUserId));
                           }));
       assertThat(exitStarted.await(5, TimeUnit.SECONDS)).isTrue();
 
@@ -1022,6 +1024,591 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
                 UUID.class,
                 assignmentId))
         .isNull();
+  }
+
+  @Test
+  void ordinaryGenerationDoesNotReopenExitCancelledRecurringAssignments() {
+    UUID ownerId = createUser("exit-generation-owner");
+    UUID departingUserId = createUser("exit-generation-member");
+    householdId = createHousehold(ownerId);
+    addMember(departingUserId);
+    UUID choreId = createChore(ownerId, "Exit generation chore");
+    UUID scheduleId =
+        createSchedule(choreId, "FREQ=DAILY", "ROUND_ROBIN", List.of(ownerId, departingUserId), 1);
+    synchronizeSchedule(scheduleId);
+
+    LocalDate targetDate = LocalDate.now(ZoneOffset.UTC).plusDays(2);
+    LocalDate unaffectedDate = targetDate.plusDays(1);
+    UUID exitCancelledId =
+        jdbc.queryForObject(
+            "SELECT id FROM chore_assignments WHERE schedule_id=? AND scheduled_for=?",
+            UUID.class,
+            scheduleId,
+            targetDate);
+    UUID unaffectedId =
+        jdbc.queryForObject(
+            "SELECT id FROM chore_assignments WHERE schedule_id=? AND scheduled_for=?",
+            UUID.class,
+            scheduleId,
+            unaffectedDate);
+    jdbc.update("DELETE FROM chore_assignment_assignees WHERE assignment_id=?", exitCancelledId);
+    jdbc.update(
+        "UPDATE chore_assignments SET assigned_to_user_id=? WHERE id=?",
+        departingUserId,
+        exitCancelledId);
+    jdbc.update(
+        "INSERT INTO chore_assignment_assignees (household_id, assignment_id, user_id) VALUES (?, ?, ?)",
+        householdId,
+        exitCancelledId,
+        departingUserId);
+    jdbc.update("DELETE FROM chore_assignment_assignees WHERE assignment_id=?", unaffectedId);
+    jdbc.update(
+        "UPDATE chore_assignments SET assigned_to_user_id=? WHERE id=?", ownerId, unaffectedId);
+    jdbc.update(
+        "INSERT INTO chore_assignment_assignees (household_id, assignment_id, user_id) VALUES (?, ?, ?)",
+        householdId,
+        unaffectedId,
+        ownerId);
+
+    new TransactionTemplate(transactionManager)
+        .executeWithoutResult(
+            status -> {
+              jdbc.update(
+                  "UPDATE household_memberships SET status='LEFT', left_at=NOW() "
+                      + "WHERE household_id=? AND user_id=?",
+                  householdId,
+                  departingUserId);
+              membershipExitCleanupService.cleanupMembershipExit(householdId, departingUserId);
+            });
+
+    for (int attempt = 0; attempt < 3; attempt++) {
+      generateHousehold();
+    }
+
+    assertThat(assignmentStatus(exitCancelledId)).isEqualTo("CANCELLED");
+    assertThat(assignmentPrimaryAssignee(exitCancelledId)).isNull();
+    assertThat(normalizedAssignees(exitCancelledId)).isEmpty();
+    assertThat(assignmentStatus(unaffectedId)).isEqualTo("PENDING");
+    assertThat(assignmentPrimaryAssignee(unaffectedId)).isEqualTo(ownerId);
+    assertThat(normalizedAssignees(unaffectedId)).containsExactly(ownerId);
+    assertThat(activeAssignmentCount(scheduleId)).isGreaterThan(0);
+
+    choreService.updateChore(
+        householdId,
+        choreId,
+        choreRequest("Exit generation chore", singleParticipantScheduleRequest(ownerId)),
+        authentication(ownerId));
+    assertThat(assignmentStatus(exitCancelledId)).isEqualTo("PENDING");
+    assertThat(assignmentPrimaryAssignee(exitCancelledId)).isEqualTo(ownerId);
+    assertThat(normalizedAssignees(exitCancelledId)).containsExactly(ownerId);
+  }
+
+  @Test
+  void scheduleSynchronizationThatFinishesBeforeExitIsReconciledByExit() throws Exception {
+    UUID ownerId = createUser("sync-first-owner");
+    UUID departingUserId = createUser("sync-first-member");
+    householdId = createHousehold(ownerId);
+    addMember(departingUserId);
+    UUID choreId = createChore(ownerId, "Sync first chore");
+    UUID scheduleId = createSchedule(choreId, "FREQ=DAILY", "FIXED", List.of(departingUserId));
+    jdbc.update(
+        "UPDATE chore_schedules SET starts_on=? WHERE id=?",
+        LocalDate.now(ZoneOffset.UTC).plusDays(2),
+        scheduleId);
+
+    CountDownLatch synchronizedSchedule = new CountDownLatch(1);
+    CountDownLatch allowSyncCommit = new CountDownLatch(1);
+    CountDownLatch exitStarted = new CountDownLatch(1);
+    AtomicInteger syncBackendPid = new AtomicInteger();
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    try {
+      Future<?> synchronization =
+          executor.submit(
+              () ->
+                  new TransactionTemplate(transactionManager)
+                      .executeWithoutResult(
+                          status -> {
+                            syncBackendPid.set(
+                                jdbc.queryForObject("SELECT pg_backend_pid()", Integer.class));
+                            ChoreSchedule schedule =
+                                scheduleRepository.findById(scheduleId).orElseThrow();
+                            occurrenceService.synchronizeSchedule(schedule);
+                            synchronizedSchedule.countDown();
+                            awaitLatch(allowSyncCommit, "sync commit");
+                          }));
+      assertThat(synchronizedSchedule.await(5, TimeUnit.SECONDS)).isTrue();
+
+      Future<?> exit =
+          executor.submit(
+              () ->
+                  new TransactionTemplate(transactionManager)
+                      .executeWithoutResult(
+                          status -> {
+                            exitStarted.countDown();
+                            jdbc.update(
+                                "UPDATE household_memberships SET status='LEFT', left_at=NOW() "
+                                    + "WHERE household_id=? AND user_id=?",
+                                householdId,
+                                departingUserId);
+                            membershipExitCleanupService.cleanupMembershipExit(
+                                householdId, departingUserId);
+                          }));
+      assertThat(exitStarted.await(5, TimeUnit.SECONDS)).isTrue();
+      assertThat(awaitBlockedBy(syncBackendPid.get())).isTrue();
+
+      allowSyncCommit.countDown();
+      synchronization.get(10, TimeUnit.SECONDS);
+      exit.get(10, TimeUnit.SECONDS);
+    } finally {
+      allowSyncCommit.countDown();
+      executor.shutdownNow();
+      executor.awaitTermination(5, TimeUnit.SECONDS);
+    }
+
+    UUID generatedId =
+        jdbc.queryForObject(
+            "SELECT id FROM chore_assignments WHERE schedule_id=? AND scheduled_for=?",
+            UUID.class,
+            scheduleId,
+            LocalDate.now(ZoneOffset.UTC).plusDays(2));
+    assertThat(assignmentStatus(generatedId)).isEqualTo("CANCELLED");
+    assertThat(assignmentPrimaryAssignee(generatedId)).isNull();
+    assertThat(normalizedAssignees(generatedId)).isEmpty();
+    assertThat(scheduleActive(scheduleId)).isFalse();
+  }
+
+  @Test
+  void exitThatFinishesBeforeWaitingGenerationPreventsStaleParticipantGeneration()
+      throws Exception {
+    UUID ownerId = createUser("exit-first-owner");
+    UUID departingUserId = createUser("exit-first-member");
+    householdId = createHousehold(ownerId);
+    addMember(departingUserId);
+    UUID choreId = createChore(ownerId, "Exit first chore");
+    UUID scheduleId = createSchedule(choreId, "FREQ=DAILY", "FIXED", List.of(departingUserId));
+    jdbc.update(
+        "UPDATE chore_schedules SET starts_on=? WHERE id=?",
+        LocalDate.now(ZoneOffset.UTC).plusDays(2),
+        scheduleId);
+
+    CountDownLatch exitCleaned = new CountDownLatch(1);
+    CountDownLatch allowExitCommit = new CountDownLatch(1);
+    CountDownLatch generationStarted = new CountDownLatch(1);
+    AtomicInteger exitBackendPid = new AtomicInteger();
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    try {
+      Future<?> exit =
+          executor.submit(
+              () ->
+                  new TransactionTemplate(transactionManager)
+                      .executeWithoutResult(
+                          status -> {
+                            exitBackendPid.set(
+                                jdbc.queryForObject("SELECT pg_backend_pid()", Integer.class));
+                            jdbc.queryForObject(
+                                "SELECT id FROM households WHERE id=? FOR UPDATE",
+                                UUID.class,
+                                householdId);
+                            jdbc.update(
+                                "UPDATE household_memberships SET status='LEFT', left_at=NOW() "
+                                    + "WHERE household_id=? AND user_id=?",
+                                householdId,
+                                departingUserId);
+                            membershipExitCleanupService.cleanupMembershipExit(
+                                householdId, departingUserId);
+                            exitCleaned.countDown();
+                            awaitLatch(allowExitCommit, "exit commit");
+                          }));
+      assertThat(exitCleaned.await(5, TimeUnit.SECONDS)).isTrue();
+
+      Future<?> generation =
+          executor.submit(
+              () ->
+                  new TransactionTemplate(transactionManager)
+                      .executeWithoutResult(
+                          status -> {
+                            generationStarted.countDown();
+                            occurrenceService.generateHousehold(householdId);
+                          }));
+      assertThat(generationStarted.await(5, TimeUnit.SECONDS)).isTrue();
+      assertThat(awaitAnyBackendBlockedBy(exitBackendPid.get())).isTrue();
+
+      allowExitCommit.countDown();
+      exit.get(10, TimeUnit.SECONDS);
+      generation.get(10, TimeUnit.SECONDS);
+    } finally {
+      allowExitCommit.countDown();
+      executor.shutdownNow();
+      executor.awaitTermination(5, TimeUnit.SECONDS);
+    }
+
+    assertThat(scheduleActive(scheduleId)).isFalse();
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT COUNT(*) FROM chore_assignments WHERE schedule_id=?",
+                Integer.class,
+                scheduleId))
+        .isZero();
+  }
+
+  @Test
+  void scheduleCreationThatFinishesBeforeExitIsReconciledByExit() throws Exception {
+    UUID ownerId = createUser("create-before-exit-owner");
+    UUID departingUserId = createUser("create-before-exit-member");
+    householdId = createHousehold(ownerId);
+    addMember(departingUserId);
+    CountDownLatch operationCommittedToWork = new CountDownLatch(1);
+    CountDownLatch allowOperationCommit = new CountDownLatch(1);
+    CountDownLatch exitStarted = new CountDownLatch(1);
+    AtomicInteger operationBackendPid = new AtomicInteger();
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    try {
+      Future<?> creation =
+          executor.submit(
+              () ->
+                  new TransactionTemplate(transactionManager)
+                      .executeWithoutResult(
+                          status -> {
+                            operationBackendPid.set(
+                                jdbc.queryForObject("SELECT pg_backend_pid()", Integer.class));
+                            choreService.createChore(
+                                householdId,
+                                choreRequest(
+                                    "Created during exit race",
+                                    scheduleRequest(ownerId, departingUserId)),
+                                authentication(ownerId));
+                            operationCommittedToWork.countDown();
+                            awaitLatch(allowOperationCommit, "creation commit");
+                          }));
+      assertThat(operationCommittedToWork.await(5, TimeUnit.SECONDS)).isTrue();
+
+      Future<?> exit =
+          executor.submit(
+              () ->
+                  new TransactionTemplate(transactionManager)
+                      .executeWithoutResult(
+                          status -> {
+                            exitStarted.countDown();
+                            householdSettingsService.leave(
+                                householdId, null, authentication(departingUserId));
+                          }));
+      assertThat(exitStarted.await(5, TimeUnit.SECONDS)).isTrue();
+      assertThat(awaitBlockedBy(operationBackendPid.get())).isTrue();
+
+      allowOperationCommit.countDown();
+      creation.get(10, TimeUnit.SECONDS);
+      exit.get(10, TimeUnit.SECONDS);
+    } finally {
+      allowOperationCommit.countDown();
+      executor.shutdownNow();
+      executor.awaitTermination(5, TimeUnit.SECONDS);
+    }
+
+    UUID scheduleId =
+        jdbc.queryForObject(
+            "SELECT id FROM chore_schedules WHERE household_id=?", UUID.class, householdId);
+    assertThat(scheduleActive(scheduleId)).isTrue();
+    assertThat(scheduleParticipantIds(scheduleId)).containsExactly(ownerId.toString());
+    assertThat(
+            jdbc.queryForObject(
+                """
+                SELECT COUNT(*) FROM chore_assignment_assignees
+                WHERE household_id=? AND user_id=?
+                """,
+                Integer.class,
+                householdId,
+                departingUserId))
+        .isZero();
+  }
+
+  @Test
+  void scheduleEditThatFinishesBeforeExitIsReconciledByExit() throws Exception {
+    UUID ownerId = createUser("edit-before-exit-owner");
+    UUID departingUserId = createUser("edit-before-exit-member");
+    householdId = createHousehold(ownerId);
+    addMember(departingUserId);
+    UUID choreId = createChore(ownerId, "Edited during exit race");
+    UUID scheduleId =
+        createSchedule(choreId, "FREQ=DAILY", "ROUND_ROBIN", List.of(ownerId, departingUserId));
+    CountDownLatch operationCommittedToWork = new CountDownLatch(1);
+    CountDownLatch allowOperationCommit = new CountDownLatch(1);
+    CountDownLatch exitStarted = new CountDownLatch(1);
+    AtomicInteger operationBackendPid = new AtomicInteger();
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    try {
+      Future<?> edit =
+          executor.submit(
+              () ->
+                  new TransactionTemplate(transactionManager)
+                      .executeWithoutResult(
+                          status -> {
+                            operationBackendPid.set(
+                                jdbc.queryForObject("SELECT pg_backend_pid()", Integer.class));
+                            choreService.updateChore(
+                                householdId,
+                                choreId,
+                                choreRequest(
+                                    "Edited during exit race",
+                                    scheduleRequest(ownerId, departingUserId)),
+                                authentication(ownerId));
+                            operationCommittedToWork.countDown();
+                            awaitLatch(allowOperationCommit, "schedule edit commit");
+                          }));
+      assertThat(operationCommittedToWork.await(5, TimeUnit.SECONDS)).isTrue();
+
+      Future<?> exit =
+          executor.submit(
+              () ->
+                  new TransactionTemplate(transactionManager)
+                      .executeWithoutResult(
+                          status -> {
+                            exitStarted.countDown();
+                            householdSettingsService.leave(
+                                householdId, null, authentication(departingUserId));
+                          }));
+      assertThat(exitStarted.await(5, TimeUnit.SECONDS)).isTrue();
+      assertThat(awaitBlockedBy(operationBackendPid.get())).isTrue();
+
+      allowOperationCommit.countDown();
+      edit.get(10, TimeUnit.SECONDS);
+      exit.get(10, TimeUnit.SECONDS);
+    } finally {
+      allowOperationCommit.countDown();
+      executor.shutdownNow();
+      executor.awaitTermination(5, TimeUnit.SECONDS);
+    }
+
+    assertThat(scheduleParticipantIds(scheduleId)).containsExactly(ownerId.toString());
+    assertThat(
+            jdbc.queryForObject(
+                """
+                SELECT COUNT(*) FROM chore_assignment_assignees
+                WHERE household_id=? AND user_id=?
+                """,
+                Integer.class,
+                householdId,
+                departingUserId))
+        .isZero();
+  }
+
+  @Test
+  void exitThatFinishesBeforeScheduleCreationRejectsInactiveParticipant() throws Exception {
+    UUID ownerId = createUser("create-after-exit-owner");
+    UUID departingUserId = createUser("create-after-exit-member");
+    householdId = createHousehold(ownerId);
+    addMember(departingUserId);
+    CountDownLatch exitCommittedToWork = new CountDownLatch(1);
+    CountDownLatch allowExitCommit = new CountDownLatch(1);
+    CountDownLatch creationStarted = new CountDownLatch(1);
+    AtomicInteger exitBackendPid = new AtomicInteger();
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    try {
+      Future<?> exit =
+          executor.submit(
+              () ->
+                  new TransactionTemplate(transactionManager)
+                      .executeWithoutResult(
+                          status -> {
+                            exitBackendPid.set(
+                                jdbc.queryForObject("SELECT pg_backend_pid()", Integer.class));
+                            householdSettingsService.leave(
+                                householdId, null, authentication(departingUserId));
+                            exitCommittedToWork.countDown();
+                            awaitLatch(allowExitCommit, "exit commit");
+                          }));
+      assertThat(exitCommittedToWork.await(5, TimeUnit.SECONDS)).isTrue();
+
+      Future<Boolean> creation =
+          executor.submit(
+              () -> {
+                creationStarted.countDown();
+                try {
+                  new TransactionTemplate(transactionManager)
+                      .executeWithoutResult(
+                          status ->
+                              choreService.createChore(
+                                  householdId,
+                                  choreRequest(
+                                      "Rejected creation",
+                                      scheduleRequest(ownerId, departingUserId)),
+                                  authentication(ownerId)));
+                  return false;
+                } catch (InvalidHouseholdException exception) {
+                  return true;
+                }
+              });
+      assertThat(creationStarted.await(5, TimeUnit.SECONDS)).isTrue();
+      assertThat(awaitBlockedBy(exitBackendPid.get())).isTrue();
+
+      allowExitCommit.countDown();
+      exit.get(10, TimeUnit.SECONDS);
+      assertThat(creation.get(10, TimeUnit.SECONDS)).isTrue();
+    } finally {
+      allowExitCommit.countDown();
+      executor.shutdownNow();
+      executor.awaitTermination(5, TimeUnit.SECONDS);
+    }
+
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT COUNT(*) FROM chores WHERE household_id=? AND title='Rejected creation'",
+                Integer.class,
+                householdId))
+        .isZero();
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT COUNT(*) FROM chore_schedules WHERE household_id=?",
+                Integer.class,
+                householdId))
+        .isZero();
+  }
+
+  @Test
+  void exitThatFinishesBeforeScheduleEditRejectsInactiveParticipant() throws Exception {
+    UUID ownerId = createUser("edit-after-exit-owner");
+    UUID departingUserId = createUser("edit-after-exit-member");
+    householdId = createHousehold(ownerId);
+    addMember(departingUserId);
+    UUID choreId = createChore(ownerId, "Rejected edit");
+    UUID scheduleId = createSchedule(choreId, "FREQ=DAILY", "ROUND_ROBIN", List.of(ownerId));
+    CountDownLatch exitCommittedToWork = new CountDownLatch(1);
+    CountDownLatch allowExitCommit = new CountDownLatch(1);
+    CountDownLatch editStarted = new CountDownLatch(1);
+    AtomicInteger exitBackendPid = new AtomicInteger();
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    try {
+      Future<?> exit =
+          executor.submit(
+              () ->
+                  new TransactionTemplate(transactionManager)
+                      .executeWithoutResult(
+                          status -> {
+                            exitBackendPid.set(
+                                jdbc.queryForObject("SELECT pg_backend_pid()", Integer.class));
+                            householdSettingsService.leave(
+                                householdId, null, authentication(departingUserId));
+                            exitCommittedToWork.countDown();
+                            awaitLatch(allowExitCommit, "exit commit");
+                          }));
+      assertThat(exitCommittedToWork.await(5, TimeUnit.SECONDS)).isTrue();
+
+      Future<Boolean> edit =
+          executor.submit(
+              () -> {
+                editStarted.countDown();
+                try {
+                  new TransactionTemplate(transactionManager)
+                      .executeWithoutResult(
+                          status ->
+                              choreService.updateChore(
+                                  householdId,
+                                  choreId,
+                                  choreRequest(
+                                      "Rejected edit", scheduleRequest(ownerId, departingUserId)),
+                                  authentication(ownerId)));
+                  return false;
+                } catch (InvalidHouseholdException exception) {
+                  return true;
+                }
+              });
+      assertThat(editStarted.await(5, TimeUnit.SECONDS)).isTrue();
+      assertThat(awaitBlockedBy(exitBackendPid.get())).isTrue();
+
+      allowExitCommit.countDown();
+      exit.get(10, TimeUnit.SECONDS);
+      assertThat(edit.get(10, TimeUnit.SECONDS)).isTrue();
+    } finally {
+      allowExitCommit.countDown();
+      executor.shutdownNow();
+      executor.awaitTermination(5, TimeUnit.SECONDS);
+    }
+
+    assertThat(scheduleParticipantIds(scheduleId)).containsExactly(ownerId.toString());
+  }
+
+  @Test
+  void activationRequiresCompletePoolsAndSucceedsAfterExplicitCorrection() {
+    UUID ownerId = createUser("activation-owner");
+    UUID secondMemberId = createUser("activation-second-member");
+    householdId = createHousehold(ownerId);
+    addMember(secondMemberId);
+
+    for (AssignmentStrategy strategy :
+        List.of(
+            AssignmentStrategy.FIXED, AssignmentStrategy.ROUND_ROBIN, AssignmentStrategy.RANDOM)) {
+      UUID choreId = createChore(ownerId, "Insufficient " + strategy);
+      UUID scheduleId = createSchedule(choreId, "FREQ=DAILY", strategy.name(), List.of(ownerId), 2);
+      jdbc.update("UPDATE chore_schedules SET is_active=FALSE WHERE id=?", scheduleId);
+      jdbc.update("UPDATE chores SET is_active=FALSE WHERE id=?", choreId);
+      int assignmentsBefore =
+          jdbc.queryForObject(
+              "SELECT COUNT(*) FROM chore_assignments WHERE schedule_id=?",
+              Integer.class,
+              scheduleId);
+
+      assertThatThrownBy(
+              () -> choreService.activateChore(householdId, choreId, authentication(ownerId)))
+          .isInstanceOf(InvalidHouseholdException.class);
+      assertThat(scheduleActive(scheduleId)).isFalse();
+      assertThat(
+              jdbc.queryForObject(
+                  "SELECT is_active FROM chores WHERE id=?", Boolean.class, choreId))
+          .isFalse();
+      assertThat(
+              jdbc.queryForObject(
+                  "SELECT COUNT(*) FROM chore_assignments WHERE schedule_id=?",
+                  Integer.class,
+                  scheduleId))
+          .isEqualTo(assignmentsBefore);
+
+      String participants = "[\"" + ownerId + "\",\"" + secondMemberId + "\"]";
+      jdbc.update(
+          """
+          UPDATE chore_schedules
+          SET strategy_config=CAST(? AS jsonb),
+              fixed_assignee_user_id=?
+          WHERE id=?
+          """,
+          "{\"participantUserIds\":" + participants + ",\"peopleNeeded\":2}",
+          strategy == AssignmentStrategy.FIXED ? ownerId : null,
+          scheduleId);
+      choreService.activateChore(householdId, choreId, authentication(ownerId));
+      assertThat(scheduleActive(scheduleId)).isTrue();
+      assertThat(
+              jdbc.queryForObject(
+                  "SELECT is_active FROM chores WHERE id=?", Boolean.class, choreId))
+          .isTrue();
+      assertThat(
+              jdbc.queryForObject(
+                  "SELECT COUNT(*) FROM chore_assignments WHERE schedule_id=? AND status='PENDING'",
+                  Integer.class,
+                  scheduleId))
+          .isGreaterThan(0);
+    }
+  }
+
+  @Test
+  void pausingAndReactivatingScheduleStillRestoresItsPendingAssignments() {
+    UUID ownerId = createUser("pause-reactivate-owner");
+    householdId = createHousehold(ownerId);
+    UUID choreId = createChore(ownerId, "Pause and reactivate");
+    UUID scheduleId = createSchedule(choreId, "FREQ=DAILY", "FIXED", List.of(ownerId));
+    synchronizeSchedule(scheduleId);
+    UUID assignmentId =
+        jdbc.queryForObject(
+            "SELECT id FROM chore_assignments WHERE schedule_id=? ORDER BY scheduled_for LIMIT 1",
+            UUID.class,
+            scheduleId);
+
+    choreService.pauseChore(householdId, choreId, authentication(ownerId));
+    assertThat(scheduleActive(scheduleId)).isFalse();
+    assertThat(assignmentStatus(assignmentId)).isEqualTo("CANCELLED");
+
+    choreService.activateChore(householdId, choreId, authentication(ownerId));
+    assertThat(scheduleActive(scheduleId)).isTrue();
+    assertThat(assignmentStatus(assignmentId)).isEqualTo("PENDING");
+    assertThat(assignmentPrimaryAssignee(assignmentId)).isEqualTo(ownerId);
+    assertThat(normalizedAssignees(assignmentId)).containsExactly(ownerId);
   }
 
   @Test
@@ -1294,6 +1881,111 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
     return jdbc.queryForObject(
         "SELECT COUNT(*) FROM chore_assignments WHERE schedule_id=? AND status IN ('PENDING','SUBMITTED')",
         Integer.class,
+        scheduleId);
+  }
+
+  private String assignmentStatus(UUID assignmentId) {
+    return jdbc.queryForObject(
+        "SELECT status FROM chore_assignments WHERE id=?", String.class, assignmentId);
+  }
+
+  private UUID assignmentPrimaryAssignee(UUID assignmentId) {
+    return jdbc.queryForObject(
+        "SELECT assigned_to_user_id FROM chore_assignments WHERE id=?", UUID.class, assignmentId);
+  }
+
+  private List<UUID> normalizedAssignees(UUID assignmentId) {
+    return jdbc.query(
+        "SELECT user_id FROM chore_assignment_assignees WHERE assignment_id=? ORDER BY user_id",
+        (rs, row) -> rs.getObject("user_id", UUID.class),
+        assignmentId);
+  }
+
+  private boolean scheduleActive(UUID scheduleId) {
+    return Boolean.TRUE.equals(
+        jdbc.queryForObject(
+            "SELECT is_active FROM chore_schedules WHERE id=?", Boolean.class, scheduleId));
+  }
+
+  private boolean awaitBlockedBy(int blockerPid) throws InterruptedException {
+    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+    do {
+      Boolean blocked =
+          jdbc.queryForObject(
+              """
+              SELECT EXISTS (
+                SELECT 1 FROM pg_stat_activity activity
+                WHERE ? = ANY(pg_blocking_pids(activity.pid))
+              )
+              """,
+              Boolean.class,
+              blockerPid);
+      if (Boolean.TRUE.equals(blocked)) return true;
+      Thread.sleep(20);
+    } while (System.nanoTime() < deadline);
+    return false;
+  }
+
+  private boolean awaitAnyBackendBlockedBy(int blockerPid) throws InterruptedException {
+    return awaitBlockedBy(blockerPid);
+  }
+
+  private void awaitLatch(CountDownLatch latch, String operation) {
+    try {
+      if (!latch.await(10, TimeUnit.SECONDS)) {
+        throw new IllegalStateException("Timed out waiting for " + operation + ".");
+      }
+    } catch (InterruptedException exception) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException(operation + " was interrupted.", exception);
+    }
+  }
+
+  private ChoreRequest choreRequest(String title, ChoreScheduleRequest schedule) {
+    return new ChoreRequest(title, null, null, null, null, null, false, schedule);
+  }
+
+  private ChoreScheduleRequest scheduleRequest(UUID ownerId, UUID participantId) {
+    return new ChoreScheduleRequest(
+        "FREQ=DAILY",
+        "UTC",
+        LocalDate.now(ZoneOffset.UTC).plusDays(2),
+        null,
+        null,
+        AssignmentStrategy.ROUND_ROBIN,
+        null,
+        List.of(ownerId, participantId),
+        1);
+  }
+
+  private ChoreScheduleRequest singleParticipantScheduleRequest(UUID participantId) {
+    return new ChoreScheduleRequest(
+        "FREQ=DAILY",
+        "UTC",
+        LocalDate.now(ZoneOffset.UTC).plusDays(2),
+        null,
+        null,
+        AssignmentStrategy.ROUND_ROBIN,
+        null,
+        List.of(participantId),
+        1);
+  }
+
+  private org.springframework.security.core.Authentication authentication(UUID userId) {
+    String email = jdbc.queryForObject("SELECT email FROM users WHERE id=?", String.class, userId);
+    return new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+        email, null);
+  }
+
+  private List<String> scheduleParticipantIds(UUID scheduleId) {
+    return jdbc.query(
+        """
+        SELECT jsonb_array_elements_text(strategy_config->'participantUserIds') AS user_id
+        FROM chore_schedules
+        WHERE id=?
+        ORDER BY user_id
+        """,
+        (rs, row) -> rs.getString("user_id"),
         scheduleId);
   }
 
