@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { createHouseholdPreviewFixture } from "./household-preview-fixtures"
 import { HouseholdScreenView, type HouseholdScreenViewProps } from "./household-screen-view"
+import styles from "./household-screen-view.module.css"
 
 function renderHouseholdView(
   role: "owner-3" | "admin-3" | "member-3" = "admin-3",
@@ -96,6 +97,21 @@ describe("Household screen presentation", () => {
     expect(screen.getByRole("alert").textContent).toContain("current list is still available")
     fireEvent.click(screen.getByRole("button", { name: "Retry" }))
     expect(onRetry).toHaveBeenCalledOnce()
+  })
+
+  it("announces invitation errors in the dedicated alert notice", () => {
+    renderHouseholdView("admin-3", {
+      previewInvite: {
+        status: "error",
+        errorMessage: "No code was generated. Try again.",
+      },
+      onGeneratePreviewInvite: vi.fn(),
+      onClosePreviewInvite: vi.fn(),
+    })
+
+    const alert = screen.getByRole("alert")
+    expect(alert.className).toContain(styles.inviteErrorNotice)
+    expect(alert.textContent).toContain("No code was generated. Try again.")
   })
 
   it("renders distinct loading, initial-error, and empty states", () => {

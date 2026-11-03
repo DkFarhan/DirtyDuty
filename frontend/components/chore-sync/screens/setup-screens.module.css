@@ -7,7 +7,9 @@
   --page-surface: rgb(250 255 252 / 86%);
   --page-surface-strong: #f8fdfa;
   --page-accent-soft: #d3eee6;
-  --page-danger: #a13e4e;
+  --page-danger: #8e2733;
+  --page-danger-bg: #fff0ee;
+  --page-danger-border: #b56e78;
   --page-primary-foreground: #fff;
   min-height: 100vh;
   min-height: 100dvh;
@@ -28,7 +30,9 @@
   --page-surface: rgb(16 47 57 / 78%);
   --page-surface-strong: #102f39;
   --page-accent-soft: rgb(34 77 84 / 52%);
-  --page-danger: #a94456;
+  --page-danger: #f8b9ba;
+  --page-danger-bg: #20323b;
+  --page-danger-border: #b67c84;
   --page-primary-foreground: #061923;
   background:
     radial-gradient(ellipse at 92% 9%, rgb(13 87 91 / 31%), transparent 30rem),
@@ -289,7 +293,7 @@
 }
 
 .formHeading .logo {
-  width: 140px;
+  width: 164px;
   margin: 0 0 24px;
 }
 
@@ -456,12 +460,13 @@
 .error {
   margin: 17px 0;
   padding: 12px 14px;
-  border: 1px solid color-mix(in srgb, var(--page-danger) 30%, var(--page-line));
+  border: 1px solid var(--page-danger-border);
   border-radius: 13px;
-  background: color-mix(in srgb, var(--page-danger) 9%, var(--page-surface));
+  background: var(--page-danger-bg);
   color: var(--page-danger);
   font-size: 13px;
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .personalizationContent {
@@ -577,12 +582,28 @@
   margin-bottom: 24px;
 }
 
+.emailBrand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 27px;
+}
+
 .emailLogo {
   display: block;
-  width: 142px;
+  width: 250px;
   max-width: 100%;
   height: auto;
-  margin: 0 0 25px;
+  margin: 0;
+}
+
+.emailBrandPhrase {
+  margin: 0;
+  color: var(--page-muted);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  text-align: center;
 }
 
 .emailEyebrow {
@@ -718,10 +739,10 @@
 .emailError {
   margin: 0 0 16px;
   padding: 12px 14px;
-  border: 1px solid #e8bec3;
+  border: 1px solid var(--page-danger-border);
   border-radius: 13px;
-  background: #fff0f1;
-  color: #9c2c3d;
+  background: var(--page-danger-bg);
+  color: var(--page-danger);
   font-size: 13px;
   line-height: 1.5;
   overflow-wrap: anywhere;
@@ -909,9 +930,9 @@
 }
 
 :global(.dark) .emailError {
-  border-color: #80404d;
-  background: #3a202a;
-  color: #ffc2ca;
+  border-color: var(--page-danger-border);
+  background: var(--page-danger-bg);
+  color: var(--page-danger);
 }
 
 :global(.dark) .emailPrimaryButton,
@@ -1008,6 +1029,10 @@
     margin-bottom: 21px;
   }
 
+  .formHeading .logo {
+    width: 144px;
+  }
+
   .choiceCard {
     min-height: 146px;
     padding: 19px;
@@ -1025,6 +1050,13 @@
 
   .formHeading {
     margin-top: 27px;
+  }
+}
+
+@media (min-width: 768px) {
+  .logo,
+  .formHeading .logo {
+    width: 184px;
   }
 }
 

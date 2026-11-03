@@ -321,6 +321,10 @@ function AppFrame({
     isAuthenticated && features.emailVerification !== false && user?.emailVerified === false
   const useWideFrame =
     [
+      "login",
+      "register",
+      "forgot-password",
+      "reset-password",
       "welcome",
       "create-household",
       "join-household",

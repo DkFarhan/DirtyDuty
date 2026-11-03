@@ -44,7 +44,7 @@ export function JoinHouseholdScreen() {
         </header>
         <section className={styles.formContent}>
           <div className={styles.formHeading}>
-            <ProductLogo className={styles.logo} />
+            <ProductLogo className={styles.logo} themeAware />
             <p className={styles.eyebrow}>Find your people</p>
             <h1 className={styles.title}>Join Household</h1>
             <p className={styles.description}>

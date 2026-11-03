@@ -7,12 +7,13 @@ import { ApiError } from "@/lib/auth/api"
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   register: vi.fn(),
+  googleEnabled: false,
 }))
 
 vi.mock("@/lib/auth/auth-context", () => ({
   useAuth: () => ({
     register: mocks.register,
-    features: { google: false, passwordReset: true, emailVerification: true },
+    features: { google: mocks.googleEnabled, passwordReset: true, emailVerification: true },
   }),
 }))
 
@@ -21,14 +22,26 @@ vi.mock("@/lib/chore-sync/store", () => ({
 }))
 
 import { RegisterScreen } from "./register-screen"
+import styles from "./auth-screens.module.css"
 
 describe("RegisterScreen duplicate signup guidance", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.googleEnabled = false
     window.sessionStorage.clear()
   })
 
   afterEach(() => cleanup())
+
+  it("shows the shared accessible Google action only when enabled", () => {
+    mocks.googleEnabled = true
+    render(<RegisterScreen />)
+
+    const button = screen.getByRole("button", { name: "Continue with Google" })
+    expect(button.querySelector(".google-sign-in-icon")?.textContent).toBe("G")
+    expect(button.querySelector(".google-sign-in-label")?.textContent).toBe("Continue with Google")
+    expect(button.className).toContain(styles.googleButton)
+  })
 
   it("offers sign-in and recovery while preserving the entered email", async () => {
     mocks.register.mockRejectedValueOnce(
@@ -57,5 +70,17 @@ describe("RegisterScreen duplicate signup guidance", () => {
 
     expect(window.sessionStorage.getItem("auth-prefill-email")).toBe("person@example.com")
     expect(mocks.navigate).toHaveBeenCalledWith("forgot-password")
+  })
+
+  it("uses the same centered stacked brand while retaining back navigation", () => {
+    render(<RegisterScreen />)
+    const brand = screen.getByRole("banner")
+    expect(brand.className).toContain(styles.centeredBrand)
+    expect(brand.querySelector('img[alt="DirtyDuty"]')).toBeTruthy()
+    expect(brand.textContent).toContain("Keep your home running smoothly")
+    expect(screen.getByRole("button", { name: "Back to sign in" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Create account" }).className).toContain(
+      styles.title,
+    )
   })
 })

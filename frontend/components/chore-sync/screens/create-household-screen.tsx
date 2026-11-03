@@ -51,7 +51,7 @@ export function CreateHouseholdScreen() {
         </header>
         <section className={styles.formContent}>
           <div className={styles.formHeading}>
-            <ProductLogo className={styles.logo} />
+            <ProductLogo className={styles.logo} themeAware />
             <p className={styles.eyebrow}>Make it your own</p>
             <h1 className={styles.title}>Create Household</h1>
             <p className={styles.description}>

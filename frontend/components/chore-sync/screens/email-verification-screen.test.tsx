@@ -58,6 +58,8 @@ describe("EmailVerificationScreen", () => {
     expect(screen.getByRole("heading", { name: "Verify your email" })).toBeTruthy()
     expect(screen.getByText("pending@example.com")).toBeTruthy()
     expect(document.querySelector("main")?.className).toContain("emailPage")
+    const brandPhrase = screen.getByText("Keep your home running smoothly")
+    expect(brandPhrase.parentElement?.querySelector('img[alt="DirtyDuty"]')).toBeTruthy()
     expect(
       await screen.findByText("A verification code was sent to pending@example.com."),
     ).toBeTruthy()

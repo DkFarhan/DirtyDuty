@@ -159,7 +159,10 @@ export function EmailVerificationScreen() {
     <main className={`${styles.page} ${styles.emailPage}`}>
       <section className={styles.emailShell}>
         <header className={styles.emailHeader}>
-          <ProductLogo className={styles.emailLogo} />
+          <div className={styles.emailBrand}>
+            <ProductLogo className={styles.emailLogo} themeAware />
+            <p className={styles.emailBrandPhrase}>Keep your home running smoothly</p>
+          </div>
           <p className={styles.emailEyebrow}>Account security</p>
           <h1 className={styles.title}>Verify your email</h1>
           <p className={styles.emailDescription}>

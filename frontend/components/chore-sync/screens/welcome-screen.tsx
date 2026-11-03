@@ -43,7 +43,7 @@ export function WelcomeScreen() {
         </header>
         <section className={styles.welcomeContent}>
           <div className={styles.intro}>
-            <ProductLogo className={styles.logo} />
+            <ProductLogo className={styles.logo} themeAware />
             <p className={styles.eyebrow}>A better rhythm at home</p>
             <h1 className={styles.title}>Welcome!</h1>
             <p className={styles.description}>

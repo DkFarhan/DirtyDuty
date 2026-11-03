@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { getLegalDocumentUrl, getLegalReturnScreen } from "@/lib/chore-sync/legal-navigation"
+import { getLegalDocumentUrl, getLegalReturnContext } from "@/lib/chore-sync/legal-navigation"
 
 type LegalDocumentLinkProps = {
   path: "/terms" | "/privacy"
@@ -14,8 +14,8 @@ export function LegalDocumentLink({ path, className, children }: LegalDocumentLi
 
   useEffect(() => {
     const returnTo = new URLSearchParams(window.location.search).get("returnTo")
-    const returnScreen = getLegalReturnScreen(returnTo)
-    if (returnScreen) setHref(getLegalDocumentUrl(path, returnScreen))
+    const returnContext = getLegalReturnContext(returnTo)
+    if (returnContext) setHref(getLegalDocumentUrl(path, returnContext))
   }, [path])
 
   return (

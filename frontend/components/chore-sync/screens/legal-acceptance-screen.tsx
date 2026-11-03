@@ -62,7 +62,7 @@ export function LegalAcceptanceScreen() {
       <div className={styles.shell}>
         <section className={styles.formContent}>
           <div className={styles.formHeading}>
-            <ProductLogo className={styles.logo} />
+            <ProductLogo className={styles.logo} themeAware />
             <p className={styles.eyebrow}>Legal updates</p>
             <h1 className={styles.title}>Review our policies</h1>
             <p className={styles.description}>

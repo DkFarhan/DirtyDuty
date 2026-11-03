@@ -4,19 +4,41 @@ import { useState } from "react"
 import { ApiError } from "@/lib/auth/api"
 import { useAuth } from "@/lib/auth/auth-context"
 import { useChoreSync } from "@/lib/chore-sync/store"
-import { ProductLogo } from "@/components/brand/product-logo"
+import { getLegalDocumentUrl } from "@/lib/chore-sync/legal-navigation"
 import { PasswordInput } from "@/components/ui/password-input"
-import { ChevronLeftIcon } from "../icons"
 import { GoogleSignInButton } from "../google-sign-in-button"
-
-const inputClass =
-  "w-full px-4 py-3.5 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent text-[15px] transition-all"
+import { AuthScreenLayout } from "./auth-screen-layout"
+import styles from "./auth-screens.module.css"
 
 const fields = [
-  { key: "name", label: "Full name", placeholder: "John Doe", type: "text" },
-  { key: "email", label: "Email", placeholder: "you@example.com", type: "email" },
-  { key: "password", label: "Password", placeholder: "••••••••", type: "password" },
-  { key: "confirm", label: "Confirm password", placeholder: "••••••••", type: "password" },
+  {
+    key: "name",
+    label: "Full name",
+    placeholder: "Your name",
+    type: "text",
+    autoComplete: "name",
+  },
+  {
+    key: "email",
+    label: "Email",
+    placeholder: "you@example.com",
+    type: "email",
+    autoComplete: "email",
+  },
+  {
+    key: "password",
+    label: "Password",
+    placeholder: "Create a password",
+    type: "password",
+    autoComplete: "new-password",
+  },
+  {
+    key: "confirm",
+    label: "Confirm password",
+    placeholder: "Enter your password again",
+    type: "password",
+    autoComplete: "new-password",
+  },
 ] as const
 
 export function RegisterScreen() {
@@ -57,10 +79,10 @@ export function RegisterScreen() {
         privacyPolicyAcknowledged: true,
       })
       navigate(authenticatedUser.emailVerified ? "welcome" : "verify-email")
-    } catch (error) {
-      if (error instanceof ApiError) {
-        setError(error.message)
-        setDuplicateRegistration(error.status === 409)
+    } catch (cause) {
+      if (cause instanceof ApiError) {
+        setError(cause.message)
+        setDuplicateRegistration(cause.status === 409)
       } else setError("Unable to create your account. Please try again.")
     } finally {
       setIsSubmitting(false)
@@ -68,57 +90,59 @@ export function RegisterScreen() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-white px-6 pt-12 pb-10">
-      <button
-        onClick={() => navigate("login")}
-        className="flex items-center gap-1 text-slate-500 mb-8 -ml-1 w-fit"
-      >
-        <ChevronLeftIcon className="w-5 h-5" />
-        <span className="text-sm font-medium">Back</span>
-      </button>
-
-      <ProductLogo className="mb-6 h-auto w-44 max-w-full" />
-      <h1 className="text-3xl font-black text-slate-900 mb-1 font-display">Create account</h1>
-      <p className="text-slate-500 text-sm mb-8">Set up your account to get started</p>
-
+    <AuthScreenLayout
+      centeredBrand
+      description="A few details to get your household started on a smoother routine."
+      eyebrow="Make room for easier days"
+      onBack={() => navigate("login")}
+      title="Create account"
+      footer={
+        <>
+          Already have an account?
+          <button className={styles.textButton} onClick={() => navigate("login")} type="button">
+            Sign in
+          </button>
+        </>
+      }
+    >
       {features.google && (
         <>
-          <GoogleSignInButton />
-          <div className="my-5 flex items-center gap-3">
-            <div className="h-px flex-1 bg-slate-100" />
-            <span className="text-xs font-medium text-slate-400">or sign up with email</span>
-            <div className="h-px flex-1 bg-slate-100" />
-          </div>
+          <GoogleSignInButton className={styles.googleButton} />
+          <div className={styles.divider}>or sign up with email</div>
         </>
       )}
 
-      <div className="flex flex-col gap-4 mb-6">
-        {fields.map(({ key, label, placeholder, type }) => (
-          <div key={key}>
-            <label
-              htmlFor={`register-${key}`}
-              className="block text-sm font-semibold text-slate-700 mb-1.5"
-            >
+      <div className={styles.fields}>
+        {fields.map(({ key, label, placeholder, type, autoComplete }) => (
+          <div className={styles.field} key={key}>
+            <label className={styles.label} htmlFor={`register-${key}`}>
               {label}
             </label>
             {type === "password" ? (
               <PasswordInput
-                autoComplete="new-password"
+                autoComplete={autoComplete}
+                className={styles.input}
                 id={`register-${key}`}
                 name={key}
-                value={form[key]}
-                onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, [key]: event.target.value }))
+                }
                 placeholder={placeholder}
-                className={inputClass}
+                toggleClassName={styles.passwordToggle}
+                value={form[key]}
               />
             ) : (
               <input
+                autoComplete={autoComplete}
+                className={styles.input}
                 id={`register-${key}`}
+                name={key}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, [key]: event.target.value }))
+                }
+                placeholder={placeholder}
                 type={type}
                 value={form[key]}
-                onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
-                placeholder={placeholder}
-                className={inputClass}
               />
             )}
           </div>
@@ -126,11 +150,12 @@ export function RegisterScreen() {
       </div>
 
       {error && (
-        <div className="mb-4" role="alert">
-          <p className="text-sm text-rose-600">{error}</p>
+        <div className={`${styles.error} mt-4`} role="alert">
+          <p>{error}</p>
           {duplicateRegistration && (
-            <div className="mt-2 flex gap-4 text-sm font-semibold text-teal-700">
+            <div className={styles.duplicateActions}>
               <button
+                className={styles.textButton}
                 onClick={() => {
                   window.sessionStorage.setItem("auth-prefill-email", form.email.trim())
                   navigate("login")
@@ -140,6 +165,7 @@ export function RegisterScreen() {
                 Sign In
               </button>
               <button
+                className={styles.textButton}
                 onClick={() => {
                   window.sessionStorage.setItem("auth-prefill-email", form.email.trim())
                   navigate("forgot-password")
@@ -153,12 +179,12 @@ export function RegisterScreen() {
         </div>
       )}
 
-      <div className="mb-4">
-        <label className="flex items-start gap-2.5 text-sm leading-relaxed text-slate-600">
+      <div className={styles.consent}>
+        <label className={styles.consentLabel}>
           <input
             aria-describedby={termsError ? "register-terms-error" : undefined}
             checked={termsAccepted}
-            className="mt-1 h-4 w-4 shrink-0 accent-teal-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
+            className={styles.checkbox}
             onChange={(event) => {
               setTermsAccepted(event.target.checked)
               if (event.target.checked) setTermsError("")
@@ -168,8 +194,9 @@ export function RegisterScreen() {
           <span>
             I agree to the{" "}
             <a
-              className="font-semibold text-teal-700 underline underline-offset-2 hover:text-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 dark:text-teal-300 dark:hover:text-teal-200"
-              href="/terms"
+              aria-label="Terms of Service (opens in a new tab)"
+              className={styles.legalLink}
+              href={getLegalDocumentUrl("/terms", "register")}
               rel="noopener noreferrer"
               target="_blank"
             >
@@ -177,8 +204,9 @@ export function RegisterScreen() {
             </a>{" "}
             and acknowledge the{" "}
             <a
-              className="font-semibold text-teal-700 underline underline-offset-2 hover:text-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 dark:text-teal-300 dark:hover:text-teal-200"
-              href="/privacy"
+              aria-label="Privacy Policy (opens in a new tab)"
+              className={styles.legalLink}
+              href={getLegalDocumentUrl("/privacy", "register")}
               rel="noopener noreferrer"
               target="_blank"
             >
@@ -187,22 +215,21 @@ export function RegisterScreen() {
           </span>
         </label>
         {termsError && (
-          <p
-            className="mt-1.5 text-xs font-medium text-rose-600"
-            id="register-terms-error"
-            role="alert"
-          >
+          <p className={`${styles.error} mt-3`} id="register-terms-error" role="alert">
             {termsError}
           </p>
         )}
       </div>
-      <button
-        onClick={handleSubmit}
-        disabled={isSubmitting}
-        className="w-full bg-teal-600 text-white font-bold text-[15px] py-4 rounded-xl shadow-lg shadow-teal-200 hover:bg-teal-700 active:scale-[0.98] transition-all disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        {isSubmitting ? "Creating Account..." : "Create Account"}
-      </button>
-    </div>
+      <div className={styles.actionSpace}>
+        <button
+          className={`${styles.primaryButton} auth-primary-button`}
+          disabled={isSubmitting}
+          onClick={() => void handleSubmit()}
+          type="button"
+        >
+          {isSubmitting ? "Creating Account..." : "Create Account"}
+        </button>
+      </div>
+    </AuthScreenLayout>
   )
 }
