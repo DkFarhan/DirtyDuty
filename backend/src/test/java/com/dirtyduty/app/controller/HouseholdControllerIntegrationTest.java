@@ -10,6 +10,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -19,6 +20,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.dirtyduty.app.dto.auth.CsrfResponse;
 import com.dirtyduty.app.dto.auth.RegisterRequest;
+import com.dirtyduty.app.dto.household.DeleteHouseholdRequest;
 import com.dirtyduty.app.entity.HouseholdMembership;
 import com.dirtyduty.app.entity.User;
 import com.dirtyduty.app.entity.enums.HouseholdRole;
@@ -33,7 +35,9 @@ import com.dirtyduty.app.notification.WebPushNotificationProvider;
 import com.dirtyduty.app.repository.HouseholdMembershipRepository;
 import com.dirtyduty.app.repository.UserRepository;
 import com.dirtyduty.app.service.AuthService;
+import com.dirtyduty.app.service.HouseholdService;
 import com.dirtyduty.app.service.MembershipExitCleanupService;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.Cookie;
 import java.nio.charset.StandardCharsets;
@@ -50,6 +54,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -58,6 +63,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -76,6 +82,8 @@ class HouseholdControllerIntegrationTest {
   @Autowired private MockMvc mockMvc;
 
   @Autowired private AuthService authService;
+
+  @Autowired private HouseholdService householdService;
 
   @Autowired private UserRepository userRepository;
 
@@ -1422,6 +1430,149 @@ class HouseholdControllerIntegrationTest {
     assertThat(
             jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM chores WHERE household_id = ?", Integer.class, householdId))
+        .isZero();
+  }
+
+  @Test
+  void choreCreationHidesNonexistentAndInaccessibleHouseholds() throws Exception {
+    WebSession caller = login("missinghouse");
+    WebSession otherOwner = login("hiddenhome");
+    UUID inaccessibleHouseholdId = createHousehold(otherOwner, "Hidden Home", "UTC");
+    UUID nonexistentHouseholdId = UUID.randomUUID();
+
+    for (UUID householdId : List.of(nonexistentHouseholdId, inaccessibleHouseholdId)) {
+      String path = "/api/households/" + householdId + "/chores";
+      mockMvc
+          .perform(
+              post(path)
+                  .cookie(caller.cookie())
+                  .header(caller.csrfHeader(), caller.csrfToken())
+                  .contentType(APPLICATION_JSON)
+                  .content("{\"title\":\"Must not be created\"}"))
+          .andExpect(status().isForbidden())
+          .andExpect(jsonPath("$.status").value(403))
+          .andExpect(jsonPath("$.error").value("Forbidden"))
+          .andExpect(jsonPath("$.message").value("You are not authorized to manage chores."))
+          .andExpect(jsonPath("$.path").value(path))
+          .andExpect(jsonPath("$.timestamp").isNotEmpty());
+    }
+
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM chores WHERE title = ?",
+                Integer.class,
+                "Must not be created"))
+        .isZero();
+  }
+
+  @Test
+  void memberRemovalHidesNonexistentAndInaccessibleHouseholds() throws Exception {
+    WebSession caller = login("memberremove");
+    WebSession otherOwner = login("hiddenmember");
+    UUID inaccessibleHouseholdId = createHousehold(otherOwner, "Hidden Member Home", "UTC");
+    UUID nonexistentHouseholdId = UUID.randomUUID();
+
+    for (UUID householdId : List.of(nonexistentHouseholdId, inaccessibleHouseholdId)) {
+      String path = "/api/households/" + householdId + "/members/" + otherOwner.userId();
+      mockMvc
+          .perform(
+              delete(path).cookie(caller.cookie()).header(caller.csrfHeader(), caller.csrfToken()))
+          .andExpect(status().isForbidden())
+          .andExpect(jsonPath("$.status").value(403))
+          .andExpect(jsonPath("$.error").value("Forbidden"))
+          .andExpect(jsonPath("$.message").value("You are not an active member of this household."))
+          .andExpect(jsonPath("$.path").value(path))
+          .andExpect(jsonPath("$.timestamp").isNotEmpty());
+    }
+
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM household_memberships WHERE household_id = ?",
+                Integer.class,
+                inaccessibleHouseholdId))
+        .isEqualTo(1);
+  }
+
+  @Test
+  void choreCreationWaitingForDeletedHouseholdReturnsForbiddenWithoutWriting() throws Exception {
+    WebSession owner = login("deletewhilewaiting");
+    UUID householdId = createHousehold(owner, "Delete While Waiting", "UTC");
+    String path = "/api/households/" + householdId + "/chores";
+    MvcResult response =
+        requestWhileHouseholdDeletionCommits(
+            owner,
+            householdId,
+            "Delete While Waiting",
+            () ->
+                mockMvc
+                    .perform(
+                        post(path)
+                            .cookie(owner.cookie())
+                            .header(owner.csrfHeader(), owner.csrfToken())
+                            .contentType(APPLICATION_JSON)
+                            .content("{\"title\":\"Must not survive deletion\"}"))
+                    .andReturn());
+    assertHouseholdForbiddenResponse(response, path);
+    assertThat(
+            objectMapper
+                .readTree(response.getResponse().getContentAsString())
+                .path("message")
+                .asText())
+        .isEqualTo("You are not authorized to manage chores.");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM households WHERE id = ?", Integer.class, householdId))
+        .isZero();
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM chores WHERE title = ?",
+                Integer.class,
+                "Must not survive deletion"))
+        .isZero();
+  }
+
+  @Test
+  void memberRemovalWaitingForDeletedHouseholdReturnsForbidden() throws Exception {
+    WebSession owner = login("removedelete");
+    WebSession target = login("removedeletetarget");
+    UUID householdId = createHousehold(owner, "Remove During Delete", "UTC");
+    String path = "/api/households/" + householdId + "/members/" + target.userId();
+    MvcResult response =
+        requestWhileHouseholdDeletionCommits(
+            owner,
+            householdId,
+            "Remove During Delete",
+            () ->
+                mockMvc
+                    .perform(
+                        delete(path)
+                            .cookie(owner.cookie())
+                            .header(owner.csrfHeader(), owner.csrfToken()))
+                    .andReturn());
+
+    assertHouseholdForbiddenResponse(response, path);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM households WHERE id = ?", Integer.class, householdId))
+        .isZero();
+  }
+
+  @Test
+  void dashboardGenerationWaitingForDeletedHouseholdReturnsForbidden() throws Exception {
+    WebSession owner = login("dashboarddelete");
+    UUID householdId = createHousehold(owner, "Dashboard Delete", "UTC");
+    String path = "/api/households/" + householdId + "/dashboard";
+    MvcResult response =
+        requestWhileHouseholdDeletionCommits(
+            owner,
+            householdId,
+            "Dashboard Delete",
+            () -> mockMvc.perform(get(path).cookie(owner.cookie())).andReturn());
+
+    assertHouseholdForbiddenResponse(response, path);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM households WHERE id = ?", Integer.class, householdId))
         .isZero();
   }
 
@@ -3629,6 +3780,102 @@ class HouseholdControllerIntegrationTest {
     return "{\"name\":\"Valid Home\",\"timezone\":\"UTC\"}";
   }
 
+  private void await(CountDownLatch latch, String description) {
+    try {
+      if (!latch.await(10, TimeUnit.SECONDS)) {
+        throw new IllegalStateException("Timed out waiting for " + description + ".");
+      }
+    } catch (InterruptedException exception) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException(
+          "Interrupted while waiting for " + description + ".", exception);
+    }
+  }
+
+  private boolean awaitAnyBackendBlockedBy(int blockerPid) throws InterruptedException {
+    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+    while (System.nanoTime() < deadline) {
+      Boolean blocked =
+          jdbcTemplate.queryForObject(
+              """
+              SELECT EXISTS (
+                  SELECT 1
+                  FROM pg_stat_activity
+                  WHERE ? = ANY(pg_blocking_pids(pid))
+              )
+              """,
+              Boolean.class,
+              blockerPid);
+      if (Boolean.TRUE.equals(blocked)) {
+        return true;
+      }
+      Thread.sleep(25);
+    }
+    return false;
+  }
+
+  private MvcResult requestWhileHouseholdDeletionCommits(
+      WebSession owner, UUID householdId, String householdName, HouseholdHttpRequest request)
+      throws Exception {
+    CountDownLatch householdLocked = new CountDownLatch(1);
+    CountDownLatch releaseDelete = new CountDownLatch(1);
+    AtomicInteger blockerPid = new AtomicInteger();
+    CompletableFuture<Void> deletion =
+        CompletableFuture.runAsync(
+            () ->
+                new TransactionTemplate(transactionManager)
+                    .executeWithoutResult(
+                        status -> {
+                          blockerPid.set(
+                              jdbcTemplate.queryForObject(
+                                  "SELECT pg_backend_pid()", Integer.class));
+                          jdbcTemplate.queryForObject(
+                              "SELECT id FROM households WHERE id = ? FOR UPDATE",
+                              UUID.class,
+                              householdId);
+                          householdLocked.countDown();
+                          await(releaseDelete, "household deletion release");
+                          householdService.deleteHousehold(
+                              householdId,
+                              new DeleteHouseholdRequest(householdName, PASSWORD),
+                              new UsernamePasswordAuthenticationToken(
+                                  userRepository
+                                      .findById(UUID.fromString(owner.userId()))
+                                      .orElseThrow()
+                                      .getEmail(),
+                                  null));
+                        }));
+    try {
+      assertThat(householdLocked.await(10, TimeUnit.SECONDS)).isTrue();
+      CompletableFuture<MvcResult> waitingRequest =
+          CompletableFuture.supplyAsync(
+              () -> {
+                try {
+                  return request.perform();
+                } catch (Exception exception) {
+                  throw new IllegalStateException(exception);
+                }
+              });
+      assertThat(awaitAnyBackendBlockedBy(blockerPid.get())).isTrue();
+      releaseDelete.countDown();
+      deletion.get(10, TimeUnit.SECONDS);
+      return waitingRequest.get(10, TimeUnit.SECONDS);
+    } finally {
+      releaseDelete.countDown();
+      deletion.get(10, TimeUnit.SECONDS);
+    }
+  }
+
+  private void assertHouseholdForbiddenResponse(MvcResult response, String path) throws Exception {
+    JsonNode body = objectMapper.readTree(response.getResponse().getContentAsString());
+    assertThat(response.getResponse().getStatus()).isEqualTo(403);
+    assertThat(body.path("status").asInt()).isEqualTo(403);
+    assertThat(body.path("error").asText()).isEqualTo("Forbidden");
+    assertThat(body.path("message").asText()).isNotBlank();
+    assertThat(body.path("path").asText()).isEqualTo(path);
+    assertThat(body.path("timestamp").isMissingNode()).isFalse();
+  }
+
   private void clearHouseholdData() {
     String testUsers = "SELECT id FROM users WHERE email LIKE 'hhtest-%@example.com'";
     String testHouseholds =
@@ -3679,4 +3926,9 @@ class HouseholdControllerIntegrationTest {
   }
 
   private record WebSession(Cookie cookie, String csrfHeader, String csrfToken, String userId) {}
+
+  @FunctionalInterface
+  private interface HouseholdHttpRequest {
+    MvcResult perform() throws Exception;
+  }
 }

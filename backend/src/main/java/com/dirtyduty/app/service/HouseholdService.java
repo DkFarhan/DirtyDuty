@@ -102,6 +102,9 @@ public class HouseholdService {
   public HouseholdResponse createHousehold(
       CreateHouseholdRequest request, Authentication authentication) {
     User user = resolveUser(authentication);
+    if (!membershipExitCleanupService.lockActiveUser(user.getId())) {
+      throw new HouseholdAccessDeniedException("Authenticated user is unavailable.");
+    }
     String name = request.name().strip();
     String timezone = request.timezone().strip();
     if (name.length() < 2 || name.length() > 120) {
@@ -268,6 +271,7 @@ public class HouseholdService {
       throw new InvalidHouseholdException("Household name and password are required.");
     }
 
+    membershipExitCleanupService.lockHousehold(householdId);
     User user = resolveUser(authentication);
     HouseholdMembership membership =
         householdMembershipRepository
@@ -323,9 +327,21 @@ public class HouseholdService {
   public HouseholdResponse joinHousehold(
       JoinHouseholdRequest request, Authentication authentication) {
     String submittedCode = request.inviteCode().strip();
+    String inviteCodeHash = hashInviteCode(submittedCode);
+    UUID householdId =
+        jdbc
+            .query(
+                "SELECT household_id FROM household_invitations WHERE invite_code=?",
+                (rs, row) -> rs.getObject("household_id", UUID.class),
+                inviteCodeHash)
+            .stream()
+            .findFirst()
+            .orElseThrow(InvalidInvitationException::new);
+    membershipExitCleanupService.lockHousehold(householdId);
     HouseholdInvitation invitation =
         householdInvitationRepository
-            .findByInviteCodeForUpdate(hashInviteCode(submittedCode))
+            .findByInviteCodeForUpdate(inviteCodeHash)
+            .filter(existing -> existing.getHousehold().getId().equals(householdId))
             .orElseThrow(InvalidInvitationException::new);
     OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
     if (invitation.getUsedAt() != null
@@ -336,6 +352,9 @@ public class HouseholdService {
     }
 
     User user = resolveUser(authentication);
+    if (!membershipExitCleanupService.lockActiveUser(user.getId())) {
+      throw new HouseholdAccessDeniedException("Authenticated user is unavailable.");
+    }
     HouseholdMembership membership =
         householdMembershipRepository
             .findByHousehold_IdAndUser_Id(invitation.getHousehold().getId(), user.getId())
@@ -362,7 +381,6 @@ public class HouseholdService {
     invitation.setUsedAt(now);
     householdInvitationRepository.save(invitation);
 
-    UUID householdId = invitation.getHousehold().getId();
     if (rejoining) {
       recordActivityEvent(
           householdId,
@@ -407,6 +425,7 @@ public class HouseholdService {
   @Transactional
   public void updateMemberRole(
       UUID householdId, UUID targetUserId, HouseholdRole newRole, Authentication authentication) {
+    membershipExitCleanupService.lockHousehold(householdId);
     User actorUser = resolveUser(authentication);
     HouseholdMembership actorMembership = requireActiveMembership(householdId, actorUser.getId());
     if (actorMembership.getRole() != HouseholdRole.OWNER

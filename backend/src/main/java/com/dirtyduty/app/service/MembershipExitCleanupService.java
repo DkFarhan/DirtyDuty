@@ -2,6 +2,8 @@ package com.dirtyduty.app.service;
 
 import com.dirtyduty.app.entity.ChoreSchedule;
 import com.dirtyduty.app.entity.User;
+import com.dirtyduty.app.entity.enums.AccountStatus;
+import com.dirtyduty.app.exception.HouseholdAccessDeniedException;
 import com.dirtyduty.app.repository.ChoreScheduleRepository;
 import jakarta.persistence.EntityManager;
 import java.util.ArrayList;
@@ -143,8 +145,45 @@ public class MembershipExitCleanupService {
 
   @Transactional(propagation = Propagation.MANDATORY)
   public void lockHousehold(UUID householdId) {
-    // Shared lock order: household, schedules by ID, assignments by ID, then assignee rows.
-    jdbc.queryForObject("SELECT id FROM households WHERE id=? FOR UPDATE", UUID.class, householdId);
+    // Account deletion locks households by ID, then its user and memberships, before schedule
+    // cleanup. Invite acceptance locks household, invitation, user, then membership. Household
+    // deletion takes the household before schedule and invitation rows, without a user lock.
+    // New-household creation locks its user before inserting new rows; FK KEY SHARE locks do not
+    // reverse these orders.
+    if (!tryLockHousehold(householdId)) {
+      throw new HouseholdAccessDeniedException("You are not an active member of this household.");
+    }
+  }
+
+  @Transactional(propagation = Propagation.MANDATORY)
+  public List<UUID> lockExistingHouseholds(Collection<UUID> householdIds) {
+    List<UUID> locked = new ArrayList<>();
+    for (UUID householdId :
+        householdIds.stream().distinct().sorted(Comparator.comparing(UUID::toString)).toList()) {
+      if (tryLockHousehold(householdId)) {
+        locked.add(householdId);
+      }
+    }
+    return List.copyOf(locked);
+  }
+
+  @Transactional(propagation = Propagation.MANDATORY)
+  public boolean tryLockHousehold(UUID householdId) {
+    return !jdbc.query(
+            "SELECT id FROM households WHERE id=? FOR UPDATE",
+            (rs, row) -> rs.getObject("id", UUID.class),
+            householdId)
+        .isEmpty();
+  }
+
+  @Transactional(propagation = Propagation.MANDATORY)
+  public boolean lockActiveUser(UUID userId) {
+    List<String> statuses =
+        jdbc.query(
+            "SELECT account_status FROM users WHERE id=? FOR NO KEY UPDATE",
+            (rs, row) -> rs.getString("account_status"),
+            userId);
+    return statuses.contains(AccountStatus.ACTIVE.name());
   }
 
   @Transactional(propagation = Propagation.MANDATORY)

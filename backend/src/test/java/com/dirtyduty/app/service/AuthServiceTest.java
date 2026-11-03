@@ -51,7 +51,9 @@ class AuthServiceTest {
             new LegalAcceptanceService(userRepository),
             org.mockito.Mockito.mock(PasswordLoginProtectionService.class),
             emailVerificationService,
-            rateLimiter);
+            rateLimiter,
+            org.mockito.Mockito.mock(MembershipExitCleanupService.class),
+            org.mockito.Mockito.mock(jakarta.persistence.EntityManager.class));
 
     var response =
         authService.register(
@@ -97,7 +99,9 @@ class AuthServiceTest {
             new LegalAcceptanceService(userRepository),
             org.mockito.Mockito.mock(PasswordLoginProtectionService.class),
             org.mockito.Mockito.mock(EmailVerificationService.class),
-            rateLimiter);
+            rateLimiter,
+            org.mockito.Mockito.mock(MembershipExitCleanupService.class),
+            org.mockito.Mockito.mock(jakarta.persistence.EntityManager.class));
 
     assertThatThrownBy(
             () ->
@@ -143,7 +147,9 @@ class AuthServiceTest {
             new LegalAcceptanceService(userRepository),
             org.mockito.Mockito.mock(PasswordLoginProtectionService.class),
             org.mockito.Mockito.mock(EmailVerificationService.class),
-            rateLimiter);
+            rateLimiter,
+            org.mockito.Mockito.mock(MembershipExitCleanupService.class),
+            org.mockito.Mockito.mock(jakarta.persistence.EntityManager.class));
 
     assertThatThrownBy(
             () ->
@@ -178,7 +184,9 @@ class AuthServiceTest {
             new LegalAcceptanceService(userRepository),
             org.mockito.Mockito.mock(PasswordLoginProtectionService.class),
             org.mockito.Mockito.mock(EmailVerificationService.class),
-            rateLimiter);
+            rateLimiter,
+            org.mockito.Mockito.mock(MembershipExitCleanupService.class),
+            org.mockito.Mockito.mock(jakarta.persistence.EntityManager.class));
     RegisterRequest request =
         new RegisterRequest("User", "repeated@example.com", "StrongPassword123!");
 

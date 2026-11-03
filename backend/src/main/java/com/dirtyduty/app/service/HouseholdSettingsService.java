@@ -172,7 +172,7 @@ public class HouseholdSettingsService {
     }
     UUID householdId = membership.getHousehold().getId();
     UUID userId = membership.getUser().getId();
-    // Account deletion already locks user memberships; schedule paths never lock memberships.
+    // Account deletion has already acquired all affected household locks in ID order.
     membershipExitCleanupService.lockHousehold(householdId);
     membership.setStatus(MembershipStatus.LEFT);
     membership.setLeftAt(OffsetDateTime.now(ZoneOffset.UTC));

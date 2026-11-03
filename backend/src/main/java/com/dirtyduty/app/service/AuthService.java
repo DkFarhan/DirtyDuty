@@ -14,8 +14,10 @@ import com.dirtyduty.app.exception.EmailVerificationRateLimitException;
 import com.dirtyduty.app.exception.InvalidCredentialsException;
 import com.dirtyduty.app.repository.HouseholdMembershipRepository;
 import com.dirtyduty.app.repository.UserRepository;
+import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 import java.time.Duration;
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -35,6 +37,8 @@ public class AuthService {
   private final PasswordLoginProtectionService loginProtection;
   private final EmailVerificationService emailVerificationService;
   private final PersistentAuthRateLimiter rateLimiter;
+  private final MembershipExitCleanupService membershipExitCleanupService;
+  private final EntityManager entityManager;
 
   public AuthService(
       UserRepository userRepository,
@@ -45,7 +49,9 @@ public class AuthService {
       LegalAcceptanceService legalAcceptanceService,
       PasswordLoginProtectionService loginProtection,
       EmailVerificationService emailVerificationService,
-      PersistentAuthRateLimiter rateLimiter) {
+      PersistentAuthRateLimiter rateLimiter,
+      MembershipExitCleanupService membershipExitCleanupService,
+      EntityManager entityManager) {
     this.userRepository = userRepository;
     this.passwordEncoder = passwordEncoder;
     this.jdbcTemplate = jdbcTemplate;
@@ -55,6 +61,8 @@ public class AuthService {
     this.loginProtection = loginProtection;
     this.emailVerificationService = emailVerificationService;
     this.rateLimiter = rateLimiter;
+    this.membershipExitCleanupService = membershipExitCleanupService;
+    this.entityManager = entityManager;
   }
 
   @Transactional
@@ -138,9 +146,28 @@ public class AuthService {
       String email, String password, String emailConfirmation, boolean recentlyReauthenticated) {
     User user =
         userRepository
-            .findByEmailIgnoreCaseForUpdate(email)
+            .findByEmailIgnoreCase(email)
             .orElseThrow(() -> new InvalidCredentialsException("Your account could not be found."));
 
+    List<UUID> observedHouseholdIds =
+        jdbcTemplate.query(
+            """
+            SELECT household_id FROM household_memberships
+            WHERE user_id=? AND status='ACTIVE'
+            ORDER BY household_id
+            """,
+            (rs, row) -> rs.getObject("household_id", UUID.class),
+            user.getId());
+    List<UUID> lockedHouseholdIds =
+        membershipExitCleanupService.lockExistingHouseholds(observedHouseholdIds);
+    List<UUID> existingObservedHouseholdIds =
+        observedHouseholdIds.stream().filter(lockedHouseholdIds::contains).toList();
+
+    jdbcTemplate.query(
+        "SELECT id FROM users WHERE id=? FOR NO KEY UPDATE",
+        (rs, row) -> rs.getObject("id", UUID.class),
+        user.getId());
+    entityManager.refresh(user);
     requireActive(user);
     if (user.getPasswordHash() == null) {
       if (!recentlyReauthenticated) {
@@ -160,6 +187,13 @@ public class AuthService {
 
     var activeMemberships =
         membershipRepository.findByUser_IdAndStatusForUpdate(user.getId(), MembershipStatus.ACTIVE);
+    List<UUID> currentHouseholdIds =
+        activeMemberships.stream().map(membership -> membership.getHousehold().getId()).toList();
+    if (!lockedHouseholdIds.containsAll(currentHouseholdIds)
+        || !existingObservedHouseholdIds.containsAll(currentHouseholdIds)) {
+      throw new DuplicateResourceException(
+          "Household membership changed while deleting the account. Please retry.");
+    }
     var ownedHouseholds =
         activeMemberships.stream()
             .filter(membership -> membership.getRole() == HouseholdRole.OWNER)

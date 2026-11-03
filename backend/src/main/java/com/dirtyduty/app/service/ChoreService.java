@@ -416,7 +416,13 @@ public class ChoreService {
   }
 
   private void lockHousehold(UUID householdId) {
-    jdbc.queryForObject("SELECT id FROM households WHERE id=? FOR UPDATE", UUID.class, householdId);
+    if (jdbc.query(
+            "SELECT id FROM households WHERE id=? FOR UPDATE",
+            (rs, row) -> rs.getObject("id", UUID.class),
+            householdId)
+        .isEmpty()) {
+      throw new HouseholdAccessDeniedException("You are not authorized to manage chores.");
+    }
   }
 
   private HouseholdMembership authorize(UUID householdId, Authentication authentication) {
@@ -440,8 +446,7 @@ public class ChoreService {
                         || found.getRole() == HouseholdRole.ADMIN)
             .orElseThrow(
                 () ->
-                    new HouseholdAccessDeniedException(
-                        "Only an ACTIVE household OWNER or ADMIN may manage chores."));
+                    new HouseholdAccessDeniedException("You are not authorized to manage chores."));
     return membership;
   }
 

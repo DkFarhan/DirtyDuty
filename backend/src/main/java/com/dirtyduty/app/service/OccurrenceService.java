@@ -818,7 +818,13 @@ public class OccurrenceService {
   }
 
   private void lockHousehold(UUID householdId) {
-    jdbc.queryForObject("SELECT id FROM households WHERE id=? FOR UPDATE", UUID.class, householdId);
+    if (jdbc.query(
+            "SELECT id FROM households WHERE id=? FOR UPDATE",
+            (rs, row) -> rs.getObject("id", UUID.class),
+            householdId)
+        .isEmpty()) {
+      throw new HouseholdAccessDeniedException("You are not an ACTIVE household member.");
+    }
   }
 
   private void synchronizeLockedSchedule(
