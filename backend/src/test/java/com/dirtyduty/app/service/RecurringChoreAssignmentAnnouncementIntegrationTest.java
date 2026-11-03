@@ -2,9 +2,12 @@ package com.dirtyduty.app.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 
 import com.dirtyduty.app.dto.chore.ChoreRequest;
 import com.dirtyduty.app.dto.chore.ChoreScheduleRequest;
+import com.dirtyduty.app.dto.household.DeleteHouseholdRequest;
 import com.dirtyduty.app.entity.ChoreSchedule;
 import com.dirtyduty.app.entity.User;
 import com.dirtyduty.app.entity.enums.AssignmentStrategy;
@@ -22,7 +25,9 @@ import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -34,10 +39,15 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
-@SpringBootTest
+@SpringBootTest(
+    properties = {
+      "app.notifications.scheduler-delay=3600000",
+      "app.notifications.scheduler-initial-delay=3600000"
+    })
 class RecurringChoreAssignmentAnnouncementIntegrationTest {
 
   @Autowired private JdbcTemplate jdbc;
@@ -50,6 +60,8 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
   @Autowired private NotificationScheduler notificationScheduler;
   @Autowired private PlatformTransactionManager transactionManager;
   @Autowired private MembershipExitCleanupService membershipExitCleanupService;
+  @Autowired private HouseholdService householdService;
+  @MockitoSpyBean private NotificationEventService notificationEventServiceSpy;
 
   private UUID householdId;
   private final List<UUID> userIds = new java.util.ArrayList<>();
@@ -57,6 +69,13 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
   @AfterEach
   void cleanFixtures() {
     if (householdId != null) {
+      jdbc.update(
+          """
+          DELETE FROM notifications
+          WHERE reference_type='CHORE_ASSIGNMENT'
+            AND reference_id IN (SELECT id FROM chore_assignments WHERE household_id=?)
+          """,
+          householdId);
       jdbc.update(
           "DELETE FROM notifications WHERE event_id IN "
               + "(SELECT id FROM notification_events WHERE household_id=?)",
@@ -77,6 +96,177 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
     }
     userIds.clear();
     householdId = null;
+  }
+
+  @Test
+  void schedulerAndMemberExitCompleteWithoutLockCycle() throws Exception {
+    SchedulerLockFixture fixture = createSchedulerLockFixture();
+
+    runSchedulerAgainstCleanup(
+        () ->
+            householdSettingsService.leave(householdId, null, authentication(fixture.memberId())));
+
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT status FROM household_memberships WHERE household_id=? AND user_id=?",
+                String.class,
+                householdId,
+                fixture.memberId()))
+        .isEqualTo("LEFT");
+    assertThat(notificationStatus(fixture.staleNotificationId())).isEqualTo("CANCELLED");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT status FROM notification_deliveries WHERE notification_id=? AND channel='IN_APP'",
+                String.class,
+                fixture.staleNotificationId()))
+        .isEqualTo("SENT");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT status FROM notification_deliveries WHERE notification_id=? AND channel='WEB_PUSH'",
+                String.class,
+                fixture.staleNotificationId()))
+        .isEqualTo("CANCELLED");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT status FROM chore_assignments WHERE id=?",
+                String.class,
+                fixture.cancelledAssignmentId()))
+        .isEqualTo("CANCELLED");
+    assertThat(
+            jdbc.queryForObject(
+                """
+                SELECT COUNT(*) FROM notifications
+                WHERE reference_type='CHORE_ASSIGNMENT' AND reference_id=?
+                  AND type='CHORE_DUE_NOW' AND status='PENDING'
+                """,
+                Integer.class,
+                fixture.activeAssignmentId()))
+        .isEqualTo(1);
+  }
+
+  @Test
+  void schedulerAndHouseholdDeletionCompleteWithoutLockCycle() throws Exception {
+    SchedulerLockFixture fixture = createSchedulerLockFixture();
+    jdbc.update("UPDATE users SET password_hash=NULL WHERE id=?", fixture.ownerId());
+
+    runSchedulerAgainstCleanup(
+        () ->
+            householdService.deleteHousehold(
+                householdId,
+                new DeleteHouseholdRequest("Test", null),
+                authentication(fixture.ownerId()),
+                true));
+
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT COUNT(*) FROM households WHERE id=?", Integer.class, householdId))
+        .isZero();
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT COUNT(*) FROM chore_assignments WHERE id=?",
+                Integer.class,
+                fixture.activeAssignmentId()))
+        .isZero();
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT COUNT(*) FROM notification_events WHERE household_id=?",
+                Integer.class,
+                householdId))
+        .isZero();
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT COUNT(*) FROM notifications WHERE id=?",
+                Integer.class,
+                fixture.staleNotificationId()))
+        .isZero();
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT COUNT(*) FROM notification_deliveries WHERE notification_id=?",
+                Integer.class,
+                fixture.staleNotificationId()))
+        .isZero();
+  }
+
+  private SchedulerLockFixture createSchedulerLockFixture() {
+    UUID ownerId = createUser("notification-lock-owner");
+    UUID memberId = createUser("notification-lock-member");
+    householdId = createHousehold(ownerId);
+    addMember(memberId);
+    UUID choreId = createChore(ownerId, "Lock cycle chore");
+    OffsetDateTime dueAt = OffsetDateTime.now(ZoneOffset.UTC).plusMinutes(30);
+    UUID activeAssignment =
+        createAssignment(null, choreId, LocalDate.now(ZoneOffset.UTC), dueAt, "PENDING", ownerId);
+    UUID cancelledAssignment =
+        createAssignment(
+            null, choreId, LocalDate.now(ZoneOffset.UTC), dueAt, "CANCELLED", memberId);
+    UUID staleNotificationId = UUID.randomUUID();
+    jdbc.update(
+        """
+        INSERT INTO notifications
+            (id, recipient_user_id, type, category, title, message, status, scheduled_at,
+             deduplication_key, reference_type, reference_id)
+        VALUES (?, ?, 'CHORE_DUE_SOON', 'CHORE_REMINDER', 'Stale reminder', 'Reminder',
+                'PENDING', NOW() + INTERVAL '1 day', ?, 'CHORE_ASSIGNMENT', ?)
+        """,
+        staleNotificationId,
+        memberId,
+        "scheduler-lock-cycle-" + UUID.randomUUID(),
+        cancelledAssignment);
+    jdbc.update(
+        """
+        INSERT INTO notification_deliveries (notification_id, channel, status, sent_at)
+        VALUES (?, 'IN_APP', 'SENT', NOW()), (?, 'WEB_PUSH', 'FAILED', NULL)
+        """,
+        staleNotificationId,
+        staleNotificationId);
+    return new SchedulerLockFixture(
+        ownerId, memberId, activeAssignment, cancelledAssignment, staleNotificationId);
+  }
+
+  private void runSchedulerAgainstCleanup(Runnable cleanup) throws Exception {
+    CountDownLatch schedulerAtPublish = new CountDownLatch(1);
+    CountDownLatch releasePublish = new CountDownLatch(1);
+    Set<Integer> schedulerPids = ConcurrentHashMap.newKeySet();
+    doAnswer(
+            invocation -> {
+              schedulerPids.add(jdbc.queryForObject("SELECT pg_backend_pid()", Integer.class));
+              schedulerAtPublish.countDown();
+              awaitLatch(releasePublish, "scheduler publish release");
+              return invocation.callRealMethod();
+            })
+        .when(notificationEventServiceSpy)
+        .publish(any(NotificationEvent.class));
+
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    try {
+      Future<?> scheduler =
+          executor.submit(
+              () ->
+                  new TransactionTemplate(transactionManager)
+                      .executeWithoutResult(status -> notificationScheduler.run()));
+      assertThat(schedulerAtPublish.await(10, TimeUnit.SECONDS)).isTrue();
+
+      AtomicInteger cleanupPid = new AtomicInteger();
+      Future<?> cleanupFuture =
+          executor.submit(
+              () ->
+                  new TransactionTemplate(transactionManager)
+                      .executeWithoutResult(
+                          status -> {
+                            cleanupPid.set(
+                                jdbc.queryForObject("SELECT pg_backend_pid()", Integer.class));
+                            cleanup.run();
+                          }));
+      assertThat(awaitSessionTransitivelyBlockedByAny(cleanupPid, schedulerPids)).isTrue();
+
+      releasePublish.countDown();
+      scheduler.get(10, TimeUnit.SECONDS);
+      cleanupFuture.get(10, TimeUnit.SECONDS);
+    } finally {
+      releasePublish.countDown();
+      executor.shutdownNow();
+      executor.awaitTermination(5, TimeUnit.SECONDS);
+    }
   }
 
   @Test
@@ -1926,6 +2116,33 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
     return false;
   }
 
+  private boolean awaitSessionTransitivelyBlockedByAny(
+      AtomicInteger blockedPid, Set<Integer> blockerPids) throws InterruptedException {
+    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+    do {
+      for (Integer blockerPid : blockerPids) {
+        Boolean blocked =
+            jdbc.queryForObject(
+                """
+                WITH RECURSIVE blockers(pid) AS (
+                    SELECT unnest(pg_blocking_pids(?))
+                    UNION
+                    SELECT unnest(pg_blocking_pids(blockers.pid)) FROM blockers
+                )
+                SELECT EXISTS(SELECT 1 FROM blockers WHERE pid=?)
+                """,
+                Boolean.class,
+                blockedPid.get(),
+                blockerPid);
+        if (Boolean.TRUE.equals(blocked)) {
+          return true;
+        }
+      }
+      Thread.sleep(20);
+    } while (System.nanoTime() < deadline);
+    return false;
+  }
+
   private boolean awaitAnyBackendBlockedBy(int blockerPid) throws InterruptedException {
     return awaitBlockedBy(blockerPid);
   }
@@ -1970,6 +2187,13 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
         List.of(participantId),
         1);
   }
+
+  private record SchedulerLockFixture(
+      UUID ownerId,
+      UUID memberId,
+      UUID activeAssignmentId,
+      UUID cancelledAssignmentId,
+      UUID staleNotificationId) {}
 
   private org.springframework.security.core.Authentication authentication(UUID userId) {
     String email = jdbc.queryForObject("SELECT email FROM users WHERE id=?", String.class, userId);

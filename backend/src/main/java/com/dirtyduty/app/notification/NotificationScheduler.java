@@ -41,12 +41,71 @@ public class NotificationScheduler {
     this.membershipExitCleanupService = membershipExitCleanupService;
   }
 
-  @Scheduled(fixedDelayString = "${app.notifications.scheduler-delay:60000}")
+  @Scheduled(
+      fixedDelayString = "${app.notifications.scheduler-delay:60000}",
+      initialDelayString = "${app.notifications.scheduler-initial-delay:0}")
   @Transactional
   public void run() {
+    membershipExitCleanupService.lockExistingHouseholds(householdsTouchedByRun());
     cancelInactiveAssignmentReminders();
     generateAssignmentReminders();
     dispatchDueNotifications();
+  }
+
+  private List<UUID> householdsTouchedByRun() {
+    return jdbc.query(
+        """
+        SELECT household_id FROM (
+            SELECT a.household_id
+            FROM chore_assignments a
+            JOIN households h ON h.id=a.household_id
+            JOIN notification_reminder_rules r ON r.mode=h.reminder_mode AND r.enabled=TRUE
+            WHERE a.status IN ('PENDING', 'SUBMITTED') AND a.due_at IS NOT NULL
+            UNION
+            SELECT a.household_id
+            FROM notifications n
+            JOIN chore_assignments a
+              ON n.reference_type='CHORE_ASSIGNMENT' AND a.id=n.reference_id
+            WHERE n.status='CANCELLED' OR n.reference_type='CHORE_ASSIGNMENT'
+            UNION
+            SELECT e.household_id
+            FROM notifications n
+            JOIN notification_events e ON e.id=n.event_id
+            WHERE n.status='CANCELLED' OR n.reference_type='CHORE_ASSIGNMENT'
+            UNION
+            SELECT e.reference_id AS household_id
+            FROM notifications n
+            JOIN notification_events e ON e.id=n.event_id
+            WHERE n.status='CANCELLED' AND e.reference_type='HOUSEHOLD'
+            UNION
+            SELECT a.household_id
+            FROM notifications n
+            JOIN notification_events e ON e.id=n.event_id
+            JOIN chore_assignments a
+              ON n.status='CANCELLED' AND e.reference_type='CHORE_ASSIGNMENT'
+                AND a.id=e.reference_id
+            UNION
+            SELECT s.household_id
+            FROM notifications n
+            JOIN notification_events e ON e.id=n.event_id
+            JOIN chore_schedules s
+              ON n.status='CANCELLED' AND e.reference_type='CHORE_SCHEDULE'
+                AND s.id=e.reference_id
+            UNION
+            SELECT n.reference_id AS household_id
+            FROM notifications n
+            WHERE n.status='CANCELLED' AND n.reference_type='HOUSEHOLD'
+            UNION
+            SELECT s.household_id
+            FROM notifications n
+            JOIN chore_schedules s
+              ON n.status='CANCELLED' AND n.reference_type='CHORE_SCHEDULE'
+                AND s.id=n.reference_id
+        ) affected
+        WHERE household_id IS NOT NULL
+        ORDER BY household_id
+        """,
+        (rs, row) -> rs.getObject("household_id", UUID.class));
   }
 
   private void generateAssignmentReminders() {
