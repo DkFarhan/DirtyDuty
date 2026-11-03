@@ -298,8 +298,7 @@ class HouseholdControllerIntegrationTest {
       throws Exception {
     WebSession owner = login("descriptionlimits");
 
-    UUID emptyDescriptionHousehold =
-        createHouseholdWithDescription(owner, "Empty Description", "");
+    UUID emptyDescriptionHousehold = createHouseholdWithDescription(owner, "Empty Description", "");
     UUID blankDescriptionHousehold =
         createHouseholdWithDescription(owner, "Blank Description", "   \t  ");
     UUID maxDescriptionHousehold =

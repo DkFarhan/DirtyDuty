@@ -122,8 +122,7 @@ public class HouseholdService {
             ? null
             : request.description().strip();
     if (description != null && description.length() > 2000) {
-      throw new InvalidHouseholdException(
-          "Household description must be at most 2000 characters.");
+      throw new InvalidHouseholdException("Household description must be at most 2000 characters.");
     }
     household.setDescription(description);
     household.setCreatedByUser(user);
