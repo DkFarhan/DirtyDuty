@@ -398,14 +398,39 @@
   justify-content: center;
 }
 
-.dark .auth-logo-surface {
+.dark .auth-logo-surface:not(.auth-logo-theme-aware) {
   border-radius: 0.875rem;
 }
 
-.dark .auth-logo-surface img {
+.dark .auth-logo-surface:not(.auth-logo-theme-aware) img {
   border-radius: inherit;
   background-color: oklch(0.98 0 0);
   padding: 0.5rem 0.75rem;
+}
+
+.auth-logo-surface.auth-logo-theme-aware {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.auth-logo-surface.auth-logo-theme-aware img {
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.auth-logo-surface.auth-logo-theme-aware img.auth-logo-theme-dark {
+  display: none;
+}
+
+.dark .auth-logo-surface.auth-logo-theme-aware img.auth-logo-theme-light {
+  display: none;
+}
+
+.dark .auth-logo-surface.auth-logo-theme-aware img.auth-logo-theme-dark {
+  display: block;
 }
 
 .dark .auth-primary-button:hover {

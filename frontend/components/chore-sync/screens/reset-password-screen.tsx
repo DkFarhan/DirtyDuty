@@ -5,11 +5,8 @@ import { ApiError } from "@/lib/auth/api"
 import { useAuth } from "@/lib/auth/auth-context"
 import { useChoreSync } from "@/lib/chore-sync/store"
 import { PasswordInput } from "@/components/ui/password-input"
-import { ProductLogo } from "@/components/brand/product-logo"
-import { ChevronLeftIcon } from "../icons"
-
-const inputClass =
-  "w-full rounded-xl border border-slate-200 px-4 py-3.5 text-[15px] text-slate-900 placeholder:text-slate-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-teal-500"
+import { AuthScreenLayout } from "./auth-screen-layout"
+import styles from "./auth-screens.module.css"
 
 export function ResetPasswordScreen() {
   const { navigate } = useChoreSync()
@@ -87,88 +84,86 @@ export function ResetPasswordScreen() {
   }
 
   return (
-    <main className="flex min-h-screen flex-col bg-white px-6 pb-10 pt-12">
-      <button
-        type="button"
-        onClick={() => navigate("login")}
-        className="mb-8 flex min-h-11 w-fit items-center gap-1 text-slate-500"
-      >
-        <ChevronLeftIcon className="h-5 w-5" />
-        <span className="text-sm font-medium">Back to sign in</span>
-      </button>
-
-      <ProductLogo className="mb-8 h-auto w-44 max-w-full" />
-
-      <h1 className="mb-2 text-2xl font-black text-slate-900">
-        {complete ? "Password updated" : "Choose a new password"}
-      </h1>
-
+    <AuthScreenLayout
+      centeredBrand
+      description={
+        complete
+          ? "Your account is secure with its new password."
+          : "Choose a strong password you have not used for this account before."
+      }
+      eyebrow={complete ? "Account secured" : "Account security"}
+      onBack={() => navigate("login")}
+      title={complete ? "Password updated" : "Choose a new password"}
+    >
       {complete ? (
         <>
-          <p className="text-sm text-slate-600" role="status">
+          <div className={styles.successMark} aria-hidden="true">
+            ✓
+          </div>
+          <p className={styles.supportingText} role="status">
             Your password has been changed. You can now sign in with it.
           </p>
-
-          <button
-            className="mt-6 min-h-12 w-full rounded-xl bg-teal-600 font-bold text-white"
-            onClick={() => navigate("login")}
-            type="button"
-          >
-            Sign in
-          </button>
+          <div className={styles.actionSpace}>
+            <button
+              className={styles.primaryButton}
+              onClick={() => navigate("login")}
+              type="button"
+            >
+              Sign in
+            </button>
+          </div>
         </>
       ) : (
         <>
-          <p className="mb-6 text-sm text-slate-500">Choose a new password for your account.</p>
-
-          <label
-            htmlFor="reset-new-password"
-            className="mb-1.5 text-sm font-semibold text-slate-700"
-          >
-            New password
-          </label>
-
-          <PasswordInput
-            autoComplete="new-password"
-            className={inputClass}
-            id="reset-new-password"
-            name="newPassword"
-            onChange={(event) => setPassword(event.target.value)}
-            value={password}
-          />
-
-          <label
-            htmlFor="reset-confirm-password"
-            className="mb-1.5 mt-4 text-sm font-semibold text-slate-700"
-          >
-            Confirm new password
-          </label>
-
-          <PasswordInput
-            autoComplete="new-password"
-            className={inputClass}
-            id="reset-confirm-password"
-            name="confirmPassword"
-            onChange={(event) => setConfirm(event.target.value)}
-            value={confirm}
-          />
+          <div className={styles.fields}>
+            <div className={styles.field}>
+              <label className={styles.label} htmlFor="reset-new-password">
+                New password
+              </label>
+              <PasswordInput
+                autoComplete="new-password"
+                className={styles.input}
+                id="reset-new-password"
+                name="newPassword"
+                onChange={(event) => setPassword(event.target.value)}
+                toggleClassName={styles.passwordToggle}
+                value={password}
+              />
+            </div>
+            <div className={styles.field}>
+              <label className={styles.label} htmlFor="reset-confirm-password">
+                Confirm new password
+              </label>
+              <PasswordInput
+                autoComplete="new-password"
+                className={styles.input}
+                id="reset-confirm-password"
+                name="confirmPassword"
+                onChange={(event) => setConfirm(event.target.value)}
+                toggleClassName={styles.passwordToggle}
+                value={confirm}
+              />
+            </div>
+          </div>
 
           {error && (
-            <p className="mt-4 text-sm text-rose-600" role="alert">
+            <p className={`${styles.error} mt-4`} role="alert">
               {error}
             </p>
           )}
 
-          <button
-            className="mt-6 min-h-12 w-full rounded-xl bg-teal-600 font-bold text-white disabled:opacity-60"
-            disabled={busy || !token || !password || !confirm}
-            onClick={() => void submit()}
-            type="button"
-          >
-            {busy ? "Updating..." : "Update password"}
-          </button>
+          <div className={styles.actionSpace}>
+            <button
+              className={styles.primaryButton}
+              disabled={busy || !token || !password || !confirm}
+              onClick={() => void submit()}
+              type="button"
+            >
+              {busy ? "Updating..." : "Update password"}
+            </button>
+          </div>
         </>
       )}
-    </main>
+    </AuthScreenLayout>
   )
 }

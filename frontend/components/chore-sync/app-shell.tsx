@@ -316,7 +316,23 @@ function AppFrame({
   redesignedProfileEnabled: boolean
 }) {
   const { screen } = useChoreSync()
+  const { isAuthenticated, user, features } = useAuth()
+  const requiresEmailVerification =
+    isAuthenticated && features.emailVerification !== false && user?.emailVerified === false
   const useWideFrame =
+    [
+      "login",
+      "register",
+      "forgot-password",
+      "reset-password",
+      "welcome",
+      "create-household",
+      "join-household",
+      "display-name-personalization",
+      "legal-acceptance",
+      "verify-email",
+    ].includes(screen) ||
+    requiresEmailVerification ||
     (screen === "dashboard" && redesignedHomeEnabled) ||
     (screen === "my-chores" && redesignedMyChoresEnabled) ||
     ((screen === "household" ||

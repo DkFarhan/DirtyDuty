@@ -123,7 +123,7 @@ describe("household onboarding", () => {
     expect(await screen.findByText("Welcome!")).toBeTruthy()
   })
 
-  it("creates a household with browser timezone, omits description, and refreshes into the dashboard", async () => {
+  it("creates a household with browser timezone and trimmed description, then refreshes into the dashboard", async () => {
     await openWelcome()
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ token: "household-csrf", headerName: "X-CSRF-TOKEN" }))
@@ -136,7 +136,7 @@ describe("household onboarding", () => {
       target: { value: "  Our Place  " },
     })
     fireEvent.change(screen.getByLabelText(/Description/), {
-      target: { value: "Not part of the API" },
+      target: { value: "  A welcoming home  " },
     })
     fireEvent.click(screen.getByRole("button", { name: "Create Household" }))
 
@@ -149,6 +149,7 @@ describe("household onboarding", () => {
       JSON.stringify({
         name: "Our Place",
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        description: "A welcoming home",
       }),
     )
     expect(new Headers(createRequest?.[1]?.headers).get("X-CSRF-TOKEN")).toBe("household-csrf")
@@ -157,6 +158,59 @@ describe("household onboarding", () => {
     expect(screen.getByRole("button", { name: "Generate invite" })).toBeTruthy()
     expect(localStorage.length).toBe(0)
     expect(sessionStorage.length).toBe(0)
+  })
+
+  it("sends a null description for whitespace-only input", async () => {
+    await openWelcome()
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ token: "household-csrf", headerName: "X-CSRF-TOKEN" }))
+      .mockResolvedValueOnce(jsonResponse(household, 201))
+      .mockResolvedValueOnce(jsonResponse([household]))
+      .mockResolvedValueOnce(jsonResponse(dashboard))
+    fireEvent.click(screen.getByRole("button", { name: /Create a Household/ }))
+    fireEvent.change(screen.getByLabelText(/Household Name/), {
+      target: { value: "Our Place" },
+    })
+    fireEvent.change(screen.getByLabelText(/Description/), {
+      target: { value: "   " },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Create Household" }))
+
+    expect(await screen.findByText("Today")).toBeTruthy()
+    expect(
+      fetchMock.mock.calls.find(
+        ([url, options]) =>
+          url === "http://localhost:8080/api/households" && options?.method === "POST",
+      )?.[1]?.body,
+    ).toBe(
+      JSON.stringify({
+        name: "Our Place",
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        description: null,
+      }),
+    )
+  })
+
+  it("rejects descriptions over 2000 characters with a clear message", async () => {
+    await openWelcome()
+    fireEvent.click(screen.getByRole("button", { name: /Create a Household/ }))
+    fireEvent.change(screen.getByLabelText(/Household Name/), {
+      target: { value: "Our Place" },
+    })
+    fireEvent.change(screen.getByLabelText(/Description/), {
+      target: { value: "x".repeat(2001) },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Create Household" }))
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Household description must be at most 2000 characters.",
+    )
+    expect(
+      fetchMock.mock.calls.some(
+        ([url, options]) =>
+          url === "http://localhost:8080/api/households" && options?.method === "POST",
+      ),
+    ).toBe(false)
   })
 
   it("generates and displays a secure invite from Household Admin Actions", async () => {

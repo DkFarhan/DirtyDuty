@@ -117,6 +117,14 @@ public class HouseholdService {
     Household household = new Household();
     household.setName(name);
     household.setTimezone(timezone);
+    String description =
+        request.description() == null || request.description().isBlank()
+            ? null
+            : request.description().strip();
+    if (description != null && description.length() > 2000) {
+      throw new InvalidHouseholdException("Household description must be at most 2000 characters.");
+    }
+    household.setDescription(description);
     household.setCreatedByUser(user);
     householdRepository.save(household);
 

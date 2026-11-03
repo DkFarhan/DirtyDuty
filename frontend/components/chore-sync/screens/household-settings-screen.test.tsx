@@ -73,6 +73,7 @@ vi.mock("./subpage-header", () => ({
 }))
 
 import { HouseholdSettingsScreen } from "./household-settings-screen"
+import designStyles from "../redesign/household-secondary-design-preview.module.css"
 
 const homeASettings = {
   ...mocks.activeHousehold,
@@ -180,6 +181,24 @@ describe("household settings screen", () => {
     expect(screen.queryByText("owner")).toBeNull()
     expect(screen.getAllByText(/No expiry date/)).toHaveLength(3)
     expect(screen.getByRole("button", { name: "Review deletion steps" })).toBeTruthy()
+  })
+
+  it("uses the redesigned destructive action hierarchy in the deletion dialog", async () => {
+    const { container } = render(<HouseholdSettingsScreen redesigned theme="dark" />)
+    fireEvent.click(await screen.findByRole("button", { name: "Review deletion steps" }))
+
+    const dialog = screen.getByRole("dialog")
+    const destructiveAction = screen.getByRole("button", { name: "Continue to deletion" })
+    expect(container.querySelector(`.${designStyles.dark}`)).toBeTruthy()
+    expect(dialog.className).toContain(designStyles.deletionDialog)
+    expect(destructiveAction.className).toContain(designStyles.dangerButton)
+    expect(destructiveAction.className).toContain(designStyles.deletionAction)
+    expect(screen.getByRole("button", { name: "Transfer ownership" }).className).toContain(
+      designStyles.dialogNeutralAction,
+    )
+    expect(screen.getByRole("button", { name: "Cancel" }).className).toContain(
+      designStyles.dialogCancelAction,
+    )
   })
 
   it("keeps unsaved style selections through household settings reloads and applies the server style after save", async () => {

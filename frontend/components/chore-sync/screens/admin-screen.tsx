@@ -41,6 +41,7 @@ export function AdminScreen({
   const [actionError, setActionError] = useState<string | null>(null)
   const [busyChoreId, setBusyChoreId] = useState<string | null>(null)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  const [openMenuPlacement, setOpenMenuPlacement] = useState<"above" | "below">("below")
   const [archiveChore, setArchiveChore] = useState<Chore | null>(null)
   const [managementOptions, setManagementOptions] = useState<ChoreManagementOptions | null>(null)
   const requestSequence = useRef(0)
@@ -442,7 +443,10 @@ export function AdminScreen({
                 <article
                   className={
                     redesigned
-                      ? designStyles.choreCard
+                      ? cn(
+                          designStyles.choreCard,
+                          openMenuId === chore.id && designStyles.choreCardMenuOpen,
+                        )
                       : "relative rounded-2xl border border-slate-100 bg-white p-4 shadow-sm"
                   }
                   key={chore.id}
@@ -536,7 +540,23 @@ export function AdminScreen({
                           ? designStyles.moreButton
                           : "absolute right-3 top-3 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
                       }
-                      onClick={() => setOpenMenuId(openMenuId === chore.id ? null : chore.id)}
+                      onClick={(event) => {
+                        if (openMenuId === chore.id) {
+                          setOpenMenuId(null)
+                          return
+                        }
+                        if (redesigned) {
+                          const buttonBounds = event.currentTarget.getBoundingClientRect()
+                          const availableAbove = buttonBounds.top
+                          const availableBelow = window.innerHeight - buttonBounds.bottom
+                          setOpenMenuPlacement(
+                            availableBelow < 148 && availableAbove > availableBelow
+                              ? "above"
+                              : "below",
+                          )
+                        }
+                        setOpenMenuId(chore.id)
+                      }}
                       type="button"
                     >
                       <MoreHorizontal aria-hidden="true" className="h-5 w-5" />
@@ -545,7 +565,12 @@ export function AdminScreen({
                   {openMenuId === chore.id && (
                     <div
                       className={`absolute right-4 top-12 z-10 w-36 overflow-hidden rounded-xl border border-slate-100 bg-white py-1 shadow-lg ${
-                        redesigned ? designStyles.actionMenu : ""
+                        redesigned
+                          ? cn(
+                              designStyles.actionMenu,
+                              openMenuPlacement === "above" && designStyles.actionMenuAbove,
+                            )
+                          : ""
                       }`}
                     >
                       <button

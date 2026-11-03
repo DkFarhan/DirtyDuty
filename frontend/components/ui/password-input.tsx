@@ -6,7 +6,15 @@ import { cn } from "@/lib/utils"
 
 type PasswordInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "type">
 
-export function PasswordInput({ className, ...props }: PasswordInputProps) {
+type PasswordInputWithToggleStyle = PasswordInputProps & {
+  toggleClassName?: string
+}
+
+export function PasswordInput({
+  className,
+  toggleClassName,
+  ...props
+}: PasswordInputWithToggleStyle) {
   const [visible, setVisible] = useState(false)
   const label = visible ? "Hide password" : "Show password"
 
@@ -16,7 +24,10 @@ export function PasswordInput({ className, ...props }: PasswordInputProps) {
       <button
         aria-label={label}
         aria-pressed={visible}
-        className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-xl text-slate-500 transition-colors hover:text-slate-800 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500"
+        className={cn(
+          "absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-xl transition-colors focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset",
+          toggleClassName ?? "text-slate-500 hover:text-slate-800 focus-visible:ring-teal-500",
+        )}
         onClick={() => setVisible((current) => !current)}
         type="button"
       >

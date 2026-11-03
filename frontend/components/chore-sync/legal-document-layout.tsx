@@ -26,7 +26,7 @@ export function LegalDocumentLayout({
         <div className={styles.headerInner}>
           <div className={styles.headerNav}>
             <LegalDocumentBackLink />
-            <ProductLogo className={styles.logo} />
+            <ProductLogo className={styles.logo} themeAware />
           </div>
           <div className={styles.headerCopy}>
             <p className={styles.eyebrow}>{eyebrow}</p>

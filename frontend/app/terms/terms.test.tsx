@@ -12,11 +12,15 @@ describe("Terms of Service page", () => {
     window.history.replaceState({}, "", "/")
   })
 
-  it("renders publicly with its title, effective date and configured support contact", () => {
+  it("renders publicly with its title, effective date and configured support contact", async () => {
     vi.stubEnv("NEXT_PUBLIC_SUPPORT_EMAIL", "support@dirtyduty.test")
 
     render(<TermsPage />)
 
+    const logo = document.querySelector(".auth-logo-surface.auth-logo-theme-aware")
+    expect(logo?.querySelector(".auth-logo-theme-light")).toBeTruthy()
+    expect(logo?.querySelector(".auth-logo-theme-dark")).toBeTruthy()
+    expect(screen.getAllByRole("img", { name: "DirtyDuty" })).toHaveLength(1)
     expect(
       screen.getByRole("heading", { name: "DirtyDuty Terms of Service", level: 1 }),
     ).toBeTruthy()
@@ -29,7 +33,9 @@ describe("Terms of Service page", () => {
     expect(screen.getByRole("link", { name: "support@dirtyduty.test" }).getAttribute("href")).toBe(
       "mailto:support@dirtyduty.test",
     )
-    expect(screen.getByRole("link", { name: "Back to DirtyDuty" }).getAttribute("href")).toBe("/")
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: "Back to DirtyDuty" }).getAttribute("href")).toBe("/")
+    })
     expect(document.querySelector("main article")?.className).toBe(styles.article)
   })
 
@@ -64,6 +70,19 @@ describe("Terms of Service page", () => {
     await waitFor(() => {
       expect(screen.getByRole("link", { name: "Back to DirtyDuty" }).getAttribute("href")).toBe(
         "/?screen=legal-acceptance",
+      )
+    })
+  })
+
+  it("shows a close-tab action for Signup and preserves that context on Privacy links", async () => {
+    window.history.replaceState({}, "", "/terms?returnTo=register")
+    render(<TermsPage />)
+
+    expect(await screen.findByRole("button", { name: "Back" })).toBeTruthy()
+    expect(screen.queryByText(/signup form remains open/i)).toBeNull()
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: "Privacy Policy" }).getAttribute("href")).toBe(
+        "/privacy?returnTo=register",
       )
     })
   })

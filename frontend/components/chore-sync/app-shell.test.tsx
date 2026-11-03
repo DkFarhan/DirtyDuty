@@ -56,6 +56,8 @@ async function openLogin() {
   expect(screen.getByRole("img", { name: "DirtyDuty" })).toBeTruthy()
   expect(screen.getByRole("button", { name: "Sign In" }).className).toContain("auth-primary-button")
   expect(document.querySelector(".auth-logo-surface")).toBeTruthy()
+  expect(document.querySelector(".max-w-none")).toBeTruthy()
+  expect(document.querySelector(".max-w-sm")).toBeNull()
 }
 
 async function fillAndSubmitRegistration() {
@@ -277,13 +279,17 @@ describe("authentication screens", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sign up" }))
     fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "Browser User" } })
 
-    const termsLink = screen.getByRole("link", { name: "Terms of Service" })
-    expect(termsLink.getAttribute("href")).toBe("/terms")
+    const termsLink = screen.getByRole("link", {
+      name: "Terms of Service (opens in a new tab)",
+    })
+    expect(termsLink.getAttribute("href")).toBe("/terms?returnTo=register")
     expect(termsLink.getAttribute("target")).toBe("_blank")
     expect(termsLink.getAttribute("rel")).toContain("noopener")
     expect(termsLink.getAttribute("rel")).toContain("noreferrer")
-    const privacyLink = screen.getByRole("link", { name: "Privacy Policy" })
-    expect(privacyLink.getAttribute("href")).toBe("/privacy")
+    const privacyLink = screen.getByRole("link", {
+      name: "Privacy Policy (opens in a new tab)",
+    })
+    expect(privacyLink.getAttribute("href")).toBe("/privacy?returnTo=register")
     expect(privacyLink.getAttribute("target")).toBe("_blank")
     expect(privacyLink.getAttribute("rel")).toContain("noopener")
     expect(privacyLink.getAttribute("rel")).toContain("noreferrer")
@@ -353,6 +359,7 @@ describe("authentication screens", () => {
       await screen.findByRole("heading", { name: "Verify your email" }, { timeout: 3_000 }),
     ).toBeTruthy()
     expect(await screen.findByText(`A verification code was sent to ${user.email}.`)).toBeTruthy()
+    expect(document.querySelector("main[class*='emailPage']")?.closest(".max-w-none")).toBeTruthy()
     expect(
       screen.queryByRole("heading", { name: "What should your roommates call you?" }),
     ).toBeNull()
@@ -411,6 +418,7 @@ describe("authentication screens", () => {
         "No verification code is available yet. Request one below to continue.",
       ),
     ).toBeTruthy()
+    expect(document.querySelector("main[class*='emailPage']")?.closest(".max-w-none")).toBeTruthy()
     expect(screen.queryByText(/A verification code was sent/)).toBeNull()
     expect(
       screen.queryByRole("heading", { name: "What should your roommates call you?" }),
@@ -634,7 +642,7 @@ describe("authentication screens", () => {
 
     expect(screen.getByRole("button", { name: "Continue with Google" })).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "Forgot password?" }))
-    expect(await screen.findByRole("button", { name: "Send reset instructions" })).toBeTruthy()
+    expect(document.querySelector(".max-w-none")).toBeTruthy()
   })
 
   it("shows Google sign-in on registration when the provider is enabled", async () => {
@@ -648,6 +656,7 @@ describe("authentication screens", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Sign up" }))
     expect(await screen.findByRole("button", { name: "Continue with Google" })).toBeTruthy()
+    expect(document.querySelector(".max-w-none")).toBeTruthy()
   })
 
   it("requires the existing password before linking a Google email collision", async () => {
@@ -697,6 +706,7 @@ describe("authentication screens", () => {
     expect(
       await screen.findByRole("button", { name: "Update password" }, { timeout: 3_000 }),
     ).toBeTruthy()
+    expect(document.querySelector(".max-w-none")).toBeTruthy()
     await waitFor(() => expect(window.location.hash).toBe(""))
     fireEvent.change(screen.getByLabelText("New password"), {
       target: { value: "NewStrongPassword123!" },

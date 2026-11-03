@@ -2,6 +2,7 @@
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { ApiError } from "@/lib/auth/api"
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
@@ -10,9 +11,9 @@ const mocks = vi.hoisted(() => ({
     emailVerificationStatus: {
       email: "pending@example.com",
       emailVerified: false,
-      codeExpiresAt: null,
-      resendAvailableAt: null,
-      deliveryState: "SENT" as "SENT" | "FAILED" | "NONE",
+      codeExpiresAt: null as string | null,
+      resendAvailableAt: null as string | null,
+      deliveryState: "SENT" as "SENT" | "FAILED" | "NONE" | "PENDING",
     },
     refreshEmailVerificationStatus: vi.fn(),
     verifyEmail: vi.fn(),
@@ -36,7 +37,11 @@ import { EmailVerificationScreen } from "./email-verification-screen"
 describe("EmailVerificationScreen", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mocks.auth.emailVerificationStatus.deliveryState = "SENT"
+    Object.assign(mocks.auth.emailVerificationStatus, {
+      deliveryState: "SENT",
+      codeExpiresAt: null,
+      resendAvailableAt: null,
+    })
     mocks.auth.refreshEmailVerificationStatus.mockResolvedValue(mocks.auth.emailVerificationStatus)
     mocks.auth.verifyEmail.mockResolvedValue({ emailVerified: true })
     mocks.auth.resendVerificationCode.mockResolvedValue(mocks.auth.emailVerificationStatus)
@@ -50,6 +55,11 @@ describe("EmailVerificationScreen", () => {
   it("accepts numeric paste/input, applies autofill attributes, and verifies the code", async () => {
     render(<EmailVerificationScreen />)
 
+    expect(screen.getByRole("heading", { name: "Verify your email" })).toBeTruthy()
+    expect(screen.getByText("pending@example.com")).toBeTruthy()
+    expect(document.querySelector("main")?.className).toContain("emailPage")
+    const brandPhrase = screen.getByText("Keep your home running smoothly")
+    expect(brandPhrase.parentElement?.querySelector('img[alt="DirtyDuty"]')).toBeTruthy()
     expect(
       await screen.findByText("A verification code was sent to pending@example.com."),
     ).toBeTruthy()
@@ -77,6 +87,54 @@ describe("EmailVerificationScreen", () => {
     await waitFor(() => expect(mocks.auth.resendVerificationCode).toHaveBeenCalledOnce())
   })
 
+  it("explains missing and pending delivery states without claiming a code was sent", async () => {
+    mocks.auth.emailVerificationStatus.deliveryState = "NONE"
+    const { rerender } = render(<EmailVerificationScreen />)
+
+    expect(await screen.findByText(/No verification code is available yet/)).toBeTruthy()
+    expect(screen.queryByText(/A verification code was sent/)).toBeNull()
+
+    mocks.auth.emailVerificationStatus.deliveryState = "PENDING"
+    rerender(<EmailVerificationScreen />)
+    expect(screen.getByText(/verification email is being prepared/)).toBeTruthy()
+    expect(screen.queryByText(/A verification code was sent/)).toBeNull()
+  })
+
+  it("shows expiration and keeps resend disabled during the cooldown", async () => {
+    mocks.auth.emailVerificationStatus.codeExpiresAt = new Date(
+      Date.now() + 5 * 60_000,
+    ).toISOString()
+    mocks.auth.emailVerificationStatus.resendAvailableAt = new Date(
+      Date.now() + 60_000,
+    ).toISOString()
+    render(<EmailVerificationScreen />)
+
+    expect(await screen.findByText(/This code expires in/)).toBeTruthy()
+    const resend = screen.getByRole("button", { name: /Resend available in/ })
+    expect((resend as HTMLButtonElement).disabled).toBe(true)
+    expect(mocks.auth.resendVerificationCode).not.toHaveBeenCalled()
+  })
+
+  it("announces verification errors and keeps the code available for correction", async () => {
+    mocks.auth.verifyEmail.mockRejectedValueOnce(
+      new ApiError("That code has expired.", 400, "validation"),
+    )
+    render(<EmailVerificationScreen />)
+    const code = await screen.findByRole("textbox", { name: "Six-digit code" })
+    fireEvent.change(code, { target: { value: "123456" } })
+    fireEvent.click(screen.getByRole("button", { name: "Verify email" }))
+
+    expect((await screen.findByRole("alert")).textContent).toContain("That code has expired.")
+    expect((code as HTMLInputElement).value).toBe("123456")
+  })
+
+  it("shows a distinct status-checking presentation while verification status is loading", async () => {
+    mocks.auth.refreshEmailVerificationStatus.mockReturnValueOnce(new Promise(() => {}))
+    render(<EmailVerificationScreen />)
+
+    expect(await screen.findByText(/Checking verification status/)).toBeTruthy()
+  })
+
   it("submits the wrong-email flow and returns to login", async () => {
     render(<EmailVerificationScreen />)
     await screen.findByText("A verification code was sent to pending@example.com.")
@@ -95,6 +153,14 @@ describe("EmailVerificationScreen", () => {
         "account-password",
       ),
     )
+    expect(mocks.navigate).toHaveBeenCalledWith("login")
+  })
+
+  it("preserves sign-out behavior", async () => {
+    render(<EmailVerificationScreen />)
+    fireEvent.click(await screen.findByRole("button", { name: "Sign out" }))
+
+    await waitFor(() => expect(mocks.auth.logout).toHaveBeenCalledOnce())
     expect(mocks.navigate).toHaveBeenCalledWith("login")
   })
 })

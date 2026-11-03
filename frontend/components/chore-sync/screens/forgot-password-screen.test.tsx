@@ -22,6 +22,7 @@ vi.mock("@/lib/auth/auth-context", () => ({
 }))
 
 import { ForgotPasswordScreen } from "./forgot-password-screen"
+import styles from "./auth-screens.module.css"
 
 describe("forgot password screen", () => {
   beforeEach(() => {
@@ -38,6 +39,10 @@ describe("forgot password screen", () => {
   it("submits the email and replaces the form with a generic confirmation", async () => {
     mocks.requestPasswordReset.mockResolvedValueOnce(undefined)
     render(<ForgotPasswordScreen />)
+    const brand = screen.getByRole("banner")
+    expect(brand.className).toContain(styles.centeredBrand)
+    expect(brand.querySelector('img[alt="DirtyDuty"]')).toBeTruthy()
+    expect(brand.textContent).toContain("Keep your home running smoothly")
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "person@example.com" } })
     fireEvent.click(screen.getByRole("button", { name: "Send reset instructions" }))
 
@@ -51,6 +56,7 @@ describe("forgot password screen", () => {
       ),
     ).toBeTruthy()
     expect(screen.queryByLabelText("Email")).toBeNull()
+    expect(screen.getByRole("banner")).toBe(brand)
     expect(mocks.requestPasswordReset).toHaveBeenCalledWith("person@example.com")
   })
 
@@ -61,6 +67,7 @@ describe("forgot password screen", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send reset instructions" }))
     await screen.findByRole("heading", { name: "Check your email" })
     fireEvent.click(screen.getByRole("button", { name: "Received a recovery code?" }))
+    expect(screen.getByRole("banner").className).toContain(styles.centeredBrand)
     fireEvent.change(screen.getByLabelText("Six-digit recovery code"), {
       target: { value: "123456" },
     })

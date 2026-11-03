@@ -44,6 +44,10 @@ describe("LegalAcceptanceScreen", () => {
   it("opens both policies in the same tab with the acceptance screen as return target", () => {
     render(<LegalAcceptanceScreen />)
 
+    const logo = document.querySelector(".auth-logo-surface.auth-logo-theme-aware")
+    expect(logo?.querySelector(".auth-logo-theme-light")).toBeTruthy()
+    expect(logo?.querySelector(".auth-logo-theme-dark")).toBeTruthy()
+    expect(screen.getAllByRole("img", { name: "DirtyDuty" })).toHaveLength(1)
     expect(screen.getByRole("link", { name: /Terms of Service/ }).getAttribute("href")).toBe(
       getLegalDocumentUrl("/terms", "legal-acceptance"),
     )

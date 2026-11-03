@@ -45,6 +45,7 @@ vi.mock("@/lib/data-sync/data-sync-context", () => ({
 }))
 
 import { AdminScreen } from "./admin-screen"
+import designStyles from "../redesign/household-secondary-design-preview.module.css"
 
 const choreA = {
   id: "chore-a",
@@ -68,6 +69,12 @@ const choreB = {
   id: "chore-b",
   householdId: "home-b",
   title: "Home B chore",
+}
+
+const choreC = {
+  ...choreA,
+  id: "chore-c",
+  title: "Home C chore",
 }
 
 describe("admin screen household isolation", () => {
@@ -231,5 +238,36 @@ describe("admin screen household isolation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Actions for Home A chore" }))
     fireEvent.click(screen.getByRole("button", { name: "Pause" }))
     await waitFor(() => expect(mocks.pause).toHaveBeenCalledWith("home-a", "chore-a"))
+  })
+
+  it("raises only the card whose redesigned action menu is open", async () => {
+    mocks.list.mockResolvedValueOnce([
+      choreA,
+      { ...choreA, id: "chore-b", title: "Middle chore" },
+      choreC,
+    ])
+
+    render(<AdminScreen redesigned />)
+    await screen.findByRole("heading", { name: "Home A chore" })
+
+    const firstCard = screen.getByRole("heading", { name: "Home A chore" }).closest("article")
+    const middleCard = screen.getByRole("heading", { name: "Middle chore" }).closest("article")
+    const lastCard = screen.getByRole("heading", { name: "Home C chore" }).closest("article")
+    const firstMenuButton = screen.getByRole("button", { name: "Actions for Home A chore" })
+    const lastMenuButton = screen.getByRole("button", { name: "Actions for Home C chore" })
+
+    fireEvent.click(firstMenuButton)
+    expect(firstCard?.classList.contains(designStyles.choreCardMenuOpen)).toBe(true)
+    expect(middleCard?.classList.contains(designStyles.choreCardMenuOpen)).toBe(false)
+    expect(lastCard?.classList.contains(designStyles.choreCardMenuOpen)).toBe(false)
+    expect(screen.getAllByRole("button", { name: /^(Edit|Pause|Archive)$/ })).toHaveLength(3)
+
+    fireEvent.click(lastMenuButton)
+    expect(firstCard?.classList.contains(designStyles.choreCardMenuOpen)).toBe(false)
+    expect(middleCard?.classList.contains(designStyles.choreCardMenuOpen)).toBe(false)
+    expect(lastCard?.classList.contains(designStyles.choreCardMenuOpen)).toBe(true)
+    expect(firstMenuButton.getAttribute("aria-expanded")).toBe("false")
+    expect(lastMenuButton.getAttribute("aria-expanded")).toBe("true")
+    expect(screen.getAllByRole("button", { name: /^(Edit|Pause|Archive)$/ })).toHaveLength(3)
   })
 })

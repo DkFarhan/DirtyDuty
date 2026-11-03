@@ -4,12 +4,9 @@ import { useEffect, useRef, useState } from "react"
 import { ApiError } from "@/lib/auth/api"
 import { useAuth } from "@/lib/auth/auth-context"
 import { useChoreSync } from "@/lib/chore-sync/store"
-import { ProductLogo } from "@/components/brand/product-logo"
 import { PasswordInput } from "@/components/ui/password-input"
-import { ChevronLeftIcon } from "../icons"
-
-const inputClass =
-  "w-full rounded-xl border border-slate-200 px-4 py-3.5 text-[15px] text-slate-900 placeholder:text-slate-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-teal-500"
+import { AuthScreenLayout } from "./auth-screen-layout"
+import styles from "./auth-screens.module.css"
 
 export function ForgotPasswordScreen({ initialEmail = "" }: { initialEmail?: string }) {
   const { navigate } = useChoreSync()
@@ -122,94 +119,95 @@ export function ForgotPasswordScreen({ initialEmail = "" }: { initialEmail?: str
     }
   }
 
+  const confirmationState = Boolean(confirmationEmail)
+
   return (
-    <main className="flex min-h-screen flex-col bg-white px-6 pb-10 pt-12">
-      <button
-        type="button"
-        onClick={() => navigate("login")}
-        className="mb-8 flex min-h-11 w-fit items-center gap-1 text-slate-500"
-      >
-        <ChevronLeftIcon className="h-5 w-5" />
-        <span className="text-sm font-medium">Back to sign in</span>
-      </button>
-      <ProductLogo className="mb-8 h-auto w-44 max-w-full" />
-      {confirmationEmail ? (
-        <section
-          aria-labelledby="reset-email-confirmation-title"
-          className="rounded-2xl border border-teal-100 bg-teal-50/70 p-5"
-        >
-          <h1 className="text-2xl font-black text-slate-900" id="reset-email-confirmation-title">
-            Check your email
-          </h1>
-          <p className="mt-3 text-sm leading-relaxed text-slate-700" role="status">
+    <AuthScreenLayout
+      backLabel="Back to sign in"
+      centeredBrand
+      description={
+        confirmationState
+          ? "Recovery guidance for your account."
+          : "Enter your email and we’ll send reset instructions if an account is registered."
+      }
+      eyebrow={confirmationState ? "Account recovery" : "Account security"}
+      onBack={() => navigate("login")}
+      title={confirmationState ? "Check your email" : "Reset your password"}
+    >
+      {confirmationState ? (
+        <>
+          <div className={styles.success} role="status">
             If your account is eligible for recovery, we&apos;ll send instructions to your email.
-          </p>
-          <p className="mt-2 break-all text-sm font-semibold text-slate-800">{confirmationEmail}</p>
-          <p className="mt-3 text-sm leading-relaxed text-slate-600">
+          </div>
+          <p className={styles.confirmationEmail}>{confirmationEmail}</p>
+          <p className={styles.supportingText}>
             Check your inbox and spam folder. Password reset links expire after 30 minutes; recovery
             codes expire after 10 minutes.
           </p>
-          <p className="mt-2 text-sm leading-relaxed text-slate-600">
+          <p className={`${styles.supportingText} mt-2`}>
             If you no longer have access to this email or still need help, contact DirtyDuty
             support.
           </p>
 
           {!showRecoveryCodeForm ? (
             <button
-              className="mt-4 min-h-10 text-sm font-semibold text-teal-700"
+              className={styles.recoveryToggle}
               onClick={() => setShowRecoveryCodeForm(true)}
               type="button"
             >
               Received a recovery code?
             </button>
           ) : (
-            <div className="mt-5 flex flex-col gap-3 border-t border-teal-100 pt-4">
-              <label className="text-sm font-semibold text-slate-700" htmlFor="recovery-code">
-                Six-digit recovery code
-              </label>
-              <input
-                autoComplete="one-time-code"
-                className={inputClass}
-                id="recovery-code"
-                inputMode="numeric"
-                maxLength={6}
-                onChange={(event) =>
-                  setRecoveryCode(event.target.value.replace(/\D/g, "").slice(0, 6))
-                }
-                value={recoveryCode}
-              />
-              <label
-                className="text-sm font-semibold text-slate-700"
-                htmlFor="recovery-new-password"
-              >
-                New password
-              </label>
-              <PasswordInput
-                autoComplete="new-password"
-                className={inputClass}
-                id="recovery-new-password"
-                maxLength={128}
-                name="recovery-new-password"
-                onChange={(event) => setNewPassword(event.target.value)}
-                value={newPassword}
-              />
-              <label
-                className="text-sm font-semibold text-slate-700"
-                htmlFor="recovery-confirm-password"
-              >
-                Confirm new password
-              </label>
-              <PasswordInput
-                autoComplete="new-password"
-                className={inputClass}
-                id="recovery-confirm-password"
-                maxLength={128}
-                name="recovery-confirm-password"
-                onChange={(event) => setConfirmNewPassword(event.target.value)}
-                value={confirmNewPassword}
-              />
+            <div className={styles.recoveryFields}>
+              <div className={styles.field}>
+                <label className={styles.label} htmlFor="recovery-code">
+                  Six-digit recovery code
+                </label>
+                <input
+                  autoComplete="one-time-code"
+                  className={styles.input}
+                  id="recovery-code"
+                  inputMode="numeric"
+                  maxLength={6}
+                  name="recovery-code"
+                  onChange={(event) =>
+                    setRecoveryCode(event.target.value.replace(/\D/g, "").slice(0, 6))
+                  }
+                  value={recoveryCode}
+                />
+              </div>
+              <div className={styles.field}>
+                <label className={styles.label} htmlFor="recovery-new-password">
+                  New password
+                </label>
+                <PasswordInput
+                  autoComplete="new-password"
+                  className={styles.input}
+                  id="recovery-new-password"
+                  maxLength={128}
+                  name="recovery-new-password"
+                  onChange={(event) => setNewPassword(event.target.value)}
+                  toggleClassName={styles.passwordToggle}
+                  value={newPassword}
+                />
+              </div>
+              <div className={styles.field}>
+                <label className={styles.label} htmlFor="recovery-confirm-password">
+                  Confirm new password
+                </label>
+                <PasswordInput
+                  autoComplete="new-password"
+                  className={styles.input}
+                  id="recovery-confirm-password"
+                  maxLength={128}
+                  name="recovery-confirm-password"
+                  onChange={(event) => setConfirmNewPassword(event.target.value)}
+                  toggleClassName={styles.passwordToggle}
+                  value={confirmNewPassword}
+                />
+              </div>
               <button
-                className="min-h-11 w-full rounded-xl bg-teal-600 px-4 py-2 font-bold text-white disabled:opacity-60"
+                className={styles.primaryButton}
                 disabled={
                   recoveryBusy || recoveryCode.length !== 6 || !newPassword || !confirmNewPassword
                 }
@@ -221,15 +219,15 @@ export function ForgotPasswordScreen({ initialEmail = "" }: { initialEmail?: str
             </div>
           )}
 
-          <div className="mt-6 border-t border-teal-100 pt-4">
-            <p className="text-sm font-semibold text-slate-700">Didn&apos;t receive an email?</p>
+          <div className={styles.inlinePanel}>
+            <p className={styles.panelTitle}>Didn&apos;t receive an email?</p>
             {cooldown > 0 ? (
-              <p className="mt-1 text-sm text-slate-500" role="timer">
+              <p className={styles.timer} role="timer">
                 Resend available in {cooldown} {cooldown === 1 ? "second" : "seconds"}.
               </p>
             ) : (
               <button
-                className="mt-2 min-h-10 font-bold text-teal-700 disabled:opacity-60"
+                className={styles.textButton}
                 disabled={busy}
                 onClick={() => void sendResetRequest(true)}
                 type="button"
@@ -239,54 +237,52 @@ export function ForgotPasswordScreen({ initialEmail = "" }: { initialEmail?: str
             )}
           </div>
           {error && (
-            <p className="mt-3 text-sm text-rose-600" role="alert">
+            <p className={`${styles.error} mt-4`} role="alert">
               {error}
             </p>
           )}
           <button
-            className="mt-5 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-4 py-2 font-bold text-slate-700"
+            className={`${styles.secondaryButton} mt-4`}
             disabled={busy || recoveryBusy}
             onClick={useDifferentEmail}
             type="button"
           >
             Use a different email
           </button>
-        </section>
+        </>
       ) : (
         <>
-          <h1 className="mb-2 text-2xl font-black text-slate-900">Reset your password</h1>
-          <p className="mb-6 text-sm text-slate-500">
-            Enter your email and we&apos;ll send reset instructions if an account is registered.
-          </p>
-          <label
-            htmlFor="reset-request-email"
-            className="mb-1.5 text-sm font-semibold text-slate-700"
-          >
-            Email
-          </label>
-          <input
-            autoComplete="email"
-            className={inputClass}
-            id="reset-request-email"
-            onChange={(event) => setEmail(event.target.value)}
-            type="email"
-            value={email}
-          />
+          <div className={styles.field}>
+            <label className={styles.label} htmlFor="reset-request-email">
+              Email
+            </label>
+            <input
+              autoComplete="email"
+              className={styles.input}
+              id="reset-request-email"
+              name="email"
+              onChange={(event) => setEmail(event.target.value)}
+              type="email"
+              value={email}
+            />
+          </div>
           {error && (
-            <p className="mt-4 text-sm text-rose-600" role="alert">
+            <p className={`${styles.error} mt-4`} role="alert">
               {error}
             </p>
           )}
-          <button
-            className="mt-6 min-h-12 w-full rounded-xl bg-teal-600 py-3 font-bold text-white disabled:opacity-60"
-            disabled={busy || !email.trim()}
-            onClick={() => void sendResetRequest(false)}
-            type="button"
-          >
-            {busy ? "Sending..." : "Send reset instructions"}
-          </button>
+          <div className={styles.actionSpace}>
+            <button
+              className={styles.primaryButton}
+              disabled={busy || !email.trim()}
+              onClick={() => void sendResetRequest(false)}
+              type="button"
+            >
+              {busy ? "Sending..." : "Send reset instructions"}
+            </button>
+          </div>
         </>
       )}
-    </main>
+    </AuthScreenLayout>
   )
 }

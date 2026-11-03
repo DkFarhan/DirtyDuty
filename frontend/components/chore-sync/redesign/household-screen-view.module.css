@@ -26,7 +26,9 @@
   --nav-active-border: rgb(190 255 252 / 17%);
   --nav-active-text: #b6fff5;
   --nav-inactive: #a5bdc0;
-  --danger: #ffb4a7;
+  --danger: #f8b9ba;
+  --danger-surface: #20323b;
+  --danger-border: #b67c84;
   position: relative;
   width: 100%;
   height: 100vh;
@@ -71,7 +73,9 @@
   --nav-active-border: rgb(190 255 252 / 17%);
   --nav-active-text: #b6fff5;
   --nav-inactive: #a5bdc0;
-  --danger: #ffb4a7;
+  --danger: #f8b9ba;
+  --danger-surface: #20323b;
+  --danger-border: #b67c84;
   background-image: none;
 }
 
@@ -98,7 +102,9 @@
   --nav-active-border: rgb(13 112 108 / 28%);
   --nav-active-text: #0d706c;
   --nav-inactive: #536f70;
-  --danger: #9b4050;
+  --danger: #8e2733;
+  --danger-surface: #fff0ee;
+  --danger-border: #b56e78;
   background-image: linear-gradient(95.475deg, #edf8f4 8.7%, #e2f1ed 53.9%, #f5faf6 95.65%);
 }
 
@@ -1455,9 +1461,10 @@
 .inviteErrorNotice {
   margin: 60px 0 0;
   padding: 18px;
+  border: 1px solid var(--danger-border);
   border-radius: 16px;
-  background: #f9dedb;
-  color: #17383d;
+  background: var(--danger-surface);
+  color: var(--danger);
   font-size: 14px;
   line-height: 1.5;
 }
@@ -1465,7 +1472,7 @@
 .inviteErrorNotice strong {
   display: block;
   margin-bottom: 8px;
-  color: #a63e4d;
+  color: inherit;
   font-size: 14px;
 }
 

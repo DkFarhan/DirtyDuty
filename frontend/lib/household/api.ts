@@ -17,6 +17,7 @@ export type HouseholdSettings = Household & {
 export type CreateHouseholdInput = {
   name: string
   timezone: string
+  description?: string | null
 }
 
 export type HouseholdInvitation = {
