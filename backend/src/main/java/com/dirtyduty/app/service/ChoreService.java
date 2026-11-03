@@ -139,7 +139,7 @@ public class ChoreService {
     Chore chore = findMutableChore(householdId, choreId);
     chore.setActive(false);
     choreScheduleRepository
-        .findByChore_IdAndHousehold_Id(choreId, householdId)
+        .findByChore_IdAndHousehold_IdForUpdate(choreId, householdId)
         .ifPresent(
             schedule -> {
               schedule.setActive(false);
@@ -153,14 +153,24 @@ public class ChoreService {
       UUID householdId, UUID choreId, Authentication authentication) {
     authorize(householdId, authentication);
     Chore chore = findMutableChore(householdId, choreId);
-    chore.setActive(true);
     choreScheduleRepository
-        .findByChore_IdAndHousehold_Id(choreId, householdId)
+        .findByChore_IdAndHousehold_IdForUpdate(choreId, householdId)
         .ifPresent(
             schedule -> {
+              if (schedule.getAssignmentStrategy() == AssignmentStrategy.FIXED
+                  && (schedule.getFixedAssignee() == null
+                      || membershipRepository
+                          .findByHousehold_IdAndUser_Id(
+                              householdId, schedule.getFixedAssignee().getId())
+                          .filter(membership -> membership.getStatus() == MembershipStatus.ACTIVE)
+                          .isEmpty())) {
+                throw new InvalidHouseholdException(
+                    "Choose an active fixed assignee before activating this chore.");
+              }
               schedule.setActive(true);
               occurrenceService.synchronizeSchedule(schedule);
             });
+    chore.setActive(true);
     return toResponse(chore);
   }
 
@@ -172,7 +182,7 @@ public class ChoreService {
       chore.setActive(false);
       chore.setArchivedAt(OffsetDateTime.now(ZoneOffset.UTC));
       choreScheduleRepository
-          .findByChore_IdAndHousehold_Id(choreId, householdId)
+          .findByChore_IdAndHousehold_IdForUpdate(choreId, householdId)
           .ifPresent(
               schedule -> {
                 schedule.setActive(false);
@@ -283,7 +293,7 @@ public class ChoreService {
 
     ChoreSchedule schedule =
         choreScheduleRepository
-            .findByChore_IdAndHousehold_Id(chore.getId(), householdId)
+            .findByChore_IdAndHousehold_IdForUpdate(chore.getId(), householdId)
             .orElseGet(() -> createSchedule(chore, household));
     String previousRecurrenceRule = schedule.getRecurrenceRule();
     occurrenceService.validateScheduleFrequencyChange(

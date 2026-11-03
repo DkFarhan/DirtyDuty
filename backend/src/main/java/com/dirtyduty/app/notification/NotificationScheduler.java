@@ -1,5 +1,6 @@
 package com.dirtyduty.app.notification;
 
+import com.dirtyduty.app.service.MembershipExitCleanupService;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -23,18 +24,21 @@ public class NotificationScheduler {
   private final List<NotificationDeliveryProvider> providers;
   private final NotificationCooldownService cooldownService;
   private final NotificationTemplateResolver templateResolver;
+  private final MembershipExitCleanupService membershipExitCleanupService;
 
   public NotificationScheduler(
       JdbcTemplate jdbc,
       NotificationEventService eventService,
       List<NotificationDeliveryProvider> providers,
       NotificationCooldownService cooldownService,
-      NotificationTemplateResolver templateResolver) {
+      NotificationTemplateResolver templateResolver,
+      MembershipExitCleanupService membershipExitCleanupService) {
     this.jdbc = jdbc;
     this.eventService = eventService;
     this.providers = providers;
     this.cooldownService = cooldownService;
     this.templateResolver = templateResolver;
+    this.membershipExitCleanupService = membershipExitCleanupService;
   }
 
   @Scheduled(fixedDelayString = "${app.notifications.scheduler-delay:60000}")
@@ -212,7 +216,9 @@ public class NotificationScheduler {
 
     for (PendingNotification item : pending) {
       NotificationMessage message = item.toMessage();
-      if (!isEnabled(item) || !isAssignmentActive(item)) {
+      if (!isEnabled(item)
+          || !isAssignmentActive(item)
+          || !membershipExitCleanupService.isRecipientActiveForNotification(item.id())) {
         cancelNotification(item.id());
         continue;
       }
@@ -295,7 +301,9 @@ public class NotificationScheduler {
                     rs.getString("deduplication_key")));
     for (PendingNotification item : retries) {
       NotificationMessage message = item.toMessage();
-      if (!isEnabled(item) || !isAssignmentActive(item)) {
+      if (!isEnabled(item)
+          || !isAssignmentActive(item)
+          || !membershipExitCleanupService.isRecipientActiveForNotification(item.id())) {
         cancelNotification(item.id());
         continue;
       }

@@ -20,6 +20,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,6 +44,7 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
   @Autowired private NotificationEventService notificationEventService;
   @Autowired private NotificationScheduler notificationScheduler;
   @Autowired private PlatformTransactionManager transactionManager;
+  @Autowired private MembershipExitCleanupService membershipExitCleanupService;
 
   private UUID householdId;
   private final List<UUID> userIds = new java.util.ArrayList<>();
@@ -851,6 +858,170 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
     notificationScheduler.run();
 
     assertThat(notificationStatus(notificationId)).isEqualTo("PENDING");
+  }
+
+  @Test
+  void schedulerCancelsHouseholdNotificationsForInactiveRecipientsAndTheirRetries() {
+    UUID recipientId = createUser("inactive-recipient");
+    householdId = createHousehold(recipientId);
+    UUID eventId = UUID.randomUUID();
+    UUID notificationId = UUID.randomUUID();
+    String deduplicationKey = "inactive-recipient-" + UUID.randomUUID();
+    jdbc.update(
+        """
+        INSERT INTO notification_events
+            (id, event_type, household_id, reference_type, reference_id, title, message,
+             category, processed_at)
+        VALUES (?, 'HOUSEHOLD_UPDATE', ?, 'HOUSEHOLD', ?, 'Update', 'Message',
+                'HOUSEHOLD_UPDATE', NOW())
+        """,
+        eventId,
+        householdId,
+        householdId);
+    jdbc.update(
+        """
+        INSERT INTO notifications
+            (id, recipient_user_id, event_id, type, category, title, message, status,
+             scheduled_at, deduplication_key, reference_type, reference_id)
+        VALUES (?, ?, ?, 'HOUSEHOLD_UPDATE', 'HOUSEHOLD_UPDATE', 'Update', 'Message',
+                'PENDING', NOW() - INTERVAL '1 minute', ?, 'HOUSEHOLD', ?)
+        """,
+        notificationId,
+        recipientId,
+        eventId,
+        deduplicationKey,
+        householdId);
+    jdbc.update(
+        """
+        INSERT INTO notification_deliveries (notification_id, channel, status, attempts)
+        VALUES (?, 'IN_APP', 'PENDING', 0), (?, 'WEB_PUSH', 'FAILED', 1)
+        """,
+        notificationId,
+        notificationId);
+    jdbc.update(
+        "UPDATE household_memberships SET status='LEFT' WHERE household_id=? AND user_id=?",
+        householdId,
+        recipientId);
+
+    notificationScheduler.run();
+
+    assertThat(notificationStatus(notificationId)).isEqualTo("CANCELLED");
+    assertThat(
+            jdbc.queryForList(
+                "SELECT status FROM notification_deliveries WHERE notification_id=?",
+                String.class,
+                notificationId))
+        .containsOnly("CANCELLED");
+  }
+
+  @Test
+  void membershipExitWaitsForScheduleSynchronizationAndCleansItsPendingAssignment()
+      throws Exception {
+    UUID ownerId = createUser("exit-lock-owner");
+    UUID departingUserId = createUser("exit-lock-member");
+    householdId = createHousehold(ownerId);
+    addMember(departingUserId);
+    UUID choreId = createChore(ownerId, "Exit lock chore");
+    UUID scheduleId = createSchedule(choreId, "FREQ=DAILY", "FIXED", List.of(departingUserId));
+    synchronizeSchedule(scheduleId);
+    UUID assignmentId =
+        jdbc.queryForObject(
+            """
+            SELECT id FROM chore_assignments
+            WHERE schedule_id=? AND status='PENDING' AND assigned_to_user_id=?
+            ORDER BY scheduled_for LIMIT 1
+            """,
+            UUID.class,
+            scheduleId,
+            departingUserId);
+
+    CountDownLatch scheduleLocked = new CountDownLatch(1);
+    CountDownLatch releaseSynchronization = new CountDownLatch(1);
+    CountDownLatch exitStarted = new CountDownLatch(1);
+    AtomicInteger exitBackendPid = new AtomicInteger();
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    try {
+      Future<?> synchronization =
+          executor.submit(
+              () ->
+                  new TransactionTemplate(transactionManager)
+                      .executeWithoutResult(
+                          status -> {
+                            jdbc.queryForObject(
+                                "SELECT id FROM chore_schedules WHERE id=? FOR UPDATE",
+                                UUID.class,
+                                scheduleId);
+                            scheduleLocked.countDown();
+                            try {
+                              if (!releaseSynchronization.await(10, TimeUnit.SECONDS)) {
+                                throw new IllegalStateException(
+                                    "Timed out waiting to release schedule synchronization.");
+                              }
+                            } catch (InterruptedException exception) {
+                              Thread.currentThread().interrupt();
+                              throw new IllegalStateException(
+                                  "Schedule synchronization was interrupted.", exception);
+                            }
+                            occurrenceService.synchronizeSchedule(
+                                scheduleRepository.findById(scheduleId).orElseThrow());
+                          }));
+      assertThat(scheduleLocked.await(5, TimeUnit.SECONDS)).isTrue();
+
+      Future<?> exit =
+          executor.submit(
+              () ->
+                  new TransactionTemplate(transactionManager)
+                      .executeWithoutResult(
+                          status -> {
+                            exitBackendPid.set(
+                                jdbc.queryForObject("SELECT pg_backend_pid()", Integer.class));
+                            jdbc.update(
+                                """
+                                UPDATE household_memberships
+                                SET status='LEFT', left_at=NOW()
+                                WHERE household_id=? AND user_id=?
+                                """,
+                                householdId,
+                                departingUserId);
+                            exitStarted.countDown();
+                            membershipExitCleanupService.cleanupMembershipExit(
+                                householdId, departingUserId);
+                          }));
+      assertThat(exitStarted.await(5, TimeUnit.SECONDS)).isTrue();
+
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+      boolean blockedByScheduleLock = false;
+      while (System.nanoTime() < deadline) {
+        blockedByScheduleLock =
+            Boolean.TRUE.equals(
+                jdbc.queryForObject(
+                    "SELECT cardinality(pg_blocking_pids(?)) > 0",
+                    Boolean.class,
+                    exitBackendPid.get()));
+        if (blockedByScheduleLock) break;
+        Thread.sleep(20);
+      }
+      assertThat(blockedByScheduleLock).isTrue();
+
+      releaseSynchronization.countDown();
+      synchronization.get(10, TimeUnit.SECONDS);
+      exit.get(10, TimeUnit.SECONDS);
+    } finally {
+      releaseSynchronization.countDown();
+      executor.shutdownNow();
+      executor.awaitTermination(5, TimeUnit.SECONDS);
+    }
+
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT status FROM chore_assignments WHERE id=?", String.class, assignmentId))
+        .isEqualTo("CANCELLED");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT assigned_to_user_id FROM chore_assignments WHERE id=?",
+                UUID.class,
+                assignmentId))
+        .isNull();
   }
 
   @Test
