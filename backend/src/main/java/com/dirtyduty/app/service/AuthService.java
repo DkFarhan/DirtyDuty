@@ -236,8 +236,12 @@ public class AuthService {
   private void invalidatePersonalData(UUID userId, String email) {
     jdbcTemplate.update("DELETE FROM password_reset_token WHERE user_id = ?", userId);
     jdbcTemplate.update("DELETE FROM external_auth_identity WHERE user_id = ?", userId);
-    jdbcTemplate.update("DELETE FROM push_subscriptions WHERE user_id = ?", userId);
-    jdbcTemplate.update("DELETE FROM notification_preferences WHERE user_id = ?", userId);
+    // Account deletion already holds the user row. Match scheduler order from here: notification,
+    // delivery, then push-subscription rows.
+    jdbcTemplate.query(
+        "SELECT id FROM notifications WHERE recipient_user_id=? ORDER BY id FOR UPDATE",
+        (rs, row) -> rs.getObject("id", UUID.class),
+        userId);
     jdbcTemplate.update(
         """
                 UPDATE notification_deliveries
@@ -248,6 +252,8 @@ public class AuthService {
                 """,
         userId);
     jdbcTemplate.update("DELETE FROM notifications WHERE recipient_user_id = ?", userId);
+    jdbcTemplate.update("DELETE FROM push_subscriptions WHERE user_id = ?", userId);
+    jdbcTemplate.update("DELETE FROM notification_preferences WHERE user_id = ?", userId);
     invalidateAllSessionsForUser(email);
   }
 

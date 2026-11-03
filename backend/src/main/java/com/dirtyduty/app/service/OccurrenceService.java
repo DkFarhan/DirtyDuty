@@ -142,7 +142,7 @@ public class OccurrenceService {
       if (!dates.contains(occurrence.scheduledFor())) {
         jdbc.update(
             "UPDATE chore_assignments SET status='CANCELLED', updated_at=NOW() "
-                + "WHERE id=? AND status IN ('PENDING','SUBMITTED')",
+                + "WHERE id=? AND status='PENDING'",
             occurrence.id());
       }
     }
@@ -214,6 +214,9 @@ public class OccurrenceService {
             && !"CANCELLED".equals(occurrenceStatus)) {
           continue;
         }
+        if ("SUBMITTED".equals(occurrenceStatus)) {
+          continue;
+        }
         boolean exitCancelled =
             Boolean.TRUE.equals(
                 jdbc.queryForObject(
@@ -229,7 +232,7 @@ public class OccurrenceService {
                         SET status='PENDING', due_at=?, title_snapshot=?, priority_snapshot=?,
                             difficulty_snapshot=?, estimated_minutes_snapshot=?, updated_at=NOW(),
                             cancelled_by_membership_exit=FALSE
-                        WHERE id=? AND status IN ('PENDING','SUBMITTED','CANCELLED')
+                        WHERE id=? AND status IN ('PENDING','CANCELLED')
                         """,
             dueAt,
             chore.getTitle(),
@@ -714,6 +717,7 @@ public class OccurrenceService {
   @Transactional
   public AssignmentResponse complete(
       UUID householdId, UUID assignmentId, Authentication authentication) {
+    lockHousehold(householdId);
     HouseholdMembership actor = requireActiveMember(householdId, authentication);
     List<String> rows =
         jdbc.query(

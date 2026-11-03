@@ -65,6 +65,7 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
 
   private UUID householdId;
   private final List<UUID> userIds = new java.util.ArrayList<>();
+  private final List<UUID> additionalHouseholdIds = new java.util.ArrayList<>();
 
   @AfterEach
   void cleanFixtures() {
@@ -90,12 +91,110 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
       jdbc.update("DELETE FROM household_memberships WHERE household_id=?", householdId);
       jdbc.update("DELETE FROM households WHERE id=?", householdId);
     }
+    for (UUID additionalHouseholdId : additionalHouseholdIds) {
+      jdbc.update(
+          "DELETE FROM notifications WHERE event_id IN "
+              + "(SELECT id FROM notification_events WHERE household_id=?)",
+          additionalHouseholdId);
+      jdbc.update("DELETE FROM notification_events WHERE household_id=?", additionalHouseholdId);
+      jdbc.update("DELETE FROM activity_events WHERE household_id=?", additionalHouseholdId);
+      jdbc.update("DELETE FROM chore_completions WHERE household_id=?", additionalHouseholdId);
+      jdbc.update(
+          "DELETE FROM chore_assignment_assignees WHERE household_id=?", additionalHouseholdId);
+      jdbc.update("DELETE FROM chore_assignments WHERE household_id=?", additionalHouseholdId);
+      jdbc.update("DELETE FROM chore_schedules WHERE household_id=?", additionalHouseholdId);
+      jdbc.update("DELETE FROM chores WHERE household_id=?", additionalHouseholdId);
+      jdbc.update("DELETE FROM household_memberships WHERE household_id=?", additionalHouseholdId);
+      jdbc.update("DELETE FROM households WHERE id=?", additionalHouseholdId);
+    }
     for (UUID userId : userIds) {
       jdbc.update("DELETE FROM notification_preferences WHERE user_id=?", userId);
       jdbc.update("DELETE FROM users WHERE id=?", userId);
     }
     userIds.clear();
+    additionalHouseholdIds.clear();
     householdId = null;
+  }
+
+  @Test
+  void schedulerDefersWorkForHouseholdsOutsideItsLockedRunScope() throws Exception {
+    SchedulerLockFixture fixture = createSchedulerLockFixture();
+    UUID secondOwnerId = createUser("scheduler-scope-owner");
+    UUID secondHouseholdId = createHousehold(secondOwnerId);
+    additionalHouseholdIds.add(secondHouseholdId);
+
+    UUID primaryHouseholdId = householdId;
+    householdId = secondHouseholdId;
+    UUID choreId = createChore(secondOwnerId, "Deferred reminder chore");
+    householdId = primaryHouseholdId;
+
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    CountDownLatch userRowsLocked = new CountDownLatch(1);
+    CountDownLatch releaseUserLocks = new CountDownLatch(1);
+    try {
+      AtomicInteger blockerPid = new AtomicInteger();
+      Future<?> userLocks =
+          executor.submit(
+              () ->
+                  new TransactionTemplate(transactionManager)
+                      .executeWithoutResult(
+                          status -> {
+                            blockerPid.set(
+                                jdbc.queryForObject("SELECT pg_backend_pid()", Integer.class));
+                            jdbc.query(
+                                """
+                                SELECT id FROM users
+                                WHERE id IN (?, ?) ORDER BY id FOR NO KEY UPDATE
+                                """,
+                                (rs, row) -> rs.getObject("id", UUID.class),
+                                fixture.ownerId(),
+                                fixture.memberId());
+                            userRowsLocked.countDown();
+                            awaitLatch(releaseUserLocks, "scheduler user lock release");
+                          }));
+      assertThat(userRowsLocked.await(10, TimeUnit.SECONDS)).isTrue();
+
+      Future<?> scheduler =
+          executor.submit(
+              () ->
+                  new TransactionTemplate(transactionManager)
+                      .executeWithoutResult(status -> notificationScheduler.run()));
+      assertThat(awaitBlockedBy(blockerPid.get())).isTrue();
+
+      householdId = secondHouseholdId;
+      UUID assignmentId =
+          createAssignment(
+              null,
+              choreId,
+              LocalDate.now(ZoneOffset.UTC),
+              OffsetDateTime.now(ZoneOffset.UTC).plusHours(2),
+              "PENDING",
+              secondOwnerId);
+      householdId = primaryHouseholdId;
+
+      releaseUserLocks.countDown();
+      scheduler.get(10, TimeUnit.SECONDS);
+      assertThat(
+              jdbc.queryForObject(
+                  "SELECT COUNT(*) FROM notifications WHERE reference_id=?",
+                  Integer.class,
+                  assignmentId))
+          .isZero();
+
+      userLocks.get(10, TimeUnit.SECONDS);
+      notificationScheduler.run();
+      assertThat(
+              jdbc.queryForObject(
+                  "SELECT COUNT(*) FROM notifications WHERE reference_id=?",
+                  Integer.class,
+                  assignmentId))
+          .isGreaterThan(0);
+    } finally {
+      householdId = primaryHouseholdId;
+      releaseUserLocks.countDown();
+      executor.shutdownNow();
+      executor.awaitTermination(5, TimeUnit.SECONDS);
+    }
   }
 
   @Test
@@ -185,6 +284,178 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
                 Integer.class,
                 fixture.staleNotificationId()))
         .isZero();
+  }
+
+  @Test
+  void choreCompletionAndMemberExitSerializeAtHouseholdLock() throws Exception {
+    UUID ownerId = createUser("completion-lock-owner");
+    UUID departingUserId = createUser("completion-lock-member");
+    householdId = createHousehold(ownerId);
+    addMember(departingUserId);
+    UUID choreId = createChore(ownerId, "Shared completion lock chore");
+    UUID assignmentId =
+        createAssignment(
+            null,
+            choreId,
+            LocalDate.now(ZoneOffset.UTC),
+            OffsetDateTime.now(ZoneOffset.UTC).plusDays(1),
+            "PENDING",
+            ownerId);
+    jdbc.update(
+        """
+        INSERT INTO chore_assignment_assignees (household_id, assignment_id, user_id)
+        VALUES (?, ?, ?)
+        """,
+        householdId,
+        assignmentId,
+        departingUserId);
+
+    CountDownLatch completionAtPublish = new CountDownLatch(1);
+    CountDownLatch releaseCompletion = new CountDownLatch(1);
+    AtomicInteger completionPid = new AtomicInteger();
+    doAnswer(
+            invocation -> {
+              completionPid.set(jdbc.queryForObject("SELECT pg_backend_pid()", Integer.class));
+              completionAtPublish.countDown();
+              awaitLatch(releaseCompletion, "completion publish release");
+              return invocation.callRealMethod();
+            })
+        .when(notificationEventServiceSpy)
+        .publish(any(NotificationEvent.class));
+
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    try {
+      Future<?> completion =
+          executor.submit(
+              () ->
+                  new TransactionTemplate(transactionManager)
+                      .executeWithoutResult(
+                          status ->
+                              occurrenceService.complete(
+                                  householdId, assignmentId, authentication(ownerId))));
+      assertThat(completionAtPublish.await(10, TimeUnit.SECONDS)).isTrue();
+
+      AtomicInteger exitPid = new AtomicInteger();
+      Future<?> memberExit =
+          executor.submit(
+              () ->
+                  new TransactionTemplate(transactionManager)
+                      .executeWithoutResult(
+                          status -> {
+                            exitPid.set(
+                                jdbc.queryForObject("SELECT pg_backend_pid()", Integer.class));
+                            householdSettingsService.leave(
+                                householdId, null, authentication(departingUserId));
+                          }));
+      assertThat(awaitSessionTransitivelyBlockedByAny(exitPid, Set.of(completionPid.get())))
+          .isTrue();
+
+      releaseCompletion.countDown();
+      completion.get(10, TimeUnit.SECONDS);
+      memberExit.get(10, TimeUnit.SECONDS);
+    } finally {
+      releaseCompletion.countDown();
+      executor.shutdownNow();
+      executor.awaitTermination(5, TimeUnit.SECONDS);
+    }
+
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT status FROM household_memberships WHERE household_id=? AND user_id=?",
+                String.class,
+                householdId,
+                departingUserId))
+        .isEqualTo("LEFT");
+    assertThat(assignmentStatus(assignmentId)).isEqualTo("COMPLETED");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT COUNT(*) FROM chore_completions WHERE assignment_id=?",
+                Integer.class,
+                assignmentId))
+        .isEqualTo(1);
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT COUNT(*) FROM notification_events WHERE reference_id=? AND event_type='CHORE_COMPLETED'",
+                Integer.class,
+                assignmentId))
+        .isEqualTo(1);
+  }
+
+  @Test
+  void synchronizationPreservesSubmittedAssignmentHistoryAndAssignees() {
+    UUID ownerId = createUser("submitted-lock-owner");
+    UUID memberId = createUser("submitted-lock-member");
+    householdId = createHousehold(ownerId);
+    addMember(memberId);
+    UUID choreId = createChore(ownerId, "Original chore snapshot");
+    UUID scheduleId = createSchedule(choreId, "FREQ=DAILY", "FIXED", List.of(memberId));
+    synchronizeSchedule(scheduleId);
+    UUID assignmentId =
+        jdbc.queryForObject(
+            """
+            SELECT id FROM chore_assignments
+            WHERE schedule_id=? AND status='PENDING'
+            ORDER BY scheduled_for LIMIT 1
+            """,
+            UUID.class,
+            scheduleId);
+    jdbc.update(
+        """
+        UPDATE chore_assignments
+        SET status='SUBMITTED', title_snapshot='Submitted snapshot', priority_snapshot='HIGH'
+        WHERE id=?
+        """,
+        assignmentId);
+    jdbc.update(
+        """
+        INSERT INTO chore_completions
+            (household_id, assignment_id, attempt_number, completed_by_user_id,
+             verification_status, note)
+        VALUES (?, ?, 1, ?, 'PENDING', 'Submitted proof history')
+        """,
+        householdId,
+        assignmentId,
+        memberId);
+
+    synchronizeSchedule(scheduleId);
+    choreService.updateChore(
+        householdId,
+        choreId,
+        choreRequest("Changed chore snapshot", scheduleRequest(ownerId, memberId)),
+        authentication(ownerId));
+    choreService.pauseChore(householdId, choreId, authentication(ownerId));
+
+    assertThat(assignmentStatus(assignmentId)).isEqualTo("SUBMITTED");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT title_snapshot FROM chore_assignments WHERE id=?",
+                String.class,
+                assignmentId))
+        .isEqualTo("Submitted snapshot");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT priority_snapshot FROM chore_assignments WHERE id=?",
+                String.class,
+                assignmentId))
+        .isEqualTo("HIGH");
+    assertThat(
+            jdbc.query(
+                "SELECT user_id FROM chore_assignment_assignees WHERE assignment_id=?",
+                (rs, row) -> rs.getObject("user_id", UUID.class),
+                assignmentId))
+        .containsExactly(memberId);
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT verification_status FROM chore_completions WHERE assignment_id=?",
+                String.class,
+                assignmentId))
+        .isEqualTo("PENDING");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT note FROM chore_completions WHERE assignment_id=?",
+                String.class,
+                assignmentId))
+        .isEqualTo("Submitted proof history");
   }
 
   private SchedulerLockFixture createSchedulerLockFixture() {

@@ -1,6 +1,10 @@
 package com.dirtyduty.app.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.verify;
 
 import com.dirtyduty.app.dto.auth.RegisterRequest;
 import com.dirtyduty.app.dto.chore.ChoreRequest;
@@ -10,6 +14,8 @@ import com.dirtyduty.app.entity.enums.AssignmentStrategy;
 import com.dirtyduty.app.exception.AccountDeletionConflictException;
 import com.dirtyduty.app.exception.InvalidHouseholdException;
 import com.dirtyduty.app.exception.ResourceNotFoundException;
+import com.dirtyduty.app.notification.NotificationScheduler;
+import com.dirtyduty.app.notification.WebPushClient;
 import com.dirtyduty.app.repository.UserRepository;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -31,10 +37,17 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
-@SpringBootTest
+@SpringBootTest(
+    properties = {
+      "app.notifications.scheduler-delay=3600000",
+      "app.notifications.scheduler-initial-delay=3600000",
+      "app.notifications.web-push.public-key=test-public-key",
+      "app.notifications.web-push.private-key=test-private-key"
+    })
 class AccountDeletionLockingIntegrationTest {
 
   private static final String PASSWORD = "StrongPassword123!";
@@ -46,9 +59,121 @@ class AccountDeletionLockingIntegrationTest {
   @Autowired private UserRepository userRepository;
   @Autowired private JdbcTemplate jdbc;
   @Autowired private PlatformTransactionManager transactionManager;
+  @Autowired private NotificationScheduler notificationScheduler;
+  @MockitoBean private WebPushClient webPushClient;
 
   private final List<UUID> userIds = new ArrayList<>();
   private final List<UUID> householdIds = new ArrayList<>();
+
+  @Test
+  void accountDeletionSerializesWithAccountLevelPushRetry() throws Exception {
+    User user = createUser("push-retry-delete");
+    UUID notificationId = UUID.randomUUID();
+    jdbc.update(
+        """
+        INSERT INTO notification_preferences (user_id, push_enabled)
+        VALUES (?, TRUE)
+        ON CONFLICT (user_id) DO UPDATE SET push_enabled=TRUE
+        """,
+        user.getId());
+    jdbc.update(
+        """
+        INSERT INTO push_subscriptions (user_id, endpoint, public_key, auth_secret)
+        VALUES (?, ?, 'subscription-public-key', 'subscription-auth-secret')
+        """,
+        user.getId(),
+        "https://push.example.test/" + UUID.randomUUID());
+    jdbc.update(
+        """
+        INSERT INTO notifications
+            (id, recipient_user_id, type, category, title, message, status, scheduled_at,
+             sent_at, deduplication_key)
+        VALUES (?, ?, 'CHORE_DUE_SOON', 'CHORE_REMINDER', 'Account reminder', 'Retry',
+                'SENT', NOW() - INTERVAL '5 minutes', NOW() - INTERVAL '4 minutes', ?)
+        """,
+        notificationId,
+        user.getId(),
+        "account-push-retry-" + UUID.randomUUID());
+    jdbc.update(
+        """
+        INSERT INTO notification_deliveries
+            (notification_id, channel, status, attempts, next_attempt_at)
+        VALUES (?, 'WEB_PUSH', 'FAILED', 1, NOW() - INTERVAL '1 minute')
+        """,
+        notificationId);
+
+    CountDownLatch pushLookupComplete = new CountDownLatch(1);
+    CountDownLatch releasePush = new CountDownLatch(1);
+    AtomicInteger schedulerPid = new AtomicInteger();
+    doAnswer(
+            invocation -> {
+              schedulerPid.set(jdbc.queryForObject("SELECT pg_backend_pid()", Integer.class));
+              pushLookupComplete.countDown();
+              await(releasePush, "push retry release");
+              return 201;
+            })
+        .when(webPushClient)
+        .send(
+            anyString(),
+            anyString(),
+            anyString(),
+            anyString(),
+            anyString(),
+            anyString(),
+            any(byte[].class));
+
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    try {
+      Future<?> scheduler =
+          executor.submit(
+              () ->
+                  new TransactionTemplate(transactionManager)
+                      .executeWithoutResult(status -> notificationScheduler.run()));
+      assertThat(pushLookupComplete.await(10, TimeUnit.SECONDS)).isTrue();
+
+      AtomicInteger deletionPid = new AtomicInteger();
+      Future<?> deletion =
+          executor.submit(
+              () ->
+                  new TransactionTemplate(transactionManager)
+                      .executeWithoutResult(
+                          status -> {
+                            deletionPid.set(
+                                jdbc.queryForObject("SELECT pg_backend_pid()", Integer.class));
+                            deleteAccount(user);
+                          }));
+      assertThat(awaitBlockedBy(schedulerPid.get())).isTrue();
+
+      releasePush.countDown();
+      scheduler.get(10, TimeUnit.SECONDS);
+      deletion.get(10, TimeUnit.SECONDS);
+    } finally {
+      releasePush.countDown();
+      executor.shutdownNow();
+      executor.awaitTermination(5, TimeUnit.SECONDS);
+    }
+
+    verify(webPushClient)
+        .send(
+            anyString(),
+            anyString(),
+            anyString(),
+            anyString(),
+            anyString(),
+            anyString(),
+            any(byte[].class));
+    assertThat(accountStatus(user.getId())).isEqualTo("DELETED");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT COUNT(*) FROM push_subscriptions WHERE user_id=?",
+                Integer.class,
+                user.getId()))
+        .isZero();
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT COUNT(*) FROM notifications WHERE id=?", Integer.class, notificationId))
+        .isZero();
+  }
 
   @AfterEach
   void cleanFixtures() {

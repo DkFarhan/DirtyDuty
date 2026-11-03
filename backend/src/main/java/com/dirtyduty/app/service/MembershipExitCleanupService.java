@@ -20,9 +20,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Shared lock order: household first; lifecycle-specific user/membership, schedule, and assignment
+ * locks next; notification/delivery rows after those; push subscriptions last. Scheduler work takes
+ * household and recipient-user locks before notifications and never acquires assignment locks after
+ * notification rows.
+ */
 @Service
 public class MembershipExitCleanupService {
-
   private static final String HOUSEHOLD_NOTIFICATION_IDS =
       """
       SELECT n.id
@@ -162,6 +167,24 @@ public class MembershipExitCleanupService {
         householdIds.stream().distinct().sorted(Comparator.comparing(UUID::toString)).toList()) {
       if (tryLockHousehold(householdId)) {
         locked.add(householdId);
+      }
+    }
+    return List.copyOf(locked);
+  }
+
+  @Transactional(propagation = Propagation.MANDATORY)
+  public List<UUID> lockExistingUsers(Collection<UUID> userIds) {
+    // Scheduler work and account deletion both lock users after households and before
+    // notifications.
+    List<UUID> locked = new ArrayList<>();
+    for (UUID userId :
+        userIds.stream().distinct().sorted(Comparator.comparing(UUID::toString)).toList()) {
+      if (!jdbc.query(
+              "SELECT id FROM users WHERE id=? FOR NO KEY UPDATE",
+              (rs, row) -> rs.getObject("id", UUID.class),
+              userId)
+          .isEmpty()) {
+        locked.add(userId);
       }
     }
     return List.copyOf(locked);
