@@ -15,6 +15,7 @@ import { useHouseholds } from "@/lib/household/household-context"
 import { notificationApi, type NotificationStyle } from "@/lib/notifications/api"
 import { PasswordInput } from "@/components/ui/password-input"
 import { SubpageHeader } from "./subpage-header"
+import { useDialogFocus } from "../use-dialog-focus"
 import {
   HouseholdLiveDesignHeader,
   type PreviewTheme,
@@ -112,6 +113,8 @@ export function HouseholdSettingsScreen({
   const [revokeTargetId, setRevokeTargetId] = useState<string | null>(null)
   const [revokeBusy, setRevokeBusy] = useState(false)
   const [revokeError, setRevokeError] = useState("")
+  const revokeDialogRef = useRef<HTMLElement | null>(null)
+  const deleteDialogRef = useRef<HTMLElement | null>(null)
   const revokeBusyRef = useRef(false)
   const hasPassword = user?.hasPassword ?? true
   const hasGoogle = user?.authProviders?.includes("GOOGLE") ?? false
@@ -300,6 +303,34 @@ export function HouseholdSettingsScreen({
     setDeleteError("")
     setDeleteBusy(false)
   }
+
+  const closeDeleteDialog = () => {
+    if (deleteBusy) return
+    resetDeleteFlow()
+    if (continuingAccountDeletion) clearAccountDeletion()
+  }
+
+  useDialogFocus(
+    revokeDialogRef,
+    redesigned && revokeTargetId !== null,
+    () => {
+      if (!revokeBusy) setRevokeTargetId(null)
+    },
+    () => {
+      if (!revokeTargetId) return null
+      return (
+        Array.from(
+          document.querySelectorAll<HTMLButtonElement>("[data-revoke-invitation-trigger]"),
+        ).find((button) => button.dataset.revokeInvitationTrigger === revokeTargetId) ?? null
+      )
+    },
+  )
+  useDialogFocus(
+    deleteDialogRef,
+    redesigned && deleteOpen && Boolean(household),
+    closeDeleteDialog,
+    () => document.querySelector<HTMLElement>("[data-household-delete-trigger]"),
+  )
 
   const submitDeleteHousehold = async () => {
     if (!household || !settings) return
@@ -875,6 +906,7 @@ export function HouseholdSettingsScreen({
                         </div>
                         <div className={redesigned ? designStyles.invitationActions : undefined}>
                           <button
+                            data-revoke-invitation-trigger={invitation.id}
                             className={
                               redesigned
                                 ? designStyles.textDanger
@@ -945,6 +977,7 @@ export function HouseholdSettingsScreen({
                   </p>
                 )}
                 <button
+                  data-household-delete-trigger
                   className={
                     redesigned
                       ? designStyles.dangerOutline
@@ -978,11 +1011,19 @@ export function HouseholdSettingsScreen({
       {revokeTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
           <section
+            aria-labelledby="revoke-invitation-title"
             aria-modal="true"
             className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl"
             role="dialog"
+            ref={revokeDialogRef}
+            tabIndex={-1}
           >
-            <h2 className="font-display text-lg font-black text-slate-900">Revoke invitation?</h2>
+            <h2
+              className="font-display text-lg font-black text-slate-900"
+              id="revoke-invitation-title"
+            >
+              Revoke invitation?
+            </h2>
             <p className="mt-2 text-sm text-slate-500">
               This will immediately disable this invitation and no one will be able to use it again.
             </p>
@@ -1016,6 +1057,7 @@ export function HouseholdSettingsScreen({
       {deleteOpen && household && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
           <section
+            aria-labelledby="household-delete-dialog-title"
             aria-modal="true"
             className={
               redesigned
@@ -1023,10 +1065,15 @@ export function HouseholdSettingsScreen({
                 : "w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"
             }
             role="dialog"
+            ref={deleteDialogRef}
+            tabIndex={-1}
           >
             {deleteStage === 1 && (
               <>
-                <h2 className="font-display text-lg font-black text-slate-900">
+                <h2
+                  className="font-display text-lg font-black text-slate-900"
+                  id="household-delete-dialog-title"
+                >
                   Delete {household.name}?
                 </h2>
                 <p className="mt-2 text-sm text-slate-500">
@@ -1063,8 +1110,7 @@ export function HouseholdSettingsScreen({
                         : "rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700"
                     }
                     onClick={() => {
-                      resetDeleteFlow()
-                      if (continuingAccountDeletion) clearAccountDeletion()
+                      closeDeleteDialog()
                     }}
                     type="button"
                   >
@@ -1075,7 +1121,10 @@ export function HouseholdSettingsScreen({
             )}
             {deleteStage === 2 && (
               <>
-                <h2 className="font-display text-lg font-black text-slate-900">
+                <h2
+                  className="font-display text-lg font-black text-slate-900"
+                  id="household-delete-dialog-title"
+                >
                   Delete {household.name}?
                 </h2>
                 <p className="mt-2 text-sm text-slate-500">
@@ -1145,7 +1194,10 @@ export function HouseholdSettingsScreen({
             )}
             {deleteStage === 3 && (
               <>
-                <h2 className="font-display text-lg font-black text-slate-900">
+                <h2
+                  className="font-display text-lg font-black text-slate-900"
+                  id="household-delete-dialog-title"
+                >
                   Permanently delete {household.name}
                 </h2>
                 <div className="mt-4 space-y-3">

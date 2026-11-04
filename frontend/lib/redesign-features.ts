@@ -1,3 +1,5 @@
+import { connection } from "next/server"
+
 export interface RedesignFeatureFlags {
   redesignedHomeEnabled: boolean
   redesignedMyChoresEnabled: boolean
@@ -21,12 +23,24 @@ export function getRedesignFeatureFlags(
     DIRTYDUTY_REDESIGNED_PROFILE: process.env.DIRTYDUTY_REDESIGNED_PROFILE,
   },
 ): RedesignFeatureFlags {
-  const development = nodeEnvironment === "development"
+  const enabledEnvironment = nodeEnvironment === "development" || nodeEnvironment === "production"
   return {
-    redesignedHomeEnabled: development && environment.DIRTYDUTY_REDESIGNED_HOME === "true",
-    redesignedMyChoresEnabled: development && environment.DIRTYDUTY_REDESIGNED_MY_CHORES === "true",
+    redesignedHomeEnabled: enabledEnvironment && environment.DIRTYDUTY_REDESIGNED_HOME === "true",
+    redesignedMyChoresEnabled:
+      enabledEnvironment && environment.DIRTYDUTY_REDESIGNED_MY_CHORES === "true",
     redesignedHouseholdEnabled:
-      development && environment.DIRTYDUTY_REDESIGNED_HOUSEHOLD === "true",
-    redesignedProfileEnabled: development && environment.DIRTYDUTY_REDESIGNED_PROFILE === "true",
+      enabledEnvironment && environment.DIRTYDUTY_REDESIGNED_HOUSEHOLD === "true",
+    redesignedProfileEnabled:
+      enabledEnvironment && environment.DIRTYDUTY_REDESIGNED_PROFILE === "true",
   }
+}
+
+export async function getRuntimeRedesignFeatureFlags(): Promise<RedesignFeatureFlags> {
+  await connection()
+  return getRedesignFeatureFlags(process.env.NODE_ENV, {
+    DIRTYDUTY_REDESIGNED_HOME: process.env.DIRTYDUTY_REDESIGNED_HOME,
+    DIRTYDUTY_REDESIGNED_MY_CHORES: process.env.DIRTYDUTY_REDESIGNED_MY_CHORES,
+    DIRTYDUTY_REDESIGNED_HOUSEHOLD: process.env.DIRTYDUTY_REDESIGNED_HOUSEHOLD,
+    DIRTYDUTY_REDESIGNED_PROFILE: process.env.DIRTYDUTY_REDESIGNED_PROFILE,
+  })
 }

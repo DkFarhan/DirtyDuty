@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { createHouseholdPreviewFixture } from "./household-preview-fixtures"
 import { HouseholdScreenView, type HouseholdScreenViewProps } from "./household-screen-view"
@@ -43,8 +43,8 @@ function renderHouseholdView(
     viewModel: fixture.viewModel,
     ...overrides,
   }
-  render(<HouseholdScreenView {...props} />)
-  return { onMemberAction, props }
+  const view = render(<HouseholdScreenView {...props} />)
+  return { onMemberAction, props, view }
 }
 
 afterEach(() => cleanup())
@@ -153,5 +153,63 @@ describe("Household screen presentation", () => {
     fireEvent.click(screen.getByRole("radio", { name: /Salman/ }))
     expect(onSelectSuccessor).toHaveBeenCalledWith("preview-admin")
     expect(onContinueOwnerLeave).not.toHaveBeenCalled()
+  })
+
+  it("contains dialog focus, supports Escape, and restores focus to the leave trigger", () => {
+    const { props, view } = renderHouseholdView("member-3")
+    const leaveTrigger = screen.getByRole("button", { name: "Leave household" })
+
+    fireEvent.click(leaveTrigger)
+    view.rerender(<HouseholdScreenView {...props} leaveFlow="member-confirm" />)
+
+    const dialog = screen.getByRole("dialog", { name: "Leave 1501?" })
+    expect(dialog).toBeTruthy()
+    expect(document.activeElement).toBe(
+      within(dialog).getByRole("button", { name: "Close leave household" }),
+    )
+
+    const closeButton = within(dialog).getByRole("button", { name: "Close leave household" })
+    const leaveButton = within(dialog).getByRole("button", { name: "Leave household" })
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true })
+    expect(document.activeElement).toBe(leaveButton)
+    fireEvent.keyDown(document, { key: "Tab" })
+    expect(document.activeElement).toBe(closeButton)
+
+    fireEvent.keyDown(document, { key: "Escape" })
+    expect(props.onCloseLeave).toHaveBeenCalledOnce()
+    view.rerender(<HouseholdScreenView {...props} leaveFlow="closed" />)
+    expect(document.activeElement).toBe(leaveTrigger)
+  })
+
+  it("returns focus to the member action trigger after dismissing its dialog", () => {
+    const fixture = createHouseholdPreviewFixture("admin-3")
+    const member = fixture.viewModel.members.find((item) => item.userId === "preview-member")
+    if (!member) throw new Error("Expected fixture member")
+
+    const { props, view } = renderHouseholdView("admin-3", {
+      openMemberMenuId: member.userId,
+      viewModel: fixture.viewModel,
+    })
+    const removeButton = screen.getByRole("button", { name: "Remove from household" })
+    removeButton.focus()
+    fireEvent.click(removeButton)
+    view.rerender(
+      <HouseholdScreenView
+        {...props}
+        openMemberMenuId={null}
+        pendingMemberAction={{ action: "remove", member }}
+      />,
+    )
+
+    const dialog = screen.getByRole("dialog", { name: /Remove Farhan Habib from/ })
+    expect(document.activeElement).toBe(
+      within(dialog).getByRole("button", { name: "Close member action" }),
+    )
+    fireEvent.keyDown(document, { key: "Escape" })
+    view.rerender(<HouseholdScreenView {...props} openMemberMenuId={null} />)
+
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Actions for Farhan Habib" }),
+    )
   })
 })

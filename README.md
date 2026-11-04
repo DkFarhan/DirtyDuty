@@ -50,6 +50,15 @@ GitHub Actions repository variables before publishing frontend images;
 publication fails if `NEXT_PUBLIC_SUPPORT_EMAIL` is missing.
 `NEXT_PUBLIC_API_BASE_URL` may remain blank to use the same-origin `/api` route.
 
+The redesign switches are different: `DIRTYDUTY_REDESIGNED_HOME`,
+`DIRTYDUTY_REDESIGNED_MY_CHORES`, `DIRTYDUTY_REDESIGNED_HOUSEHOLD`, and
+`DIRTYDUTY_REDESIGNED_PROFILE` are server-only runtime variables. Each defaults
+to `false`; only the exact value `true` enables that screen. They are read when
+the server renders a request, so changing them and recreating the frontend
+container does not require rebuilding or changing the digest-pinned image.
+Keep `NODE_ENV=production`; these are not `NEXT_PUBLIC_*` variables and do not
+permit browser-controlled overrides.
+
 Spring Session expires sessions after 30 days without activity by default
 (`SESSION_TIMEOUT=30d`). The persistent `SESSION` cookie defaults to one year
 (`SESSION_COOKIE_MAX_AGE=365d`) so browser/PWA restarts do not end a login and
@@ -208,19 +217,21 @@ independent Dark/Light, Upcoming/Completed, and state controls.
 
 #### Local integration of the approved redesigns
 
-The real Home and My Chores redesign integrations remain disabled by default.
-To try either behind the existing authentication and application data flows,
-set one or both private variables in the ignored `frontend/.env.local` file:
+The real Home, My Chores, Household, and Profile redesigns remain disabled by
+default. In local development, set one or more exact `true` values in the
+ignored `frontend/.env.local` file to try the screens behind the existing
+authentication and application data flows:
 
 ```dotenv
 DIRTYDUTY_REDESIGNED_HOME=true
 DIRTYDUTY_REDESIGNED_MY_CHORES=true
+DIRTYDUTY_REDESIGNED_HOUSEHOLD=true
+DIRTYDUTY_REDESIGNED_PROFILE=true
 ```
 
 Restart `pnpm dev` after changing the variables. Each flag is independent and
-only honored when `NODE_ENV` is `development`; they are not `NEXT_PUBLIC_*`
-values and cannot enable the redesigned screens in production. Remove a line or
-set it to `false` to return to the original screen without reverting code.
+honored only when its value is exactly `true`. `/design-preview` and its
+subroutes remain development-only.
 
 ### Backend
 
@@ -302,6 +313,114 @@ manually; a failed remote pull stops deployment.
 The existing `NEXT_PUBLIC_*` build variables remain repository-level variables
 for image publication; they are public build-time values, not production
 deployment credentials.
+
+#### Redesign production rollout
+
+The deployment workflow updates the digest references in the server's
+`.env.production`, but it uses the `docker-compose.production.yml` already
+installed on the protected host. Merging this repository does **not** update
+that host Compose file. Before rollout, an authorized host operator must
+carefully add the four redesign environment mappings to
+`/opt/dirtyduty/docker-compose.production.yml` under the existing `frontend`
+service, preserving its other environment, image, platform, restart, health,
+dependency, network, volume, project, and service configuration:
+
+```yaml
+      DIRTYDUTY_REDESIGNED_HOME: ${DIRTYDUTY_REDESIGNED_HOME:-false}
+      DIRTYDUTY_REDESIGNED_MY_CHORES: ${DIRTYDUTY_REDESIGNED_MY_CHORES:-false}
+      DIRTYDUTY_REDESIGNED_HOUSEHOLD: ${DIRTYDUTY_REDESIGNED_HOUSEHOLD:-false}
+      DIRTYDUTY_REDESIGNED_PROFILE: ${DIRTYDUTY_REDESIGNED_PROFILE:-false}
+```
+
+Use the approved release's Compose file as a reference, but do not blindly
+replace the root-owned host file. Make a protected copy of the current file
+outside the repository, compare changes, and use `sudoedit` to merge only these
+entries. Keep the file root-owned and not writable by the deployment account.
+Add the four matching keys to the existing `/opt/dirtyduty/.env.production`
+with `false` values; do not replace that file with the example or alter its
+secrets or image references. Keep its ownership and mode `0600`. Validate from
+the installed project directory without displaying interpolated configuration:
+
+```bash
+cd /opt/dirtyduty
+sudo docker compose -p dirtyduty -f docker-compose.production.yml \
+  --env-file .env.production config --quiet
+```
+
+Stop if Compose validation fails or the established project, service, image,
+or volume configuration changes unexpectedly. The deployment account must not
+be granted permission to edit these protected files.
+
+Perform the rollout in this order:
+
+**a. Verify recovery readiness and record the current release.** Confirm the
+existing root-owned `/usr/local/sbin/dirtyduty-backup-verify` is a regular,
+executable file that is not group- or world-writable. Run the existing
+deployment verifier contract:
+
+```bash
+sudo -n /usr/local/sbin/dirtyduty-backup-verify \
+  --json --max-age-hours 24 --require-offsite-restore-verification
+```
+
+Proceed only on exit status zero with valid JSON containing non-empty
+`backup_id`, `offsite_copy_id`, and `restore_test_id`, plus timezone-aware
+`backup_created_at` and `offsite_restore_verified_at` timestamps no more than
+24 hours old, with off-host restore verification at or after backup creation.
+Keep this evidence in the protected operator release record; do not paste it
+into CI logs or support requests. The deployment workflow repeats this
+verification and stops if evidence is missing, untrusted, stale, or invalid.
+The repository does not establish that the real host integration currently
+exists or produces valid off-host restore evidence; that remains an operator
+prerequisite, not an assumed success.
+
+Record the currently running immutable image references before deployment:
+
+```bash
+for service in backend frontend; do
+  id=$(sudo docker compose -p dirtyduty -f /opt/dirtyduty/docker-compose.production.yml \
+    --env-file /opt/dirtyduty/.env.production ps -q "$service")
+  test -n "$id" || exit 1
+  printf '%s ' "$service"
+  sudo docker inspect --format '{{.Config.Image}}' "$id"
+done
+```
+
+Keep the recorded backend and frontend digests in the protected release record
+for comparison and operator-authorized recovery.
+
+**b. Deploy with redesigns off.** Confirm all four flags in the host
+`.env.production` are `false`. Dispatch the existing protected **Deploy
+production** workflow from approved `main` for the reviewed release SHA. It
+selects the CI-validated, digest-pinned images and updates only the two image
+lines; it does not edit the installed Compose file.
+
+**c. Verify the baseline release.** Wait for the protected workflow's health
+checks. Verify backend `/actuator/health`, frontend and public HTTPS routes,
+backend logs, sign-in, and core household/chore behavior. Keep the redesign
+flags off until this baseline is healthy.
+
+**d. Activate the redesign.** In the protected host `.env.production`, set the
+four server-side variables to exact `true` values. Recreate only the frontend
+with the already-deployed image; do not pull, build, or restart other services:
+
+```bash
+sudo docker compose -p dirtyduty -f /opt/dirtyduty/docker-compose.production.yml \
+  --env-file /opt/dirtyduty/.env.production \
+  up -d --pull never --no-build --no-deps --force-recreate frontend
+```
+
+**e. Verify the redesigned flows.** Using an authenticated browser, verify the
+redesigned Home, My Chores, Household, and Profile flows and their navigation,
+data, and dialogs. Confirm browser zoom remains available. Check frontend health
+and logs, and confirm the backend, PostgreSQL, and Caddy containers were not
+recreated.
+
+**f. Fall back to the existing UI if needed.** Set all four flags to `false`
+and run the same frontend-only recreate command from step d. This retains the
+updated backend, database, and exact same frontend image; no image rebuild or
+application rollback is needed for a UI fallback. Verify the existing screens
+and core behavior again.
 
 #### Required Oracle host setup
 

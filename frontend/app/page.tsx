@@ -1,6 +1,6 @@
 import { AppShell } from "@/components/chore-sync/app-shell"
-import { getRedesignFeatureFlags } from "@/lib/redesign-features"
+import { getRuntimeRedesignFeatureFlags } from "@/lib/redesign-features"
 
-export default function Page() {
-  return <AppShell {...getRedesignFeatureFlags()} />
+export default async function Page() {
+  return <AppShell {...await getRuntimeRedesignFeatureFlags()} />
 }

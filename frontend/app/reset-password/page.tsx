@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import { AppShell } from "@/components/chore-sync/app-shell"
-import { getRedesignFeatureFlags } from "@/lib/redesign-features"
+import { getRuntimeRedesignFeatureFlags } from "@/lib/redesign-features"
 
 export const metadata: Metadata = {
   title: "Reset password | DirtyDuty",
@@ -8,6 +8,6 @@ export const metadata: Metadata = {
   referrer: "no-referrer",
 }
 
-export default function ResetPasswordPage() {
-  return <AppShell initialScreen="reset-password" {...getRedesignFeatureFlags()} />
+export default async function ResetPasswordPage() {
+  return <AppShell initialScreen="reset-password" {...await getRuntimeRedesignFeatureFlags()} />
 }

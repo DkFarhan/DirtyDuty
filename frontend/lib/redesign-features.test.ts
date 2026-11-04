@@ -2,8 +2,14 @@ import { describe, expect, it } from "vitest"
 import { getRedesignFeatureFlags } from "./redesign-features"
 
 describe("redesign feature flags", () => {
-  it("defaults both screens off", () => {
+  it("defaults all redesign screens off in production", () => {
     expect(getRedesignFeatureFlags("development", {})).toEqual({
+      redesignedHomeEnabled: false,
+      redesignedMyChoresEnabled: false,
+      redesignedHouseholdEnabled: false,
+      redesignedProfileEnabled: false,
+    })
+    expect(getRedesignFeatureFlags("production", {})).toEqual({
       redesignedHomeEnabled: false,
       redesignedMyChoresEnabled: false,
       redesignedHouseholdEnabled: false,
@@ -11,9 +17,9 @@ describe("redesign feature flags", () => {
     })
   })
 
-  it("enables each flag independently in development only", () => {
+  it("enables each production screen independently", () => {
     expect(
-      getRedesignFeatureFlags("development", {
+      getRedesignFeatureFlags("production", {
         DIRTYDUTY_REDESIGNED_HOME: "true",
       }),
     ).toEqual({
@@ -23,7 +29,7 @@ describe("redesign feature flags", () => {
       redesignedProfileEnabled: false,
     })
     expect(
-      getRedesignFeatureFlags("development", {
+      getRedesignFeatureFlags("production", {
         DIRTYDUTY_REDESIGNED_MY_CHORES: "true",
       }),
     ).toEqual({
@@ -33,7 +39,7 @@ describe("redesign feature flags", () => {
       redesignedProfileEnabled: false,
     })
     expect(
-      getRedesignFeatureFlags("development", {
+      getRedesignFeatureFlags("production", {
         DIRTYDUTY_REDESIGNED_HOUSEHOLD: "true",
       }),
     ).toEqual({
@@ -43,7 +49,7 @@ describe("redesign feature flags", () => {
       redesignedProfileEnabled: false,
     })
     expect(
-      getRedesignFeatureFlags("development", {
+      getRedesignFeatureFlags("production", {
         DIRTYDUTY_REDESIGNED_PROFILE: "true",
       }),
     ).toEqual({
@@ -54,7 +60,7 @@ describe("redesign feature flags", () => {
     })
   })
 
-  it("forces both screens off outside development even when configured", () => {
+  it("enables all screens when all four production values are exactly true", () => {
     const environment = {
       DIRTYDUTY_REDESIGNED_HOME: "true",
       DIRTYDUTY_REDESIGNED_MY_CHORES: "true",
@@ -63,6 +69,22 @@ describe("redesign feature flags", () => {
     }
 
     expect(getRedesignFeatureFlags("production", environment)).toEqual({
+      redesignedHomeEnabled: true,
+      redesignedMyChoresEnabled: true,
+      redesignedHouseholdEnabled: true,
+      redesignedProfileEnabled: true,
+    })
+  })
+
+  it("keeps all screens off for missing or non-exact true production values", () => {
+    expect(
+      getRedesignFeatureFlags("production", {
+        DIRTYDUTY_REDESIGNED_HOME: "TRUE",
+        DIRTYDUTY_REDESIGNED_MY_CHORES: "1",
+        DIRTYDUTY_REDESIGNED_HOUSEHOLD: " true",
+        DIRTYDUTY_REDESIGNED_PROFILE: "false",
+      }),
+    ).toEqual({
       redesignedHomeEnabled: false,
       redesignedMyChoresEnabled: false,
       redesignedHouseholdEnabled: false,
@@ -70,11 +92,16 @@ describe("redesign feature flags", () => {
     })
   })
 
-  it("requires the exact true value for the Household flag", () => {
+  it("keeps the existing local development opt-in and disables flags in tests", () => {
     expect(
       getRedesignFeatureFlags("development", {
-        DIRTYDUTY_REDESIGNED_HOUSEHOLD: "TRUE",
-      }).redesignedHouseholdEnabled,
+        DIRTYDUTY_REDESIGNED_HOME: "true",
+      }).redesignedHomeEnabled,
+    ).toBe(true)
+    expect(
+      getRedesignFeatureFlags("test", {
+        DIRTYDUTY_REDESIGNED_HOME: "true",
+      }).redesignedHomeEnabled,
     ).toBe(false)
   })
 })

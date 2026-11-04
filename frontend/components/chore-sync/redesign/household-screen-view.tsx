@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react"
 import { X } from "lucide-react"
 import type { HouseholdMemberDTO } from "@/lib/household/api"
+import { useDialogFocus } from "../use-dialog-focus"
 import { getMemberActionCopy, getMemberActionOptions, type MemberAction } from "../member-card"
 import glassStyles from "../bottom-nav.module.css"
 import styles from "./household-screen-view.module.css"
@@ -128,6 +129,7 @@ function MemberMenu({
         aria-expanded="true"
         aria-label={`Close actions for ${member.displayName}`}
         className={styles.memberMenuButton}
+        data-member-action-trigger={member.userId}
         onClick={onClose}
         type="button"
       >
@@ -215,6 +217,7 @@ function MemberRow({
               aria-expanded="false"
               aria-label={`Actions for ${member.displayName}`}
               className={styles.memberMenuButton}
+              data-member-action-trigger={member.userId}
               onClick={() => onToggleMemberMenu(member.userId)}
               type="button"
             >
@@ -297,6 +300,16 @@ function MemberActionSheet({
   onChangeConfirmText: (value: string) => void
   onConfirm: () => void
 }) {
+  const dialogRef = useRef<HTMLElement | null>(null)
+  useDialogFocus(dialogRef, memberAction !== null, onCancel, () => {
+    if (!memberAction) return null
+    return (
+      Array.from(document.querySelectorAll<HTMLButtonElement>("[data-member-action-trigger]")).find(
+        (button) => button.dataset.memberActionTrigger === memberAction.member.userId,
+      ) ?? null
+    )
+  })
+
   if (!memberAction) return null
   const copy = getMemberActionCopy(memberAction.action, memberAction.member, householdName)
   if (!copy) return null
@@ -309,6 +322,8 @@ function MemberActionSheet({
         aria-modal="true"
         className={styles.dialogSheet}
         role="dialog"
+        ref={dialogRef}
+        tabIndex={-1}
       >
         <span aria-hidden="true" className={styles.sheetHandle} />
         <button
@@ -365,6 +380,15 @@ function MemberActionSheet({
 
 function LeaveSheet({ props }: { props: HouseholdScreenViewProps }) {
   const { viewModel } = props
+  const dialogRef = useRef<HTMLElement | null>(null)
+  useDialogFocus(
+    dialogRef,
+    props.leaveFlow !== "closed",
+    () => {
+      if (!props.leaveBusy) props.onCloseLeave()
+    },
+    () => document.querySelector<HTMLElement>("[data-leave-household-trigger]"),
+  )
   if (props.leaveFlow === "closed") return null
 
   const eligibleMembers = viewModel.members.filter(
@@ -387,6 +411,8 @@ function LeaveSheet({ props }: { props: HouseholdScreenViewProps }) {
             : ""
         }`}
         role="dialog"
+        ref={dialogRef}
+        tabIndex={-1}
       >
         <span aria-hidden="true" className={styles.sheetHandle} />
         <button
@@ -607,6 +633,9 @@ function PreviewInviteSheet({
   onGenerate: () => void
   onClose: () => void
 }) {
+  const dialogRef = useRef<HTMLElement | null>(null)
+  useDialogFocus(dialogRef, true, onClose)
+
   return (
     <div className={styles.dialogBackdrop}>
       <section
@@ -614,6 +643,8 @@ function PreviewInviteSheet({
         aria-modal="true"
         className={`${styles.dialogSheet} ${styles.inviteDialogSheet}`}
         role="dialog"
+        ref={dialogRef}
+        tabIndex={-1}
       >
         <span aria-hidden="true" className={styles.sheetHandle} />
         <button
@@ -819,7 +850,12 @@ export function HouseholdScreenView(props: HouseholdScreenViewProps) {
               ? "Transfer ownership before leaving. Past activity stays."
               : "You’ll lose access to future chores. Past activity stays."}
           </p>
-          <button className={styles.leaveButton} onClick={props.onOpenLeave} type="button">
+          <button
+            className={styles.leaveButton}
+            data-leave-household-trigger
+            onClick={props.onOpenLeave}
+            type="button"
+          >
             Leave household
           </button>
           {props.leaveError && props.leaveFlow === "closed" && (
