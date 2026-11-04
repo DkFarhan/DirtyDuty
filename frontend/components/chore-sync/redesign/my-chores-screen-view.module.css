@@ -1504,6 +1504,33 @@
   }
 }
 
+@media (max-width: 699px) {
+  .header {
+    padding-top: calc(24px + env(safe-area-inset-top));
+  }
+
+  .headerPlane {
+    top: calc(8px + env(safe-area-inset-top));
+  }
+
+  .headerBloom {
+    top: calc(30px + env(safe-area-inset-top));
+  }
+
+  .headerFade,
+  .lightTheme .headerFade {
+    top: calc(132px + env(safe-area-inset-top));
+  }
+
+  .lightTheme .headerPlane {
+    top: calc(-51px + env(safe-area-inset-top));
+  }
+
+  .lightTheme .headerBloom {
+    top: calc(11px + env(safe-area-inset-top));
+  }
+}
+
 @media (max-width: 359px) {
   .header {
     padding-right: 18px;

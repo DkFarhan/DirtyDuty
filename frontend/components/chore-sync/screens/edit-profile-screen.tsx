@@ -81,8 +81,8 @@ export function EditProfileScreen({
     >
       {redesigned ? (
         <ProfileDestinationHeader
-          eyebrow={theme === "light" ? "YOUR DETAILS" : undefined}
-          title={theme === "light" ? "Edit profile" : "Edit Profile"}
+          eyebrow="YOUR DETAILS"
+          title="Edit profile"
           back={() => navigate("profile")}
           theme={theme}
         />
@@ -99,15 +99,7 @@ export function EditProfileScreen({
           <h1 className="font-display text-xl font-black">Edit Profile</h1>
         </header>
       )}
-      <main
-        className={
-          redesigned
-            ? theme === "light"
-              ? styles.editProfileMain
-              : styles.destinationMain
-            : "px-4 pt-4"
-        }
-      >
+      <main className={redesigned ? styles.editProfileMain : "px-4 pt-4"}>
         {status === "loading" && (
           <div
             aria-label="Loading profile"
@@ -130,7 +122,7 @@ export function EditProfileScreen({
         )}
         {status === "loaded" &&
           profile &&
-          (theme === "light" && redesigned ? (
+          (redesigned ? (
             <div className={styles.editProfileContent}>
               <div className={styles.editProfileAvatarRow}>
                 {profile.avatarUrl ? (
