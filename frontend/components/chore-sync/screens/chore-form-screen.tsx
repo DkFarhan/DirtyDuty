@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ArrowLeft, Check, ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ApiError } from "@/lib/auth/api"
@@ -17,6 +17,7 @@ import {
 import { useHouseholds } from "@/lib/household/household-context"
 import { householdChoreResource, useDataSync } from "@/lib/data-sync/data-sync-context"
 import { cn } from "@/lib/utils"
+import { useDialogFocus } from "../use-dialog-focus"
 import {
   HouseholdLiveDesignHeader,
   HouseholdLiveDesignSectionHeading,
@@ -166,6 +167,7 @@ export function ChoreFormScreen({
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
+  const discardDialogRef = useRef<HTMLElement | null>(null)
   const [savedValues, setSavedValues] = useState("")
   const householdId = household?.id
   const { invalidate: invalidateChores } = useDataSync(
@@ -173,6 +175,12 @@ export function ChoreFormScreen({
   )
   const serializedValues = useMemo(() => JSON.stringify(values), [values])
   const dirty = savedValues !== "" && serializedValues !== savedValues
+  useDialogFocus(
+    discardDialogRef,
+    redesigned && confirmDiscard,
+    () => setConfirmDiscard(false),
+    () => document.querySelector<HTMLElement>("[data-chore-form-back]"),
+  )
 
   useEffect(() => {
     if (!householdId) {
@@ -432,6 +440,7 @@ export function ChoreFormScreen({
           <div className="flex items-center gap-2">
             <button
               aria-label="Back to chores"
+              data-chore-form-back
               className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100"
               onClick={leave}
               type="button"
@@ -1003,6 +1012,8 @@ export function ChoreFormScreen({
             aria-modal="true"
             className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl"
             role="dialog"
+            ref={discardDialogRef}
+            tabIndex={-1}
           >
             <h2
               className="font-display text-lg font-black text-slate-900"

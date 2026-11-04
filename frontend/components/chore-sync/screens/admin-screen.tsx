@@ -15,6 +15,7 @@ import { householdChoreResource, useDataSync } from "@/lib/data-sync/data-sync-c
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { ChevronLeftIcon } from "../icons"
+import { useDialogFocus } from "../use-dialog-focus"
 import {
   HouseholdLiveDesignHeader,
   HouseholdLiveDesignSectionHeading,
@@ -43,6 +44,7 @@ export function AdminScreen({
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [openMenuPlacement, setOpenMenuPlacement] = useState<"above" | "below">("below")
   const [archiveChore, setArchiveChore] = useState<Chore | null>(null)
+  const archiveDialogRef = useRef<HTMLElement | null>(null)
   const [managementOptions, setManagementOptions] = useState<ChoreManagementOptions | null>(null)
   const requestSequence = useRef(0)
   const loadedHouseholdId = useRef<string | null>(null)
@@ -51,6 +53,19 @@ export function AdminScreen({
     ? householdChoreResource(household.id)
     : "household:none:chores-and-assignments"
   const { revision, invalidate } = useDataSync(choreResource)
+  useDialogFocus(
+    archiveDialogRef,
+    redesigned && archiveChore !== null,
+    () => setArchiveChore(null),
+    () => {
+      if (!archiveChore) return null
+      return (
+        Array.from(document.querySelectorAll<HTMLButtonElement>("[data-archive-trigger]")).find(
+          (button) => button.dataset.archiveTrigger === archiveChore.id,
+        ) ?? null
+      )
+    },
+  )
 
   const loadChores = useCallback(async () => {
     if (!household) {
@@ -535,6 +550,7 @@ export function AdminScreen({
                     <button
                       aria-expanded={openMenuId === chore.id}
                       aria-label={`Actions for ${chore.title}`}
+                      data-archive-trigger={chore.id}
                       className={
                         redesigned
                           ? designStyles.moreButton
@@ -621,6 +637,8 @@ export function AdminScreen({
             aria-modal="true"
             className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl"
             role="dialog"
+            ref={archiveDialogRef}
+            tabIndex={-1}
           >
             <h2 className="font-display text-lg font-black text-slate-900" id="archive-chore-title">
               Archive chore?

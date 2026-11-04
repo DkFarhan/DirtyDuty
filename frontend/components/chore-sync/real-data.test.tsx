@@ -77,6 +77,8 @@ async function startAtDashboard(
   redesignFlags: {
     redesignedHomeEnabled?: boolean
     redesignedMyChoresEnabled?: boolean
+    redesignedHouseholdEnabled?: boolean
+    redesignedProfileEnabled?: boolean
   } = {},
 ) {
   fetchMock.mockImplementation(async (input) => {
@@ -1021,6 +1023,8 @@ describe("server-backed chore data", () => {
     await startAtDashboard(createDashboard(), household, {
       redesignedHomeEnabled: true,
       redesignedMyChoresEnabled: true,
+      redesignedHouseholdEnabled: true,
+      redesignedProfileEnabled: true,
     })
     fetchMock.mockImplementation(async (input, init) => {
       const url = String(input)
@@ -1106,6 +1110,11 @@ describe("server-backed chore data", () => {
           String(url).endsWith("/assignments/assignment-2/complete") && request?.method === "POST",
       ),
     ).toHaveLength(1)
+
+    fireEvent.click(screen.getByRole("button", { name: "Household" }))
+    expect(await screen.findByRole("button", { name: "Leave household" })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Profile" }))
+    await waitFor(() => expect(document.querySelector("[data-profile-redesign]")).not.toBeNull())
   })
 
   it("rolls back a failed completion in redesigned My Chores and exposes the error", async () => {

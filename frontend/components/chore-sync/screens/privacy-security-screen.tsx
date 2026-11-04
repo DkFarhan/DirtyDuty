@@ -10,6 +10,7 @@ import { useHouseholds } from "@/lib/household/household-context"
 import type { Household } from "@/lib/household/api"
 import { removeBrowserPushSubscription } from "@/lib/notifications/push"
 import { PasswordInput } from "@/components/ui/password-input"
+import { useDialogFocus } from "../use-dialog-focus"
 import { getLegalDocumentUrl } from "@/lib/chore-sync/legal-navigation"
 import { SubpageHeader } from "./subpage-header"
 import type { Theme } from "@/components/theme/theme-provider"
@@ -90,9 +91,7 @@ export function PrivacySecurityScreen({
   const [confirmationOpen, setConfirmationOpen] = useState(false)
   const deleteBusyRef = useRef(false)
   const confirmationDialogRef = useRef<HTMLElement>(null)
-  const cancelConfirmationRef = useRef<HTMLButtonElement>(null)
   const reviewButtonRef = useRef<HTMLButtonElement>(null)
-  const confirmationWasOpen = useRef(false)
   const [serverOwnedHouseholds, setServerOwnedHouseholds] = useState<OwnedHousehold[] | null>(null)
   const [ownershipStatus, setOwnershipStatus] = useState<"idle" | "loading" | "loaded" | "error">(
     "idle",
@@ -108,15 +107,14 @@ export function PrivacySecurityScreen({
     user?.email && normalizeEmail(deleteForm.email) === normalizeEmail(user.email),
   )
 
-  useEffect(() => {
-    if (confirmationOpen) {
-      confirmationWasOpen.current = true
-      cancelConfirmationRef.current?.focus()
-    } else if (confirmationWasOpen.current) {
-      confirmationWasOpen.current = false
-      reviewButtonRef.current?.focus()
-    }
-  }, [confirmationOpen])
+  useDialogFocus(
+    confirmationDialogRef,
+    confirmationOpen,
+    () => {
+      if (!deleteBusy) setConfirmationOpen(false)
+    },
+    () => reviewButtonRef.current,
+  )
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -267,32 +265,6 @@ export function PrivacySecurityScreen({
     if (deleteBusy || !user || !validateDeleteConfirmation()) return
     setError("")
     setConfirmationOpen(true)
-  }
-
-  const handleConfirmationKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
-    if (event.key === "Escape" && !deleteBusy) {
-      event.preventDefault()
-      setConfirmationOpen(false)
-      return
-    }
-    if (event.key !== "Tab") return
-
-    const buttons =
-      confirmationDialogRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")
-    if (!buttons?.length) {
-      event.preventDefault()
-      confirmationDialogRef.current?.focus()
-      return
-    }
-    const firstButton = buttons[0]
-    const lastButton = buttons[buttons.length - 1]
-    if (event.shiftKey && document.activeElement === firstButton) {
-      event.preventDefault()
-      lastButton.focus()
-    } else if (!event.shiftKey && document.activeElement === lastButton) {
-      event.preventDefault()
-      firstButton.focus()
-    }
   }
 
   const handleDeleteAccount = async () => {
@@ -898,7 +870,6 @@ export function PrivacySecurityScreen({
               aria-labelledby="account-deletion-dialog-title"
               aria-modal="true"
               className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-3xl border border-slate-200 bg-white p-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl sm:rounded-2xl sm:p-6 dark:border-slate-700 dark:bg-slate-900"
-              onKeyDown={handleConfirmationKeyDown}
               ref={confirmationDialogRef}
               role="dialog"
               tabIndex={-1}
@@ -933,7 +904,6 @@ export function PrivacySecurityScreen({
                   className="min-h-11 rounded-xl border border-slate-200 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
                   disabled={deleteBusy}
                   onClick={() => setConfirmationOpen(false)}
-                  ref={cancelConfirmationRef}
                   type="button"
                 >
                   Cancel

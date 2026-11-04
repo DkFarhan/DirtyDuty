@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const mocks = vi.hoisted(() => ({
@@ -238,6 +238,26 @@ describe("admin screen household isolation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Actions for Home A chore" }))
     fireEvent.click(screen.getByRole("button", { name: "Pause" }))
     await waitFor(() => expect(mocks.pause).toHaveBeenCalledWith("home-a", "chore-a"))
+  })
+
+  it("contains focus in the redesigned archive dialog and restores its action trigger", async () => {
+    render(<AdminScreen redesigned />)
+    await screen.findByRole("heading", { name: "Home A chore" })
+
+    const trigger = screen.getByRole("button", { name: "Actions for Home A chore" })
+    fireEvent.click(trigger)
+    fireEvent.click(screen.getByRole("button", { name: "Archive" }))
+
+    const dialog = screen.getByRole("dialog", { name: "Archive chore?" })
+    const cancelButton = within(dialog).getByRole("button", { name: "Cancel" })
+    const archiveButton = within(dialog).getByRole("button", { name: "Archive" })
+    expect(document.activeElement).toBe(cancelButton)
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true })
+    expect(document.activeElement).toBe(archiveButton)
+    fireEvent.keyDown(document, { key: "Escape" })
+
+    expect(screen.queryByRole("dialog")).toBeNull()
+    expect(document.activeElement).toBe(trigger)
   })
 
   it("raises only the card whose redesigned action menu is open", async () => {

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const mocks = vi.hoisted(() => ({
@@ -185,9 +185,22 @@ describe("household settings screen", () => {
 
   it("uses the redesigned destructive action hierarchy in the deletion dialog", async () => {
     const { container } = render(<HouseholdSettingsScreen redesigned theme="dark" />)
-    fireEvent.click(await screen.findByRole("button", { name: "Review deletion steps" }))
+    const trigger = await screen.findByRole("button", { name: "Review deletion steps" })
+    fireEvent.click(trigger)
 
-    const dialog = screen.getByRole("dialog")
+    const namedDialog = screen.getByRole("dialog", { name: "Delete Home A?" })
+    expect(document.activeElement).toBe(
+      within(namedDialog).getByRole("button", { name: "Transfer ownership" }),
+    )
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true })
+    expect(document.activeElement).toBe(within(namedDialog).getByRole("button", { name: "Cancel" }))
+    fireEvent.keyDown(document, { key: "Escape" })
+    expect(screen.queryByRole("dialog")).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+
+    fireEvent.click(trigger)
+
+    const dialog = screen.getByRole("dialog", { name: "Delete Home A?" })
     const destructiveAction = screen.getByRole("button", { name: "Continue to deletion" })
     expect(container.querySelector(`.${designStyles.dark}`)).toBeTruthy()
     expect(dialog.className).toContain(designStyles.deletionDialog)
