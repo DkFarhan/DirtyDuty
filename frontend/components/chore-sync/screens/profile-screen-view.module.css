@@ -310,7 +310,7 @@
   flex: 1;
   flex-direction: column;
   gap: 16px;
-  padding: 0 18px calc(110px + env(safe-area-inset-bottom));
+  padding: 16px 18px calc(110px + env(safe-area-inset-bottom));
 }
 
 .preferencesCard {
@@ -656,48 +656,50 @@
   padding: 19px 18px calc(32px + env(safe-area-inset-bottom));
 }
 
-.light.route[data-destination="edit-profile"] .destinationHeader {
-  min-height: 144px;
+.route[data-destination="edit-profile"] .destinationHeader {
+  min-height: 0;
   align-items: flex-start;
-  padding: 25px 20px 0;
-  border-color: #bddad4;
-  background: linear-gradient(129.6394deg, #e7f8f2 7.2072%, #cae9e2 52.252%, #edf8f4 97.297%);
+  padding: 25px 19px 16px;
 }
 
-.light.route[data-destination="edit-profile"] .backButton {
-  position: absolute;
-  top: 58px;
-  left: 19px;
-  width: 44px;
-  height: 44px;
-  border: 1px solid #b7d2c8;
-  border-radius: 14px;
-  color: #0d706c;
-  background: #dceee6;
-}
-
-.light.route[data-destination="edit-profile"] .destinationTitle {
-  margin-left: 56px;
-}
-
-.light.route[data-destination="edit-profile"] .destinationEyebrow {
-  margin: 0;
-  color: #0d706c;
+.route[data-destination="edit-profile"] .destinationHeadingGroup > .destinationEyebrow {
+  margin: 0 0 18px 56px;
   font-family: var(--font-inter), Inter, ui-sans-serif, system-ui, sans-serif;
   font-size: 10px;
   font-weight: 700;
   line-height: 1.27;
+  letter-spacing: 0.08em;
 }
 
-.light.route[data-destination="edit-profile"] .destinationTitle h1 {
-  margin-top: 21px;
+.route[data-destination="edit-profile"] .destinationTitleRow .backButton {
+  width: 40px;
+  height: 40px;
+  border-radius: 13px;
+}
+
+.route[data-destination="edit-profile"] .destinationHeadingGroup .destinationTitle h1 {
   font-size: 25px;
   font-weight: 400;
   letter-spacing: 0;
   line-height: 1.27;
 }
 
-.light.route[data-destination="edit-profile"] > .editProfileMain {
+.light.route[data-destination="edit-profile"] .destinationHeader {
+  border-color: #bddad4;
+  background: linear-gradient(129.6394deg, #e7f8f2 7.2072%, #cae9e2 52.252%, #edf8f4 97.297%);
+}
+
+.light.route[data-destination="edit-profile"] .destinationHeadingGroup > .destinationEyebrow {
+  color: #0d706c;
+}
+
+.light.route[data-destination="edit-profile"] .destinationTitleRow .backButton {
+  border: 1px solid #b7d2c8;
+  color: #0d706c;
+  background: #dceee6;
+}
+
+.route[data-destination="edit-profile"] > .editProfileMain {
   display: flex;
   width: 100%;
   max-width: 430px;
@@ -744,9 +746,13 @@
 
 .light.route[data-destination="edit-profile"] .editProfileAvatar > span {
   color: #0d706c;
+}
+
+.editProfileAvatar > span {
   font-family: var(--font-inter), Inter, ui-sans-serif, system-ui, sans-serif;
-  font-size: 25px;
+  font-size: 34px;
   font-weight: 700;
+  line-height: 1;
 }
 
 .editProfileIntro {
@@ -853,6 +859,69 @@
 .editProfileContent .editProfileNote {
   margin-top: -3px;
   color: #6d8789;
+}
+
+.route:not(.light)[data-destination="edit-profile"] {
+  --text-primary: #f8fcf8;
+  --text-secondary: #afc5ca;
+  --text-muted: #87a8b1;
+  --accent-strong: #83eddd;
+  background: #061923;
+}
+
+.route:not(.light)[data-destination="edit-profile"] .destinationHeader {
+  border-color: #31535d;
+  background: linear-gradient(127.8921deg, #071c29 4.4643%, #104451 49.107%, #0b2c39 93.75%);
+}
+
+.route:not(.light)[data-destination="edit-profile"] .destinationHeadingGroup > .destinationEyebrow {
+  color: #83eddd;
+}
+
+.route:not(.light)[data-destination="edit-profile"] .destinationTitle h1 {
+  color: #f8fcf8;
+}
+
+.route:not(.light)[data-destination="edit-profile"] .editProfileAvatarRow > p,
+.route:not(.light)[data-destination="edit-profile"] .editProfileIntro p,
+.route:not(.light)[data-destination="edit-profile"] .editProfileFields label,
+.route:not(.light)[data-destination="edit-profile"] .editProfileReadOnly,
+.route:not(.light)[data-destination="edit-profile"] .editProfileNote {
+  color: #afc5ca;
+}
+
+.route:not(.light)[data-destination="edit-profile"] .editProfileIntro h2 {
+  color: #f8fcf8;
+}
+
+.route:not(.light)[data-destination="edit-profile"] .editProfileFields input {
+  border-color: #315863;
+  color: #f8fcf8;
+  background: #092630;
+}
+
+.route:not(.light)[data-destination="edit-profile"] .editProfileFields input[readonly] {
+  border-color: #234651;
+  color: #87a8b1;
+  background: #051b25;
+}
+
+.route:not(.light)[data-destination="edit-profile"] .editProfileSave {
+  border-color: #83eddd;
+  color: #051b25;
+  background: #83eddd;
+}
+
+.route:not(.light)[data-destination="edit-profile"] .editProfileContent .editProfileStatus {
+  color: #83eddd;
+}
+
+.route:not(.light)[data-destination="edit-profile"] .editProfileContent .editProfileError {
+  color: #ffb4ab;
+}
+
+.route:not(.light)[data-destination="edit-profile"] .editProfileContent .editProfileNote {
+  color: #87a8b1;
 }
 
 .route[data-destination="appearance"] {
@@ -2988,7 +3057,6 @@
   margin: 0;
 }
 
-.light.route[data-destination="edit-profile"] .destinationTitleRow .backButton,
 .light.route[data-destination="appearance"] .destinationTitleRow .backButton,
 .light.route[data-destination="privacy-security"] .destinationTitleRow .backButton,
 .light.route[data-destination="notifications"] .destinationTitleRow .backButton,
@@ -3001,14 +3069,12 @@
   background: #dceee6;
 }
 
-.route[data-destination="appearance"] .destinationHeader,
-.route[data-destination="edit-profile"] .destinationHeader {
+.route[data-destination="appearance"] .destinationHeader {
   align-items: flex-start;
   padding: 25px 19px 0;
 }
 
-.route[data-destination="appearance"] .destinationHeadingGroup .destinationEyebrow,
-.route[data-destination="edit-profile"] .destinationHeadingGroup .destinationEyebrow {
+.route[data-destination="appearance"] .destinationHeadingGroup .destinationEyebrow {
   margin: 0 0 18px 56px;
 }
 
@@ -3224,18 +3290,27 @@
     padding-bottom: calc(110px + env(safe-area-inset-bottom));
   }
 
-  .light.route[data-destination="edit-profile"] > .editProfileMain {
-    width: min(calc(100% - 48px), var(--destination-content-width));
-    max-width: var(--destination-content-width);
-    flex: 0 0 auto;
-    padding: 32px 0 calc(110px + env(safe-area-inset-bottom));
-  }
-
   .route[data-destination="edit-profile"] .destinationHeader .backButton,
   .route[data-destination="appearance"] .destinationHeader .backButton,
   .route[data-destination="privacy-security"] .destinationHeader .backButton,
   .route[data-destination="notifications"] .destinationHeader .backButton,
   .route[data-destination="help-support"] .destinationHeader .backButton {
     left: max(24px, calc((100% - var(--destination-content-width)) / 2));
+  }
+}
+
+@media (max-width: 699px) {
+  .route[data-destination="edit-profile"] .destinationHeader,
+  .route[data-destination="appearance"] .destinationHeader,
+  .route[data-destination="privacy-security"] .destinationHeader {
+    box-sizing: border-box;
+    min-height: 0;
+    padding: calc(16px + env(safe-area-inset-top)) 19px 16px;
+  }
+
+  .route[data-destination="edit-profile"] .destinationHeadingGroup > .destinationEyebrow,
+  .route[data-destination="appearance"] .destinationHeadingGroup > .destinationEyebrow,
+  .route[data-destination="privacy-security"] .destinationHeadingGroup > .destinationEyebrow {
+    margin-bottom: 12px;
   }
 }
