@@ -2512,7 +2512,7 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
         householdId,
         choreId,
         recurrenceRule,
-        LocalDate.now(),
+        LocalDate.now(ZoneOffset.UTC),
         strategy,
         "FIXED".equals(strategy) ? participantIds.getFirst() : null,
         "{\"peopleNeeded\":"
