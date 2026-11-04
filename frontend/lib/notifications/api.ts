@@ -44,6 +44,17 @@ export type PushSubscriptionHealth = {
   lastClientConfirmedAt: string | null
 }
 
+export type PushTestNotificationResult = {
+  status: "ACCEPTED" | "FAILED" | "UNAVAILABLE" | "DISABLED"
+  category:
+    | "PUSH_SERVICE_ACCEPTED"
+    | "SUBSCRIPTION_EXPIRED"
+    | "PROVIDER_REJECTED"
+    | "PROVIDER_ERROR"
+    | "PUSH_NOT_CONFIGURED"
+    | "PREFERENCE_DISABLED"
+}
+
 export const notificationApi = {
   list: () => api.get<Notification[]>("/api/notifications"),
   unreadCount: () => api.get<{ count: number }>("/api/notifications/unread-count"),
@@ -60,6 +71,10 @@ export const notificationApi = {
     api.post<PushSubscriptionHealth>("/api/notifications/push-subscriptions/confirm", subscription),
   unsubscribePush: (endpoint: string) =>
     api.post<void>("/api/notifications/push-subscriptions/unsubscribe", { endpoint }),
+  testPushNotification: (endpointFingerprint: string) =>
+    api.post<PushTestNotificationResult>("/api/notifications/push-subscriptions/test", {
+      endpointFingerprint,
+    }),
   setHouseholdStyle: (householdId: string, style: NotificationStyle) =>
     api.put<void>(`/api/notifications/households/${encodeURIComponent(householdId)}/style`, {
       style,

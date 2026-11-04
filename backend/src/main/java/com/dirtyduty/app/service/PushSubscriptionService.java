@@ -3,9 +3,11 @@ package com.dirtyduty.app.service;
 import com.dirtyduty.app.dto.notification.PushSubscriptionHealthRequest;
 import com.dirtyduty.app.dto.notification.PushSubscriptionHealthResponse;
 import com.dirtyduty.app.dto.notification.PushSubscriptionRequest;
+import com.dirtyduty.app.dto.notification.PushTestNotificationResponse;
 import com.dirtyduty.app.exception.DuplicateResourceException;
 import com.dirtyduty.app.exception.InvalidHouseholdException;
 import com.dirtyduty.app.exception.ResourceNotFoundException;
+import com.dirtyduty.app.notification.WebPushNotificationProvider;
 import com.dirtyduty.app.repository.UserRepository;
 import java.net.InetAddress;
 import java.net.URI;
@@ -13,20 +15,29 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.OffsetDateTime;
 import java.util.Base64;
+import java.util.HexFormat;
+import java.util.List;
 import java.util.UUID;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class PushSubscriptionService {
   private final JdbcTemplate jdbc;
   private final UserRepository userRepository;
+  private final WebPushNotificationProvider webPushProvider;
 
-  public PushSubscriptionService(JdbcTemplate jdbc, UserRepository userRepository) {
+  public PushSubscriptionService(
+      JdbcTemplate jdbc,
+      UserRepository userRepository,
+      WebPushNotificationProvider webPushProvider) {
     this.jdbc = jdbc;
     this.userRepository = userRepository;
+    this.webPushProvider = webPushProvider;
   }
 
   @Transactional
@@ -182,6 +193,109 @@ public class PushSubscriptionService {
         endpoint);
   }
 
+  @Transactional
+  public PushTestNotificationResponse sendTestNotification(
+      String endpointFingerprint, Authentication authentication) {
+    UUID userId = currentUserId(authentication);
+    jdbc.queryForObject("SELECT id FROM users WHERE id=? FOR UPDATE", UUID.class, userId);
+    List<SubscriptionEndpoint> ownedSubscriptions =
+        jdbc.query(
+            """
+                SELECT id, endpoint
+                FROM push_subscriptions
+                WHERE user_id=? AND active=TRUE
+                """,
+            (rs, row) ->
+                new SubscriptionEndpoint(rs.getObject("id", UUID.class), rs.getString("endpoint")),
+            userId);
+    String normalizedFingerprint = endpointFingerprint.toLowerCase(java.util.Locale.ROOT);
+    UUID subscriptionId =
+        ownedSubscriptions.stream()
+            .filter(
+                item ->
+                    constantTimeEquals(normalizedFingerprint, endpointFingerprint(item.endpoint())))
+            .map(SubscriptionEndpoint::id)
+            .findFirst()
+            .orElse(null);
+    SubscriptionState subscription =
+        subscriptionId == null
+            ? null
+            : jdbc.query(
+                """
+                    SELECT id, endpoint, public_key, auth_secret
+                    FROM push_subscriptions
+                    WHERE id=? AND user_id=? AND active=TRUE
+                    FOR UPDATE
+                    """,
+                rs ->
+                    rs.next()
+                        ? new SubscriptionState(
+                            rs.getObject("id", UUID.class),
+                            rs.getString("endpoint"),
+                            rs.getString("public_key"),
+                            rs.getString("auth_secret"))
+                        : null,
+                subscriptionId,
+                userId);
+    if (subscription == null) {
+      throw new ResourceNotFoundException(
+          "An active push subscription for this browser was not found.");
+    }
+
+    Boolean enabled =
+        jdbc.queryForObject(
+            """
+                SELECT COALESCE(
+                    (SELECT push_enabled FROM notification_preferences WHERE user_id=?), FALSE)
+                """,
+            Boolean.class,
+            userId);
+    if (!Boolean.TRUE.equals(enabled)) {
+      return new PushTestNotificationResponse("DISABLED", "PREFERENCE_DISABLED");
+    }
+
+    int rateLimitUpdated =
+        jdbc.update(
+            """
+                INSERT INTO push_test_notification_limits (user_id, last_attempt_at)
+                VALUES (?, NOW())
+                ON CONFLICT (user_id) DO UPDATE
+                SET last_attempt_at=NOW()
+                WHERE push_test_notification_limits.last_attempt_at
+                    <= NOW() - INTERVAL '30 seconds'
+                """,
+            userId);
+    if (rateLimitUpdated == 0) {
+      throw new ResponseStatusException(
+          HttpStatus.TOO_MANY_REQUESTS, "Please wait before sending another test notification.");
+    }
+
+    WebPushNotificationProvider.PushTestResult result =
+        webPushProvider.sendTest(
+            subscription.id(),
+            subscription.endpoint(),
+            subscription.publicKey(),
+            subscription.authSecret());
+    String status =
+        switch (result) {
+          case ACCEPTED -> "ACCEPTED";
+          case SUBSCRIPTION_EXPIRED -> "FAILED";
+          case PROVIDER_REJECTED, PROVIDER_ERROR -> "FAILED";
+          case UNAVAILABLE -> "UNAVAILABLE";
+          case DISABLED -> "DISABLED";
+        };
+    String category =
+        switch (result) {
+          case ACCEPTED -> "PUSH_SERVICE_ACCEPTED";
+          case SUBSCRIPTION_EXPIRED -> "SUBSCRIPTION_EXPIRED";
+          case PROVIDER_REJECTED -> "PROVIDER_REJECTED";
+          case PROVIDER_ERROR -> "PROVIDER_ERROR";
+          case UNAVAILABLE -> "PUSH_NOT_CONFIGURED";
+          case DISABLED -> "PREFERENCE_DISABLED";
+        };
+    return new PushTestNotificationResponse(status, category);
+  }
+
   private UUID currentUserId(Authentication authentication) {
     if (authentication == null || authentication.getName() == null) {
       throw new ResourceNotFoundException("Authenticated user was not found.");
@@ -232,6 +346,21 @@ public class PushSubscriptionService {
     return MessageDigest.isEqual(
         expected.getBytes(StandardCharsets.UTF_8), actual.getBytes(StandardCharsets.UTF_8));
   }
+
+  private String endpointFingerprint(String endpoint) {
+    try {
+      return HexFormat.of()
+          .formatHex(
+              MessageDigest.getInstance("SHA-256")
+                  .digest(endpoint.getBytes(StandardCharsets.UTF_8)));
+    } catch (java.security.NoSuchAlgorithmException exception) {
+      throw new IllegalStateException("SHA-256 is unavailable.", exception);
+    }
+  }
+
+  private record SubscriptionEndpoint(UUID id, String endpoint) {}
+
+  private record SubscriptionState(UUID id, String endpoint, String publicKey, String authSecret) {}
 
   private record SubscriptionHealthState(
       UUID id,

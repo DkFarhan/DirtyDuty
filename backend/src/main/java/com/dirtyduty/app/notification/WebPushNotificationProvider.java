@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
@@ -72,11 +74,13 @@ public class WebPushNotificationProvider implements NotificationDeliveryProvider
         jdbc.query(
             """
                 SELECT n.id, n.scheduled_at, n.expires_at, d.status, d.attempts,
-                       n.recipient_user_id
+                       n.recipient_user_id, n.push_target_tracking_enabled,
+                       d.push_targets_snapshotted_at
                 FROM notifications n
                 JOIN notification_deliveries d
                     ON d.notification_id=n.id AND d.channel='WEB_PUSH'
                 WHERE n.deduplication_key=?
+                FOR UPDATE OF d
                 """,
             rs ->
                 rs.next()
@@ -85,7 +89,10 @@ public class WebPushNotificationProvider implements NotificationDeliveryProvider
                         rs.getObject("scheduled_at", java.time.OffsetDateTime.class),
                         rs.getObject("expires_at", java.time.OffsetDateTime.class),
                         rs.getString("status"),
-                        rs.getInt("attempts"))
+                        rs.getInt("attempts"),
+                        rs.getObject("recipient_user_id", UUID.class),
+                        rs.getBoolean("push_target_tracking_enabled"),
+                        rs.getObject("push_targets_snapshotted_at", OffsetDateTime.class))
                     : null,
             notification.deduplicationKey());
     if (deliveryState == null) {
@@ -95,12 +102,17 @@ public class WebPushNotificationProvider implements NotificationDeliveryProvider
     if ("SENT".equals(deliveryState.status()) || "CANCELLED".equals(deliveryState.status())) {
       return;
     }
-    java.time.OffsetDateTime now = java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC);
+    OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
     if (deliveryState.scheduledAt().isAfter(now)) {
       return;
     }
     if (deliveryState.expiresAt() != null && !deliveryState.expiresAt().isAfter(now)) {
       setDeliveryStatus(notificationId, "CANCELLED", "Reminder window expired.", false);
+      return;
+    }
+    if (!deliveryState.targetTrackingEnabled()) {
+      setDeliveryStatus(
+          notificationId, "CANCELLED", "Legacy notification is not eligible for push.", false);
       return;
     }
     if (deliveryState.attempts() >= 3) {
@@ -116,24 +128,58 @@ public class WebPushNotificationProvider implements NotificationDeliveryProvider
                 SELECT COALESCE((SELECT push_enabled FROM notification_preferences WHERE user_id=?), FALSE)
                 """,
             Boolean.class,
-            notification.recipientUserId());
+            deliveryState.recipientUserId());
     if (!Boolean.TRUE.equals(enabled)) {
       setDeliveryStatus(notificationId, "CANCELLED", "Push notifications are disabled.", false);
       return;
     }
+    if (deliveryState.targetsSnapshottedAt() == null) {
+      jdbc.update(
+          """
+              INSERT INTO notification_push_delivery_targets (notification_id, subscription_id)
+              SELECT ?, id FROM push_subscriptions
+              WHERE user_id=? AND active=TRUE
+              ON CONFLICT (notification_id, subscription_id) DO NOTHING
+              """,
+          notificationId,
+          deliveryState.recipientUserId());
+      jdbc.update(
+          """
+              UPDATE notification_deliveries
+              SET push_targets_snapshotted_at=NOW()
+              WHERE notification_id=? AND channel='WEB_PUSH'
+              """,
+          notificationId);
+    }
+    jdbc.update(
+        """
+            UPDATE notification_push_delivery_targets t
+            SET status='CANCELLED', next_attempt_at=NULL, updated_at=NOW()
+            FROM push_subscriptions s
+            WHERE t.notification_id=? AND t.subscription_id=s.id AND s.active=FALSE
+              AND t.status IN ('PENDING', 'FAILED')
+            """,
+        notificationId);
     List<Subscription> subscriptions =
         jdbc.query(
             """
-                SELECT id, endpoint, public_key, auth_secret
-                FROM push_subscriptions
-                WHERE user_id=? AND active=TRUE
+                SELECT s.id, s.endpoint, s.public_key, s.auth_secret
+                FROM notification_push_delivery_targets t
+                JOIN push_subscriptions s ON s.id=t.subscription_id
+                WHERE t.notification_id=? AND s.active=TRUE
+                  AND t.status IN ('PENDING', 'FAILED') AND t.attempts<3
+                  AND (t.next_attempt_at IS NULL OR t.next_attempt_at<=NOW())
+                ORDER BY s.id
+                FOR UPDATE OF t
                 """,
             (rs, row) ->
                 new Subscription(
-                    rs.getObject("id", UUID.class), rs.getString("endpoint"),
-                    rs.getString("public_key"), rs.getString("auth_secret")),
-            notification.recipientUserId());
-    if (subscriptions.isEmpty()) {
+                    rs.getObject("id", UUID.class),
+                    rs.getString("endpoint"),
+                    rs.getString("public_key"),
+                    rs.getString("auth_secret")),
+            notificationId);
+    if (deliveryState.targetsSnapshottedAt() == null && subscriptions.isEmpty()) {
       setDeliveryStatus(notificationId, "CANCELLED", "No active push subscriptions.", false);
       return;
     }
@@ -141,9 +187,6 @@ public class WebPushNotificationProvider implements NotificationDeliveryProvider
       return;
     }
     String payload = serialize(notification);
-    int successes = 0;
-    int failures = 0;
-    int retryableFailures = 0;
     for (Subscription subscription : subscriptions) {
       try {
         int status =
@@ -156,53 +199,156 @@ public class WebPushNotificationProvider implements NotificationDeliveryProvider
                 subscription.authSecret(),
                 payload.getBytes(StandardCharsets.UTF_8));
         if (status >= 200 && status < 300) {
-          successes++;
+          recordTargetResult(notificationId, subscription.id(), "SENT", null, true);
           jdbc.update(
               "UPDATE push_subscriptions SET last_used_at=NOW() WHERE id=?", subscription.id());
+        } else if (status == 404 || status == 410) {
+          recordTargetResult(notificationId, subscription.id(), "CANCELLED", "GONE", false);
+          jdbc.update("UPDATE push_subscriptions SET active=FALSE WHERE id=?", subscription.id());
         } else {
-          failures++;
-          if (status == 404 || status == 410) {
-            jdbc.update("UPDATE push_subscriptions SET active=FALSE WHERE id=?", subscription.id());
-          } else {
-            retryableFailures++;
-          }
-          logger.warn("Web Push provider rejected a delivery with status {}", status);
+          recordTargetResult(
+              notificationId, subscription.id(), "FAILED", "PROVIDER_REJECTED", false);
+          logger.warn("Web Push target delivery was rejected (HTTP {}).", status);
         }
       } catch (IOException
           | GeneralSecurityException
           | JoseException
           | ExecutionException exception) {
-        failures++;
-        retryableFailures++;
-        logger.warn("Web Push delivery failed for subscription {}", subscription.id(), exception);
+        recordTargetResult(notificationId, subscription.id(), "FAILED", "PROVIDER_ERROR", false);
+        logger.warn("Web Push target delivery failed (provider error).");
       } catch (InterruptedException exception) {
         Thread.currentThread().interrupt();
-        failures++;
-        retryableFailures++;
-        logger.warn(
-            "Web Push delivery was interrupted for subscription {}", subscription.id(), exception);
+        recordTargetResult(notificationId, subscription.id(), "FAILED", "INTERRUPTED", false);
+        logger.warn("Web Push target delivery was interrupted.");
         break;
       }
     }
+    updateAggregateDeliveryStatus(notificationId);
+  }
 
-    String status = successes > 0 ? "SENT" : retryableFailures > 0 ? "FAILED" : "CANCELLED";
-    String error = failures > 0 && successes == 0 ? "All active push subscriptions failed." : null;
+  public PushTestResult sendTest(
+      UUID subscriptionId, String endpoint, String subscriptionPublicKey, String authSecret) {
+    if (!isConfigured()) return PushTestResult.UNAVAILABLE;
+    String payload;
+    try {
+      payload =
+          objectMapper.writeValueAsString(
+              new PushPayload(
+                  "DirtyDuty test notification",
+                  "Push delivery is reaching this browser.",
+                  "/?screen=notifications"));
+    } catch (JsonProcessingException exception) {
+      throw new IllegalStateException("Unable to serialize Web Push test notification.", exception);
+    }
+    try {
+      int status =
+          webPushClient.send(
+              publicKey,
+              privateKey,
+              subject,
+              endpoint,
+              subscriptionPublicKey,
+              authSecret,
+              payload.getBytes(StandardCharsets.UTF_8));
+      if (status >= 200 && status < 300) {
+        jdbc.update("UPDATE push_subscriptions SET last_used_at=NOW() WHERE id=?", subscriptionId);
+        return PushTestResult.ACCEPTED;
+      }
+      if (status == 404 || status == 410) {
+        jdbc.update("UPDATE push_subscriptions SET active=FALSE WHERE id=?", subscriptionId);
+        return PushTestResult.SUBSCRIPTION_EXPIRED;
+      }
+      logger.warn("Web Push test notification was rejected (HTTP {}).", status);
+      return PushTestResult.PROVIDER_REJECTED;
+    } catch (IOException
+        | GeneralSecurityException
+        | JoseException
+        | ExecutionException exception) {
+      logger.warn("Web Push test notification failed (provider error).");
+      return PushTestResult.PROVIDER_ERROR;
+    } catch (InterruptedException exception) {
+      Thread.currentThread().interrupt();
+      logger.warn("Web Push test notification was interrupted.");
+      return PushTestResult.PROVIDER_ERROR;
+    }
+  }
+
+  private void recordTargetResult(
+      UUID notificationId, UUID subscriptionId, String status, String error, boolean accepted) {
+    jdbc.update(
+        """
+            UPDATE notification_push_delivery_targets
+            SET status=?, attempts=attempts+1,
+                sent_at=CASE WHEN ? THEN NOW() ELSE sent_at END,
+                next_attempt_at=CASE
+                    WHEN ?='FAILED' AND attempts=0 THEN NOW() + INTERVAL '1 minute'
+                    WHEN ?='FAILED' AND attempts=1 THEN NOW() + INTERVAL '5 minutes'
+                    ELSE NULL
+                END,
+                last_error=?, updated_at=NOW()
+            WHERE notification_id=? AND subscription_id=?
+            """,
+        status,
+        accepted,
+        status,
+        status,
+        error,
+        notificationId,
+        subscriptionId);
+  }
+
+  private void updateAggregateDeliveryStatus(UUID notificationId) {
+    AggregateTargetState targets =
+        jdbc.query(
+            """
+                SELECT COUNT(*) FILTER (
+                           WHERE status IN ('PENDING', 'FAILED') AND attempts<3) AS outstanding,
+                       MIN(next_attempt_at) FILTER (
+                           WHERE status IN ('PENDING', 'FAILED') AND attempts<3) AS next_attempt_at,
+                       COUNT(*) FILTER (WHERE status='SENT') AS accepted,
+                       COUNT(*) FILTER (WHERE status='FAILED') AS failed
+                FROM notification_push_delivery_targets
+                WHERE notification_id=?
+                """,
+            rs ->
+                rs.next()
+                    ? new AggregateTargetState(
+                        rs.getInt("outstanding"),
+                        rs.getObject("next_attempt_at", OffsetDateTime.class),
+                        rs.getInt("accepted"),
+                        rs.getInt("failed"))
+                    : new AggregateTargetState(0, null, 0, 0),
+            notificationId);
+    String status =
+        targets.outstanding() > 0
+            ? "FAILED"
+            : targets.accepted() > 0 ? "SENT" : targets.failed() > 0 ? "FAILED" : "CANCELLED";
+    String error =
+        targets.outstanding() > 0
+            ? "One or more push subscriptions are awaiting retry."
+            : targets.failed() > 0 ? "No push subscription accepted delivery." : null;
     jdbc.update(
         """
                 UPDATE notification_deliveries SET status=?, attempts=attempts+1,
                     sent_at=CASE WHEN ?='SENT' THEN NOW() ELSE sent_at END,
-                    next_attempt_at=CASE WHEN ?='FAILED' AND attempts<2
-                        THEN NOW() + CASE WHEN attempts=0 THEN INTERVAL '1 minute'
-                                           ELSE INTERVAL '5 minutes' END
-                        ELSE NULL END,
+                    next_attempt_at=?,
                     last_error=?
                 WHERE notification_id=? AND channel='WEB_PUSH'
                 """,
         status,
         status,
-        status,
+        targets.nextAttemptAt(),
         error,
         notificationId);
+  }
+
+  public enum PushTestResult {
+    ACCEPTED,
+    SUBSCRIPTION_EXPIRED,
+    PROVIDER_REJECTED,
+    PROVIDER_ERROR,
+    UNAVAILABLE,
+    DISABLED
   }
 
   private String serialize(NotificationMessage notification) {
@@ -243,6 +389,15 @@ public class WebPushNotificationProvider implements NotificationDeliveryProvider
         error,
         incrementAttempts ? 1 : 0,
         notificationId);
+    if ("CANCELLED".equals(status)) {
+      jdbc.update(
+          """
+              UPDATE notification_push_delivery_targets
+              SET status='CANCELLED', next_attempt_at=NULL, updated_at=NOW()
+              WHERE notification_id=? AND status IN ('PENDING', 'FAILED')
+              """,
+          notificationId);
+    }
   }
 
   private record PushPayload(String title, String body, String targetPath) {}
@@ -254,5 +409,11 @@ public class WebPushNotificationProvider implements NotificationDeliveryProvider
       java.time.OffsetDateTime scheduledAt,
       java.time.OffsetDateTime expiresAt,
       String status,
-      int attempts) {}
+      int attempts,
+      UUID recipientUserId,
+      boolean targetTrackingEnabled,
+      OffsetDateTime targetsSnapshottedAt) {}
+
+  private record AggregateTargetState(
+      int outstanding, OffsetDateTime nextAttemptAt, int accepted, int failed) {}
 }

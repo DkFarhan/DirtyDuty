@@ -6,7 +6,8 @@ import { clearCsrfToken } from "@/lib/auth/api"
 import { ChoreSyncProvider } from "@/lib/chore-sync/store"
 import type { Notification } from "@/lib/notifications/api"
 import {
-  createBrowserPushSubscription,
+  browserPushEndpointFingerprint,
+  inspectBrowserPushSubscription,
   removeBrowserPushSubscription,
 } from "@/lib/notifications/push"
 import { NotificationsScreen } from "./screens/notifications-screen"
@@ -14,11 +15,14 @@ import { NotificationsScreen } from "./screens/notifications-screen"
 const pushHealthMocks = vi.hoisted(() => ({
   refresh: vi.fn(),
   restore: vi.fn(),
+  repair: vi.fn(),
+  cancelPendingSetup: vi.fn(),
   setPushEnabled: vi.fn(),
 }))
 
 vi.mock("@/lib/notifications/push", () => ({
-  createBrowserPushSubscription: vi.fn(),
+  browserPushEndpointFingerprint: vi.fn(),
+  inspectBrowserPushSubscription: vi.fn(),
   removeBrowserPushSubscription: vi.fn(),
 }))
 vi.mock("@/lib/notifications/push-health", () => ({
@@ -26,6 +30,14 @@ vi.mock("@/lib/notifications/push-health", () => ({
     state: { status: "disabled", reason: null, message: null },
     refresh: pushHealthMocks.refresh,
     restore: pushHealthMocks.restore,
+    repair: pushHealthMocks.repair,
+    cancelPendingSetup: pushHealthMocks.cancelPendingSetup,
+    device: {
+      permission: "default",
+      worker: "unknown",
+      subscription: "unknown",
+      serverSync: "unknown",
+    },
     setPushEnabled: pushHealthMocks.setPushEnabled,
   }),
 }))
@@ -94,11 +106,14 @@ describe("notifications screen", () => {
     fetchMock.mockReset()
     pushHealthMocks.refresh.mockReset()
     pushHealthMocks.restore.mockReset()
+    pushHealthMocks.repair.mockReset()
+    pushHealthMocks.cancelPendingSetup.mockReset()
     pushHealthMocks.setPushEnabled.mockReset()
     currentPreferences = { ...preferences }
     currentNotifications = [...notifications]
     vi.mocked(removeBrowserPushSubscription).mockReset()
-    vi.mocked(createBrowserPushSubscription).mockReset()
+    vi.mocked(browserPushEndpointFingerprint).mockReset().mockResolvedValue("a".repeat(64))
+    vi.mocked(inspectBrowserPushSubscription).mockReset()
     fetchMock.mockImplementation(async (input, init) => {
       const url = String(input)
       if (url.endsWith("/api/notifications") && !url.endsWith("/unread-count"))
@@ -136,17 +151,7 @@ describe("notifications screen", () => {
         return new Response(null, { status: 204 })
       throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url}`)
     })
-    vi.mocked(createBrowserPushSubscription).mockResolvedValue({
-      endpoint: "https://push.example.test/subscription",
-      expirationTime: null,
-      options: {} as PushSubscriptionOptions,
-      getKey: (name: "p256dh" | "auth") => {
-        const key = name === "p256dh" ? "public-key" : "auth-secret"
-        return new Uint8Array(new TextEncoder().encode(key)).buffer as ArrayBuffer
-      },
-      toJSON: () => ({ keys: { p256dh: "public-key", auth: "auth-secret" } }),
-      unsubscribe: async () => true,
-    } as unknown as Awaited<ReturnType<typeof createBrowserPushSubscription>>)
+    pushHealthMocks.restore.mockResolvedValue(true)
     vi.mocked(removeBrowserPushSubscription).mockResolvedValue(null)
     vi.stubGlobal("fetch", fetchMock)
     clearCsrfToken()
@@ -368,13 +373,7 @@ describe("notifications screen", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Save preferences" }))
     expect(await screen.findByText("Preferences saved.")).toBeTruthy()
-    expect(vi.mocked(createBrowserPushSubscription)).toHaveBeenCalledWith(expect.any(String))
-    expect(
-      fetchMock.mock.calls.some(
-        ([url, init]) =>
-          String(url).endsWith("/api/notifications/push-subscriptions") && init?.method === "PUT",
-      ),
-    ).toBe(true)
+    expect(pushHealthMocks.restore).toHaveBeenCalledOnce()
   })
 
   it("shows a clear empty state when there are no notifications", async () => {

@@ -704,6 +704,86 @@ class HouseholdControllerIntegrationTest {
   }
 
   @Test
+  void pushTestIsAuthenticatedOwnerScopedAndRateLimited() throws Exception {
+    WebSession owner = login("pushtestowner");
+    WebSession other = login("pushtestother");
+    UUID ownerId = UUID.fromString(owner.userId());
+    String endpoint = "https://8.8.8.8/test-device-" + UUID.randomUUID();
+    addPushSubscription(ownerId, endpoint);
+    jdbcTemplate.update(
+        """
+            INSERT INTO notification_preferences (user_id, push_enabled)
+            VALUES (?, TRUE)
+            ON CONFLICT (user_id) DO UPDATE SET push_enabled=TRUE
+            """,
+        ownerId);
+    doReturn(true).when(webPushProvider).isConfigured();
+    when(webPushClient.send(
+            anyString(),
+            anyString(),
+            anyString(),
+            eq(endpoint),
+            anyString(),
+            anyString(),
+            any(byte[].class)))
+        .thenReturn(201);
+    String fingerprint =
+        HexFormat.of()
+            .formatHex(
+                MessageDigest.getInstance("SHA-256")
+                    .digest(endpoint.getBytes(StandardCharsets.UTF_8)));
+    String body = "{\"endpointFingerprint\":\"" + fingerprint + "\"}";
+
+    mockMvc
+        .perform(
+            post("/api/notifications/push-subscriptions/test")
+                .cookie(owner.cookie())
+                .header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("ACCEPTED"))
+        .andExpect(jsonPath("$.category").value("PUSH_SERVICE_ACCEPTED"))
+        .andExpect(jsonPath("$.endpoint").doesNotExist());
+    verify(webPushClient, times(1))
+        .send(
+            anyString(),
+            anyString(),
+            anyString(),
+            eq(endpoint),
+            anyString(),
+            anyString(),
+            any(byte[].class));
+
+    mockMvc
+        .perform(
+            post("/api/notifications/push-subscriptions/test")
+                .cookie(other.cookie())
+                .header(other.csrfHeader(), other.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isNotFound());
+
+    mockMvc
+        .perform(
+            post("/api/notifications/push-subscriptions/test")
+                .cookie(owner.cookie())
+                .header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isTooManyRequests());
+    verify(webPushClient, times(1))
+        .send(
+            anyString(),
+            anyString(),
+            anyString(),
+            eq(endpoint),
+            anyString(),
+            anyString(),
+            any(byte[].class));
+  }
+
+  @Test
   void notificationPreferencesPreserveOverridesAndHouseholdDefaults() throws Exception {
     WebSession owner = login("preferenceowner");
     UUID householdId = createHousehold(owner, "Preference Home", "UTC");
@@ -934,6 +1014,18 @@ class HouseholdControllerIntegrationTest {
     assertThat(deliveryStatus(successfulMessage.deduplicationKey(), "WEB_PUSH")).isEqualTo("SENT");
     assertThat(subscriptionActive(staleEndpoint)).isFalse();
     assertThat(subscriptionActive(liveEndpoint)).isTrue();
+    assertThat(
+            jdbcTemplate.queryForObject(
+                """
+                    SELECT t.status FROM notification_push_delivery_targets t
+                    JOIN push_subscriptions s ON s.id=t.subscription_id
+                    JOIN notifications n ON n.id=t.notification_id
+                    WHERE n.deduplication_key=? AND s.endpoint=?
+                    """,
+                String.class,
+                successfulMessage.deduplicationKey(),
+                staleEndpoint))
+        .isEqualTo("CANCELLED");
     webPushProvider.deliver(successfulMessage, null);
     verify(webPushClient, times(1))
         .send(
@@ -980,6 +1072,13 @@ class HouseholdControllerIntegrationTest {
                   AND channel='WEB_PUSH'
                 """,
         retryMessage.deduplicationKey());
+    jdbcTemplate.update(
+        """
+                UPDATE notification_push_delivery_targets
+                SET next_attempt_at=NOW() - INTERVAL '1 second'
+                WHERE notification_id=(SELECT id FROM notifications WHERE deduplication_key=?)
+                """,
+        retryMessage.deduplicationKey());
 
     webPushProvider.deliver(retryMessage, null);
 
@@ -1005,6 +1104,205 @@ class HouseholdControllerIntegrationTest {
             anyString(),
             anyString(),
             any(byte[].class));
+  }
+
+  @Test
+  void webPushRetryTargetsOnlyTheDeviceWhoseFirstAttemptFailed() throws Exception {
+    WebSession owner = login("pushpartialowner");
+    UUID userId = UUID.fromString(owner.userId());
+    doReturn(true).when(webPushProvider).isConfigured();
+    jdbcTemplate.update(
+        """
+                INSERT INTO notification_preferences (user_id, push_enabled)
+                VALUES (?, TRUE) ON CONFLICT (user_id) DO UPDATE SET push_enabled=TRUE
+                """,
+        userId);
+    String iphoneEndpoint = "https://8.8.8.8/iphone-" + UUID.randomUUID();
+    String androidEndpoint = "https://8.8.8.8/android-" + UUID.randomUUID();
+    addPushSubscription(userId, iphoneEndpoint);
+    addPushSubscription(userId, androidEndpoint);
+    NotificationMessage notification = insertPushNotification(userId, "HOUSEHOLD_JOINED");
+    when(webPushClient.send(
+            anyString(),
+            anyString(),
+            anyString(),
+            eq(iphoneEndpoint),
+            anyString(),
+            anyString(),
+            any(byte[].class)))
+        .thenReturn(201);
+    when(webPushClient.send(
+            anyString(),
+            anyString(),
+            anyString(),
+            eq(androidEndpoint),
+            anyString(),
+            anyString(),
+            any(byte[].class)))
+        .thenThrow(new java.io.IOException("temporary push outage"))
+        .thenReturn(201);
+
+    webPushProvider.deliver(notification, null);
+
+    assertThat(deliveryStatus(notification.deduplicationKey(), "WEB_PUSH")).isEqualTo("FAILED");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                """
+                    SELECT COUNT(*) FROM notification_push_delivery_targets t
+                    JOIN push_subscriptions s ON s.id=t.subscription_id
+                    JOIN notifications n ON n.id=t.notification_id
+                    WHERE n.deduplication_key=? AND s.endpoint=? AND t.status='SENT'
+                    """,
+                Integer.class,
+                notification.deduplicationKey(),
+                iphoneEndpoint))
+        .isEqualTo(1);
+    jdbcTemplate.update(
+        """
+            UPDATE notification_push_delivery_targets
+            SET next_attempt_at=NOW() - INTERVAL '1 second'
+            WHERE notification_id=(SELECT id FROM notifications WHERE deduplication_key=?)
+              AND subscription_id=(SELECT id FROM push_subscriptions WHERE endpoint=?)
+            """,
+        notification.deduplicationKey(),
+        androidEndpoint);
+    jdbcTemplate.update(
+        """
+            UPDATE notification_deliveries SET next_attempt_at=NOW() - INTERVAL '1 second'
+            WHERE notification_id=(SELECT id FROM notifications WHERE deduplication_key=?)
+              AND channel='WEB_PUSH'
+            """,
+        notification.deduplicationKey());
+
+    webPushProvider.deliver(notification, null);
+
+    assertThat(deliveryStatus(notification.deduplicationKey(), "WEB_PUSH")).isEqualTo("SENT");
+    verify(webPushClient, times(1))
+        .send(
+            anyString(),
+            anyString(),
+            anyString(),
+            eq(iphoneEndpoint),
+            anyString(),
+            anyString(),
+            any(byte[].class));
+    verify(webPushClient, times(2))
+        .send(
+            anyString(),
+            anyString(),
+            anyString(),
+            eq(androidEndpoint),
+            anyString(),
+            anyString(),
+            any(byte[].class));
+  }
+
+  @Test
+  void expiredNotificationCancelsItsOutstandingPushTargets() throws Exception {
+    WebSession owner = login("pushexpiryowner");
+    UUID userId = UUID.fromString(owner.userId());
+    doReturn(true).when(webPushProvider).isConfigured();
+    jdbcTemplate.update(
+        """
+                INSERT INTO notification_preferences (user_id, push_enabled)
+                VALUES (?, TRUE) ON CONFLICT (user_id) DO UPDATE SET push_enabled=TRUE
+                """,
+        userId);
+    String endpoint = "https://8.8.8.8/expiry-" + UUID.randomUUID();
+    addPushSubscription(userId, endpoint);
+    NotificationMessage notification = insertPushNotification(userId, "CHORE_DUE_SOON");
+    when(webPushClient.send(
+            anyString(),
+            anyString(),
+            anyString(),
+            eq(endpoint),
+            anyString(),
+            anyString(),
+            any(byte[].class)))
+        .thenThrow(new java.io.IOException("temporary push outage"));
+
+    webPushProvider.deliver(notification, null);
+    assertThat(deliveryStatus(notification.deduplicationKey(), "WEB_PUSH")).isEqualTo("FAILED");
+    jdbcTemplate.update(
+        "UPDATE notifications SET expires_at=NOW() - INTERVAL '1 second' WHERE deduplication_key=?",
+        notification.deduplicationKey());
+
+    notificationScheduler.run();
+
+    assertThat(
+            jdbcTemplate.queryForObject(
+                """
+                    SELECT status FROM notification_push_delivery_targets
+                    WHERE notification_id=(SELECT id FROM notifications WHERE deduplication_key=?)
+                    """,
+                String.class,
+                notification.deduplicationKey()))
+        .isEqualTo("CANCELLED");
+  }
+
+  @Test
+  void memberExitCleanupCancelsOutstandingPerSubscriptionPushTargets() throws Exception {
+    WebSession owner = login("pushmembercleanup");
+    UUID userId = UUID.fromString(owner.userId());
+    UUID householdId = createHousehold(owner, "Push Cleanup Home", "UTC");
+    String endpoint = "https://8.8.8.8/member-cleanup-" + UUID.randomUUID();
+    addPushSubscription(userId, endpoint);
+    UUID notificationId = UUID.randomUUID();
+    String deduplicationKey = "push-member-cleanup-" + UUID.randomUUID();
+    OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+    jdbcTemplate.update(
+        """
+            INSERT INTO notifications
+                (id, recipient_user_id, type, category, title, message, status, reference_type,
+                 reference_id, scheduled_at, expires_at, deduplication_key)
+            VALUES (?, ?, 'HOUSEHOLD_JOINED', 'HOUSEHOLD', 'Title', 'Body', 'PENDING',
+                    'HOUSEHOLD', ?, ?, ?, ?)
+            """,
+        notificationId,
+        userId,
+        householdId,
+        now.minusMinutes(1),
+        now.plusHours(1),
+        deduplicationKey);
+    UUID subscriptionId =
+        jdbcTemplate.queryForObject(
+            "SELECT id FROM push_subscriptions WHERE endpoint=?", UUID.class, endpoint);
+    jdbcTemplate.update(
+        """
+            INSERT INTO notification_deliveries (notification_id, channel, status, attempts)
+            VALUES (?, 'WEB_PUSH', 'FAILED', 1)
+            """,
+        notificationId);
+    jdbcTemplate.update(
+        """
+            INSERT INTO notification_push_delivery_targets
+                (notification_id, subscription_id, status, attempts, next_attempt_at)
+            VALUES (?, ?, 'FAILED', 1, NOW() + INTERVAL '1 minute')
+            """,
+        notificationId,
+        subscriptionId);
+
+    new TransactionTemplate(transactionManager)
+        .executeWithoutResult(
+            status -> membershipExitCleanupService.cleanupMembershipExit(householdId, userId));
+
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT status FROM notifications WHERE id=?", String.class, notificationId))
+        .isEqualTo("CANCELLED");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT status FROM notification_deliveries WHERE notification_id=? AND channel='WEB_PUSH'",
+                String.class,
+                notificationId))
+        .isEqualTo("CANCELLED");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT status FROM notification_push_delivery_targets WHERE notification_id=? AND subscription_id=?",
+                String.class,
+                notificationId,
+                subscriptionId))
+        .isEqualTo("CANCELLED");
   }
 
   @Test

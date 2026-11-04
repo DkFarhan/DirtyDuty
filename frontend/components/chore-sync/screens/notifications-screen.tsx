@@ -9,7 +9,8 @@ import {
   type NotificationStyle,
 } from "@/lib/notifications/api"
 import {
-  createBrowserPushSubscription,
+  browserPushEndpointFingerprint,
+  inspectBrowserPushSubscription,
   removeBrowserPushSubscription,
 } from "@/lib/notifications/push"
 import { usePushSubscriptionHealth } from "@/lib/notifications/push-health"
@@ -74,8 +75,10 @@ export function NotificationsScreen({
   const { returnFromNotifications } = useChoreSync()
   const {
     state: pushHealth,
-    refresh: refreshPushHealth,
     restore: restorePush,
+    repair: repairPush,
+    device: pushDevice,
+    cancelPendingSetup,
     setPushEnabled,
   } = usePushSubscriptionHealth()
   const [items, setItems] = useState<Notification[]>([])
@@ -90,6 +93,8 @@ export function NotificationsScreen({
   const [preferencesError, setPreferencesError] = useState("")
   const [preferencesBusy, setPreferencesBusy] = useState(false)
   const [preferencesSaved, setPreferencesSaved] = useState(false)
+  const [pushTestMessage, setPushTestMessage] = useState("")
+  const [pushTestBusy, setPushTestBusy] = useState(false)
   const itemsRef = useRef<Notification[]>([])
   const unreadCountRef = useRef(0)
   const hasLoadedRef = useRef(false)
@@ -327,20 +332,12 @@ export function NotificationsScreen({
     try {
       if (preferences.pushEnabled !== previousPushState) {
         if (preferences.pushEnabled) {
-          const configuration = await notificationApi.pushPublicKey()
-          if (!configuration.available || !configuration.publicKey) {
-            throw new Error("Push notifications are currently unavailable.")
+          const restored = await restorePush()
+          if (!restored) {
+            throw new Error(
+              "This device’s push setup is not complete. Review the device setup status and try again.",
+            )
           }
-          const subscription = await createBrowserPushSubscription(configuration.publicKey)
-          const keys = subscription.toJSON().keys
-          if (!keys?.p256dh || !keys.auth) {
-            throw new Error("Push notifications could not be enabled. Please try again.")
-          }
-          await notificationApi.subscribePush({
-            endpoint: subscription.endpoint,
-            publicKey: keys.p256dh,
-            authSecret: keys.auth,
-          })
         } else {
           const endpoint = await removeBrowserPushSubscription()
           if (endpoint) {
@@ -377,10 +374,50 @@ export function NotificationsScreen({
     }
   }
 
+  const sendDeviceTest = async () => {
+    if (pushTestBusy) return
+    setPushTestBusy(true)
+    setPushTestMessage("")
+    try {
+      const inspection = await inspectBrowserPushSubscription()
+      if (inspection.status !== "subscribed") {
+        setPushTestMessage("This browser does not have an active push subscription yet.")
+        return
+      }
+
+      const fingerprint = await browserPushEndpointFingerprint(inspection.subscription.endpoint)
+      const result = await notificationApi.testPushNotification(fingerprint)
+      setPushTestMessage(
+        result.status === "ACCEPTED"
+          ? "Push service accepted the test. This confirms server delivery acceptance, not that the device displayed it. If it did not appear, check browser/site notification settings and Android app notification settings."
+          : result.category === "SUBSCRIPTION_EXPIRED"
+            ? "The push service reports that this browser subscription has expired. Restore this device to create and sync a fresh subscription."
+            : result.category === "PUSH_NOT_CONFIGURED"
+              ? "Server push delivery is not configured."
+              : result.category === "PREFERENCE_DISABLED"
+                ? "Push notifications are disabled for this account."
+                : "The push service did not accept the test. Retry later or restore this device.",
+      )
+    } catch (cause) {
+      setPushTestMessage(
+        cause instanceof ApiError && cause.status === 429
+          ? "A test was sent recently. Wait a little before trying again."
+          : "Unable to send a test notification right now.",
+      )
+    } finally {
+      setPushTestBusy(false)
+    }
+  }
+
+  const repairDevicePush = async () => {
+    if (await repairPush()) await loadPreferences()
+  }
+
   const updatePreference = <K extends keyof NotificationPreferences>(
     key: K,
     value: NotificationPreferences[K],
   ) => {
+    if (key === "pushEnabled" && value === false) cancelPendingSetup()
     preferencesEditSequence.current += 1
     setPreferences((current) => (current ? { ...current, [key]: value } : current))
     setPreferencesSaved(false)
@@ -676,47 +713,68 @@ export function NotificationsScreen({
                   type="checkbox"
                 />
               </SettingsRow>
-              {preferences.pushEnabled &&
-                savedPreferences?.pushEnabled &&
-                pushHealth.status !== "disabled" && (
-                  <div className="border-b border-slate-100 px-1 py-3 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300">
-                    {(pushHealth.status === "loading" || pushHealth.status === "checking") && (
-                      <p>Checking this browser’s push setup…</p>
-                    )}
-                    {pushHealth.status === "healthy" && (
-                      <p role="status" className="text-teal-700 dark:text-teal-300">
-                        This browser’s push subscription is synchronized.
-                      </p>
-                    )}
-                    {pushHealth.status === "attention" && (
-                      <>
-                        <p role={pushHealth.reason === "check-failed" ? "alert" : undefined}>
-                          {pushHealth.message}
-                        </p>
-                        {pushHealth.reason !== "unsupported" && (
-                          <button
-                            className="mt-2 font-bold text-teal-700 underline-offset-2 hover:underline dark:text-teal-300"
-                            onClick={() =>
-                              void (pushHealth.reason === "check-failed" ||
-                              pushHealth.reason === "permission-denied"
-                                ? refreshPushHealth(true)
-                                : restorePush())
-                            }
-                            type="button"
-                          >
-                            {pushHealth.reason === "sync-required"
-                              ? "Sync this browser"
-                              : pushHealth.reason === "check-failed"
-                                ? "Retry push check"
-                                : pushHealth.reason === "permission-denied"
-                                  ? "Check permission again"
-                                  : "Restore push notifications"}
-                          </button>
-                        )}
-                      </>
-                    )}
-                  </div>
+              <div className="border-b border-slate-100 px-1 py-3 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300">
+                <p className="font-bold">This device’s push setup</p>
+                <p className="mt-1">
+                  Permission: {pushDevice.permission}; worker: {pushDevice.worker}; subscription:{" "}
+                  {pushDevice.subscription}; server sync: {pushDevice.serverSync}.
+                </p>
+                {(pushHealth.status === "loading" || pushHealth.status === "checking") && (
+                  <p className="mt-1">Checking this browser’s push setup…</p>
                 )}
+                {pushHealth.status === "healthy" && (
+                  <p role="status" className="mt-1 text-teal-700 dark:text-teal-300">
+                    This browser’s subscription is synchronized.
+                  </p>
+                )}
+                {pushHealth.status === "attention" && pushHealth.message && (
+                  <p
+                    className="mt-1"
+                    role={pushHealth.reason === "check-failed" ? "alert" : undefined}
+                  >
+                    {pushHealth.message}
+                  </p>
+                )}
+                {(pushHealth.reason === "vapid-key-mismatch" ||
+                  (preferences.pushEnabled && savedPreferences?.pushEnabled)) && (
+                  <button
+                    className="mt-2 font-bold text-teal-700 underline-offset-2 hover:underline dark:text-teal-300"
+                    onClick={() =>
+                      void (pushHealth.reason === "vapid-key-mismatch"
+                        ? repairDevicePush()
+                        : restorePush())
+                    }
+                    type="button"
+                  >
+                    {pushHealth.reason === "vapid-key-mismatch"
+                      ? "Repair this browser subscription"
+                      : "Enable or restore this device"}
+                  </button>
+                )}
+                {preferences.pushEnabled &&
+                  savedPreferences?.pushEnabled &&
+                  pushDevice.subscription === "present" &&
+                  pushDevice.serverSync === "confirmed" && (
+                    <>
+                      <button
+                        className="ml-4 mt-2 font-bold text-teal-700 underline-offset-2 hover:underline disabled:opacity-50 dark:text-teal-300"
+                        disabled={pushTestBusy}
+                        onClick={() => void sendDeviceTest()}
+                        type="button"
+                      >
+                        {pushTestBusy ? "Sending test…" : "Send test notification to this device"}
+                      </button>
+                      <p className="mt-1">
+                        Whether it was displayed can only be verified on this device.
+                      </p>
+                    </>
+                  )}
+                {pushTestMessage && (
+                  <p className="mt-2" role="status">
+                    {pushTestMessage}
+                  </p>
+                )}
+              </div>
               <div className="grid grid-cols-1 gap-3 py-4 min-[390px]:grid-cols-2">
                 <label className="text-xs font-semibold text-slate-500">
                   Quiet hours start

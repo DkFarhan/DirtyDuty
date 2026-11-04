@@ -8,6 +8,8 @@ import com.dirtyduty.app.dto.notification.PushPublicKeyResponse;
 import com.dirtyduty.app.dto.notification.PushSubscriptionHealthRequest;
 import com.dirtyduty.app.dto.notification.PushSubscriptionHealthResponse;
 import com.dirtyduty.app.dto.notification.PushSubscriptionRequest;
+import com.dirtyduty.app.dto.notification.PushTestNotificationRequest;
+import com.dirtyduty.app.dto.notification.PushTestNotificationResponse;
 import com.dirtyduty.app.dto.notification.PushUnsubscribeRequest;
 import com.dirtyduty.app.dto.notification.UnreadCountResponse;
 import com.dirtyduty.app.notification.WebPushNotificationProvider;
@@ -109,5 +111,12 @@ public class NotificationController {
   public void unsubscribe(
       @Valid @RequestBody PushUnsubscribeRequest request, Authentication authentication) {
     pushSubscriptionService.unsubscribe(request.endpoint(), authentication);
+  }
+
+  @PostMapping("/push-subscriptions/test")
+  public PushTestNotificationResponse sendTestPush(
+      @Valid @RequestBody PushTestNotificationRequest request, Authentication authentication) {
+    return pushSubscriptionService.sendTestNotification(
+        request.endpointFingerprint(), authentication);
   }
 }

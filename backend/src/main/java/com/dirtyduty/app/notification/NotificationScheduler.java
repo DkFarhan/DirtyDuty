@@ -344,6 +344,31 @@ public class NotificationScheduler {
             """
                 .formatted(scope.predicate()),
         scope.args().toArray());
+    jdbc.update(
+        NOTIFICATION_SCOPE_CTE
+            + """
+            UPDATE notification_push_delivery_targets t
+            SET status='CANCELLED', next_attempt_at=NULL, updated_at=NOW()
+            WHERE t.status IN ('PENDING', 'FAILED')
+              AND t.notification_id IN (
+                  SELECT s.id FROM notification_scope s
+                  JOIN notifications n ON n.id=s.id
+                  LEFT JOIN chore_assignments a
+                    ON n.reference_type='CHORE_ASSIGNMENT' AND a.id=n.reference_id
+                  WHERE %s AND (n.status='CANCELLED'
+                      OR (n.reference_type='CHORE_ASSIGNMENT'
+                          AND (a.id IS NULL OR a.status NOT IN ('PENDING', 'SUBMITTED')
+                              OR (n.type IN ('CHORE_DUE_SOON', 'CHORE_DUE_NOW', 'CHORE_OVERDUE')
+                                  AND a.assigned_to_user_id IS DISTINCT FROM n.recipient_user_id
+                                  AND NOT EXISTS (
+                                      SELECT 1 FROM chore_assignment_assignees aa
+                                      WHERE aa.assignment_id=a.id
+                                        AND aa.user_id=n.recipient_user_id
+                                  )))))
+              )
+            """
+                .formatted(scope.predicate()),
+        scope.args().toArray());
   }
 
   private void dispatchDueNotifications(List<UUID> householdIds, List<UUID> userIds) {
@@ -429,6 +454,21 @@ public class NotificationScheduler {
                 WHERE status='PENDING' AND expires_at IS NOT NULL AND expires_at<=NOW()
                   AND id IN (
                       SELECT s.id FROM notification_scope s WHERE %s
+                  )
+                """
+                .formatted(scope.predicate()),
+        scope.args().toArray());
+    jdbc.update(
+        NOTIFICATION_SCOPE_CTE
+            + """
+                UPDATE notification_push_delivery_targets t
+                SET status='CANCELLED', next_attempt_at=NULL, updated_at=NOW()
+                WHERE t.status IN ('PENDING', 'FAILED')
+                  AND t.notification_id IN (
+                      SELECT s.id FROM notification_scope s
+                      JOIN notifications n ON n.id=s.id
+                      WHERE n.expires_at IS NOT NULL AND n.expires_at<=NOW()
+                        AND %s
                   )
                 """
                 .formatted(scope.predicate()),
@@ -576,6 +616,13 @@ public class NotificationScheduler {
     jdbc.update(
         """
                 UPDATE notification_deliveries SET status='CANCELLED'
+                WHERE notification_id=? AND status IN ('PENDING', 'FAILED')
+                """,
+        notificationId);
+    jdbc.update(
+        """
+                UPDATE notification_push_delivery_targets
+                SET status='CANCELLED', next_attempt_at=NULL, updated_at=NOW()
                 WHERE notification_id=? AND status IN ('PENDING', 'FAILED')
                 """,
         notificationId);

@@ -21,6 +21,13 @@ const mocks = vi.hoisted(() => ({
   subscribe: vi.fn(),
   inspect: vi.fn(),
   create: vi.fn(),
+  requestPermission: vi.fn(),
+  prepareWorker: vi.fn(),
+  inspectDevice: vi.fn(),
+  repair: vi.fn(),
+  remove: vi.fn(),
+  fingerprint: vi.fn(),
+  VapidKeyMismatchError: class extends Error {},
 }))
 
 vi.mock("@/lib/auth/auth-context", () => ({
@@ -33,12 +40,20 @@ vi.mock("./api", () => ({
     confirmPushSubscription: mocks.confirm,
     pushPublicKey: mocks.publicKey,
     subscribePush: mocks.subscribe,
+    testPushNotification: vi.fn(),
   },
 }))
 
 vi.mock("./push", () => ({
+  browserPushEndpointFingerprint: mocks.fingerprint,
   inspectBrowserPushSubscription: mocks.inspect,
+  inspectBrowserPushDevice: mocks.inspectDevice,
   createBrowserPushSubscription: mocks.create,
+  requestBrowserNotificationPermission: mocks.requestPermission,
+  prepareBrowserPushWorker: mocks.prepareWorker,
+  repairBrowserPushSubscription: mocks.repair,
+  removeBrowserPushSubscription: mocks.remove,
+  PushVapidKeyMismatchError: mocks.VapidKeyMismatchError,
 }))
 
 const subscription = {
@@ -93,7 +108,26 @@ describe("push subscription health", () => {
     mocks.publicKey.mockReset().mockResolvedValue({ available: true, publicKey: "vapid" })
     mocks.subscribe.mockReset().mockResolvedValue(undefined)
     mocks.inspect.mockReset().mockResolvedValue({ status: "subscribed", subscription })
+    mocks.inspectDevice.mockReset().mockResolvedValue({
+      permission: "granted",
+      worker: "ready",
+      subscription: "present",
+    })
     mocks.create.mockReset().mockResolvedValue(subscription)
+    mocks.requestPermission.mockReset().mockResolvedValue("granted")
+    mocks.prepareWorker.mockReset().mockResolvedValue(undefined)
+    mocks.repair.mockReset().mockResolvedValue(subscription)
+    mocks.remove.mockReset().mockResolvedValue(null)
+    mocks.fingerprint
+      .mockReset()
+      .mockImplementation(async (endpoint: string) =>
+        Array.from(
+          new Uint8Array(
+            await webcrypto.subtle.digest("SHA-256", new TextEncoder().encode(endpoint)),
+          ),
+          (byte) => byte.toString(16).padStart(2, "0"),
+        ).join(""),
+      )
   })
 
   afterEach(() => {
@@ -226,11 +260,12 @@ describe("push subscription health", () => {
     })
   })
 
-  it("does not inspect or request permission when the saved preference is disabled", async () => {
+  it("reports local device state when the saved account preference is disabled", async () => {
     mocks.preferences.mockResolvedValue({ pushEnabled: false })
     renderHealth()
 
     await waitFor(() => expect(screen.getByTestId("push-status").textContent).toBe("disabled"))
+    await waitFor(() => expect(mocks.inspectDevice).toHaveBeenCalledOnce())
     expect(mocks.inspect).not.toHaveBeenCalled()
     expect(mocks.confirm).not.toHaveBeenCalled()
     expect(mocks.create).not.toHaveBeenCalled()
@@ -246,11 +281,40 @@ describe("push subscription health", () => {
       window.dispatchEvent(new Event("online"))
       window.dispatchEvent(new Event("pageshow"))
     })
-    fireEvent.click(screen.getByRole("button", { name: "Restore" }))
-
     expect(mocks.inspect).toHaveBeenCalledOnce()
     expect(mocks.create).not.toHaveBeenCalled()
     expect(mocks.subscribe).not.toHaveBeenCalled()
+  })
+
+  it("continues an explicit setup after a delayed permission grant", async () => {
+    let permission: NotificationPermission = "default"
+    vi.stubGlobal(
+      "Notification",
+      class {
+        static get permission() {
+          return permission
+        }
+      },
+    )
+    mocks.requestPermission.mockImplementation(async () => permission)
+    mocks.inspect.mockResolvedValue({ status: "missing", subscription: null })
+    renderHealth()
+    await waitFor(() =>
+      expect(screen.getByTestId("push-reason").textContent).toBe("missing-subscription"),
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Restore" }))
+    await waitFor(() =>
+      expect(screen.getByTestId("push-reason").textContent).toBe("permission-required"),
+    )
+    expect(mocks.create).not.toHaveBeenCalled()
+
+    permission = "granted"
+    await act(async () => window.dispatchEvent(new Event("pageshow")))
+
+    await waitFor(() => expect(screen.getByTestId("push-status").textContent).toBe("healthy"))
+    expect(mocks.create).toHaveBeenCalledWith("vapid")
+    expect(mocks.subscribe).toHaveBeenCalledOnce()
   })
 
   it.each([
@@ -281,7 +345,7 @@ describe("push subscription health", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("push-reason").textContent).toBe("check-failed")
-      expect(screen.getByTestId("push-message").textContent).toContain("Unable to check")
+      expect(screen.getByTestId("push-message").textContent).toContain("network unavailable")
     })
     expect(mocks.create).not.toHaveBeenCalled()
   })
