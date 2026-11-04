@@ -10,6 +10,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -19,6 +20,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.dirtyduty.app.dto.auth.CsrfResponse;
 import com.dirtyduty.app.dto.auth.RegisterRequest;
+import com.dirtyduty.app.dto.household.DeleteHouseholdRequest;
 import com.dirtyduty.app.entity.HouseholdMembership;
 import com.dirtyduty.app.entity.User;
 import com.dirtyduty.app.entity.enums.HouseholdRole;
@@ -33,6 +35,9 @@ import com.dirtyduty.app.notification.WebPushNotificationProvider;
 import com.dirtyduty.app.repository.HouseholdMembershipRepository;
 import com.dirtyduty.app.repository.UserRepository;
 import com.dirtyduty.app.service.AuthService;
+import com.dirtyduty.app.service.HouseholdService;
+import com.dirtyduty.app.service.MembershipExitCleanupService;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.Cookie;
 import java.nio.charset.StandardCharsets;
@@ -49,6 +54,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -57,10 +63,13 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -74,9 +83,15 @@ class HouseholdControllerIntegrationTest {
 
   @Autowired private AuthService authService;
 
+  @Autowired private HouseholdService householdService;
+
   @Autowired private UserRepository userRepository;
 
   @Autowired private JdbcTemplate jdbcTemplate;
+
+  @Autowired private MembershipExitCleanupService membershipExitCleanupService;
+
+  @Autowired private PlatformTransactionManager transactionManager;
 
   @Autowired private NotificationCooldownService notificationCooldownService;
 
@@ -1419,6 +1434,149 @@ class HouseholdControllerIntegrationTest {
   }
 
   @Test
+  void choreCreationHidesNonexistentAndInaccessibleHouseholds() throws Exception {
+    WebSession caller = login("missinghouse");
+    WebSession otherOwner = login("hiddenhome");
+    UUID inaccessibleHouseholdId = createHousehold(otherOwner, "Hidden Home", "UTC");
+    UUID nonexistentHouseholdId = UUID.randomUUID();
+
+    for (UUID householdId : List.of(nonexistentHouseholdId, inaccessibleHouseholdId)) {
+      String path = "/api/households/" + householdId + "/chores";
+      mockMvc
+          .perform(
+              post(path)
+                  .cookie(caller.cookie())
+                  .header(caller.csrfHeader(), caller.csrfToken())
+                  .contentType(APPLICATION_JSON)
+                  .content("{\"title\":\"Must not be created\"}"))
+          .andExpect(status().isForbidden())
+          .andExpect(jsonPath("$.status").value(403))
+          .andExpect(jsonPath("$.error").value("Forbidden"))
+          .andExpect(jsonPath("$.message").value("You are not authorized to manage chores."))
+          .andExpect(jsonPath("$.path").value(path))
+          .andExpect(jsonPath("$.timestamp").isNotEmpty());
+    }
+
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM chores WHERE title = ?",
+                Integer.class,
+                "Must not be created"))
+        .isZero();
+  }
+
+  @Test
+  void memberRemovalHidesNonexistentAndInaccessibleHouseholds() throws Exception {
+    WebSession caller = login("memberremove");
+    WebSession otherOwner = login("hiddenmember");
+    UUID inaccessibleHouseholdId = createHousehold(otherOwner, "Hidden Member Home", "UTC");
+    UUID nonexistentHouseholdId = UUID.randomUUID();
+
+    for (UUID householdId : List.of(nonexistentHouseholdId, inaccessibleHouseholdId)) {
+      String path = "/api/households/" + householdId + "/members/" + otherOwner.userId();
+      mockMvc
+          .perform(
+              delete(path).cookie(caller.cookie()).header(caller.csrfHeader(), caller.csrfToken()))
+          .andExpect(status().isForbidden())
+          .andExpect(jsonPath("$.status").value(403))
+          .andExpect(jsonPath("$.error").value("Forbidden"))
+          .andExpect(jsonPath("$.message").value("You are not an active member of this household."))
+          .andExpect(jsonPath("$.path").value(path))
+          .andExpect(jsonPath("$.timestamp").isNotEmpty());
+    }
+
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM household_memberships WHERE household_id = ?",
+                Integer.class,
+                inaccessibleHouseholdId))
+        .isEqualTo(1);
+  }
+
+  @Test
+  void choreCreationWaitingForDeletedHouseholdReturnsForbiddenWithoutWriting() throws Exception {
+    WebSession owner = login("deletewhilewaiting");
+    UUID householdId = createHousehold(owner, "Delete While Waiting", "UTC");
+    String path = "/api/households/" + householdId + "/chores";
+    MvcResult response =
+        requestWhileHouseholdDeletionCommits(
+            owner,
+            householdId,
+            "Delete While Waiting",
+            () ->
+                mockMvc
+                    .perform(
+                        post(path)
+                            .cookie(owner.cookie())
+                            .header(owner.csrfHeader(), owner.csrfToken())
+                            .contentType(APPLICATION_JSON)
+                            .content("{\"title\":\"Must not survive deletion\"}"))
+                    .andReturn());
+    assertHouseholdForbiddenResponse(response, path);
+    assertThat(
+            objectMapper
+                .readTree(response.getResponse().getContentAsString())
+                .path("message")
+                .asText())
+        .isEqualTo("You are not authorized to manage chores.");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM households WHERE id = ?", Integer.class, householdId))
+        .isZero();
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM chores WHERE title = ?",
+                Integer.class,
+                "Must not survive deletion"))
+        .isZero();
+  }
+
+  @Test
+  void memberRemovalWaitingForDeletedHouseholdReturnsForbidden() throws Exception {
+    WebSession owner = login("removedelete");
+    WebSession target = login("removedeletetarget");
+    UUID householdId = createHousehold(owner, "Remove During Delete", "UTC");
+    String path = "/api/households/" + householdId + "/members/" + target.userId();
+    MvcResult response =
+        requestWhileHouseholdDeletionCommits(
+            owner,
+            householdId,
+            "Remove During Delete",
+            () ->
+                mockMvc
+                    .perform(
+                        delete(path)
+                            .cookie(owner.cookie())
+                            .header(owner.csrfHeader(), owner.csrfToken()))
+                    .andReturn());
+
+    assertHouseholdForbiddenResponse(response, path);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM households WHERE id = ?", Integer.class, householdId))
+        .isZero();
+  }
+
+  @Test
+  void dashboardGenerationWaitingForDeletedHouseholdReturnsForbidden() throws Exception {
+    WebSession owner = login("dashboarddelete");
+    UUID householdId = createHousehold(owner, "Dashboard Delete", "UTC");
+    String path = "/api/households/" + householdId + "/dashboard";
+    MvcResult response =
+        requestWhileHouseholdDeletionCommits(
+            owner,
+            householdId,
+            "Dashboard Delete",
+            () -> mockMvc.perform(get(path).cookie(owner.cookie())).andReturn());
+
+    assertHouseholdForbiddenResponse(response, path);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM households WHERE id = ?", Integer.class, householdId))
+        .isZero();
+  }
+
+  @Test
   void choreManagementAllowsAdminsAndPersistsRotateAndRandomParticipants() throws Exception {
     WebSession owner = login("strategyowner");
     UUID householdId = createHousehold(owner, "Strategy Home", "UTC");
@@ -2505,6 +2663,196 @@ class HouseholdControllerIntegrationTest {
   }
 
   @Test
+  void householdOwnerCanLeaveAfterTransferringOwnershipToAnActiveMember() throws Exception {
+    WebSession owner = login("owner-leave");
+    WebSession successor = login("owner-leave-successor");
+    UUID householdId = createHousehold(owner, "Owner Leave Home", "UTC");
+    join(successor, createInvitation(owner, householdId)).andExpect(status().isOk());
+    UUID fixedChoreId = UUID.randomUUID();
+    jdbcTemplate.update(
+        """
+        INSERT INTO chores
+            (id, household_id, title, default_priority, difficulty, created_by_user_id)
+        VALUES (?, ?, 'Fixed household chore', 'NORMAL', 1, ?)
+        """,
+        fixedChoreId,
+        householdId,
+        UUID.fromString(owner.userId()));
+    jdbcTemplate.update(
+        """
+        INSERT INTO chore_schedules
+            (household_id, chore_id, recurrence_rule, timezone, starts_on,
+             assignment_strategy, fixed_assignee_user_id, strategy_config)
+        VALUES (?, ?, 'FREQ=DAILY', 'UTC', CURRENT_DATE, 'FIXED', ?, ?::jsonb)
+        """,
+        householdId,
+        fixedChoreId,
+        UUID.fromString(owner.userId()),
+        "{\"participantUserIds\":[\"" + owner.userId() + "\"],\"peopleNeeded\":1}");
+
+    mockMvc
+        .perform(
+            post("/api/households/" + householdId + "/leave")
+                .cookie(owner.cookie())
+                .header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content("{\"newOwnerUserId\":\"" + successor.userId() + "\"}"))
+        .andExpect(status().isNoContent());
+
+    assertThat(
+            jdbcTemplate.queryForObject(
+                """
+                SELECT role FROM household_memberships
+                WHERE household_id=? AND user_id=?
+                """,
+                String.class,
+                householdId,
+                UUID.fromString(owner.userId())))
+        .isEqualTo("MEMBER");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                """
+                SELECT status FROM household_memberships
+                WHERE household_id=? AND user_id=?
+                """,
+                String.class,
+                householdId,
+                UUID.fromString(owner.userId())))
+        .isEqualTo("LEFT");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                """
+                SELECT role FROM household_memberships
+                WHERE household_id=? AND user_id=?
+                """,
+                String.class,
+                householdId,
+                UUID.fromString(successor.userId())))
+        .isEqualTo("OWNER");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                """
+                SELECT assignment_strategy FROM chore_schedules WHERE chore_id=?
+                """,
+                String.class,
+                fixedChoreId))
+        .isEqualTo("FIXED");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT fixed_assignee_user_id FROM chore_schedules WHERE chore_id=?",
+                UUID.class,
+                fixedChoreId))
+        .isNull();
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT is_active FROM chore_schedules WHERE chore_id=?",
+                Boolean.class,
+                fixedChoreId))
+        .isFalse();
+    mockMvc
+        .perform(
+            post("/api/households/" + householdId + "/chores/" + fixedChoreId + "/activate")
+                .cookie(successor.cookie())
+                .header(successor.csrfHeader(), successor.csrfToken()))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void householdNotificationDeletionPreservesOtherHouseholdAndAccountNotices() throws Exception {
+    WebSession owner = login("delete-scope");
+    UUID householdId = createHousehold(owner, "Delete Scope Home", "UTC");
+    UUID otherHouseholdId = createHousehold(owner, "Other Delete Scope Home", "UTC");
+    String householdKey = "delete-scope-household-" + UUID.randomUUID();
+    String otherHouseholdKey = "delete-scope-other-" + UUID.randomUUID();
+    String accountKey = "delete-scope-account-" + UUID.randomUUID();
+    UUID ownerId = UUID.fromString(owner.userId());
+
+    jdbcTemplate.update(
+        """
+        INSERT INTO notifications
+            (recipient_user_id, type, category, title, message, status, scheduled_at,
+             deduplication_key, reference_type, reference_id)
+        VALUES (?, 'CHORE_DUE_SOON', 'CHORE_REMINDER', 'Household notice', 'Reminder',
+                'PENDING', NOW() + INTERVAL '1 day', ?, 'HOUSEHOLD', ?)
+        """,
+        ownerId,
+        householdKey,
+        householdId);
+    jdbcTemplate.update(
+        """
+        INSERT INTO notifications
+            (recipient_user_id, type, category, title, message, status, scheduled_at,
+             deduplication_key, reference_type, reference_id)
+        VALUES (?, 'CHORE_DUE_SOON', 'CHORE_REMINDER', 'Other notice', 'Reminder',
+                'PENDING', NOW() + INTERVAL '1 day', ?, 'HOUSEHOLD', ?)
+        """,
+        ownerId,
+        otherHouseholdKey,
+        otherHouseholdId);
+    jdbcTemplate.update(
+        """
+        INSERT INTO notifications
+            (recipient_user_id, type, category, title, message, status, scheduled_at,
+             deduplication_key)
+        VALUES (?, 'CHORE_DUE_SOON', 'CHORE_REMINDER', 'Account notice', 'Reminder',
+                'PENDING', NOW() + INTERVAL '1 day', ?)
+        """,
+        ownerId,
+        accountKey);
+
+    UUID householdNotificationId =
+        jdbcTemplate.queryForObject(
+            "SELECT id FROM notifications WHERE deduplication_key=?", UUID.class, householdKey);
+    UUID otherNotificationId =
+        jdbcTemplate.queryForObject(
+            "SELECT id FROM notifications WHERE deduplication_key=?",
+            UUID.class,
+            otherHouseholdKey);
+    jdbcTemplate.update(
+        """
+        INSERT INTO notification_deliveries (notification_id, channel, status)
+        VALUES (?, 'IN_APP', 'PENDING'), (?, 'IN_APP', 'PENDING')
+        """,
+        householdNotificationId,
+        otherNotificationId);
+
+    new TransactionTemplate(transactionManager)
+        .executeWithoutResult(
+            status -> membershipExitCleanupService.deleteHouseholdNotifications(householdId));
+
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM notifications WHERE deduplication_key=?",
+                Integer.class,
+                householdKey))
+        .isZero();
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM notification_deliveries WHERE notification_id=?",
+                Integer.class,
+                householdNotificationId))
+        .isZero();
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT status FROM notifications WHERE deduplication_key=?",
+                String.class,
+                otherHouseholdKey))
+        .isEqualTo("PENDING");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM notification_deliveries WHERE notification_id=?",
+                Integer.class,
+                otherNotificationId))
+        .isEqualTo(1);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT status FROM notifications WHERE deduplication_key=?",
+                String.class,
+                accountKey))
+        .isEqualTo("PENDING");
+  }
+
+  @Test
   void removedMembershipRejoinsOnlyWithNewValidInviteAndKeepsHistoryAndScheduleChanges()
       throws Exception {
     WebSession owner = login("removed-owner");
@@ -2512,6 +2860,8 @@ class HouseholdControllerIntegrationTest {
     WebSession inviteConsumer = login("removed-invite-consumer");
     UUID householdId = createHousehold(owner, "Removed Home", "UTC");
     join(removedUser, createInvitation(owner, householdId)).andExpect(status().isOk());
+    UUID otherHouseholdId = createHousehold(owner, "Other Home", "UTC");
+    join(removedUser, createInvitation(owner, otherHouseholdId)).andExpect(status().isOk());
     jdbcTemplate.update(
         "UPDATE household_memberships SET role = 'ADMIN' WHERE household_id = ? AND user_id = ?",
         householdId,
@@ -2561,15 +2911,228 @@ class HouseholdControllerIntegrationTest {
         historicalAssignmentId,
         UUID.fromString(removedUser.userId()));
     String futureNotificationKey = "removed-member-future-" + UUID.randomUUID();
+    String otherHouseholdNotificationKey = "other-household-" + UUID.randomUUID();
+    String unattributableNotificationKey = "unattributable-" + UUID.randomUUID();
+    String sentHistoryKey = "sent-household-history-" + UUID.randomUUID();
+    UUID sharedPrimaryAssignmentId = UUID.randomUUID();
+    UUID sharedNonPrimaryAssignmentId = UUID.randomUUID();
+    UUID lastAssigneeAssignmentId = UUID.randomUUID();
+    UUID legacyPrimaryAssignmentId = UUID.randomUUID();
+    UUID currentDateAssignmentId = UUID.randomUUID();
+    UUID submittedAssignmentId = UUID.randomUUID();
+    UUID overduePendingAssignmentId = UUID.randomUUID();
+    String insertPendingAssignmentSql =
+        """
+        INSERT INTO chore_assignments
+            (id, household_id, chore_id, assigned_to_user_id, scheduled_for, due_at, status,
+             title_snapshot, priority_snapshot, difficulty_snapshot, estimated_minutes_snapshot)
+        SELECT ?, c.household_id, c.id, ?, CURRENT_DATE + ?, TIMESTAMPTZ '2030-01-01 12:00:00+00',
+               'PENDING', 'Shared exit assignment', 'NORMAL', 1, 25
+        FROM chores c WHERE c.household_id=? ORDER BY c.created_at LIMIT 1
+        """;
+    jdbcTemplate.update(
+        insertPendingAssignmentSql,
+        sharedPrimaryAssignmentId,
+        UUID.fromString(removedUser.userId()),
+        1,
+        householdId);
+    jdbcTemplate.update(
+        insertPendingAssignmentSql,
+        sharedNonPrimaryAssignmentId,
+        UUID.fromString(owner.userId()),
+        2,
+        householdId);
+    jdbcTemplate.update(
+        insertPendingAssignmentSql,
+        lastAssigneeAssignmentId,
+        UUID.fromString(removedUser.userId()),
+        3,
+        householdId);
+    jdbcTemplate.update(
+        insertPendingAssignmentSql,
+        legacyPrimaryAssignmentId,
+        UUID.fromString(removedUser.userId()),
+        4,
+        householdId);
+    jdbcTemplate.update(
+        insertPendingAssignmentSql,
+        currentDateAssignmentId,
+        UUID.fromString(removedUser.userId()),
+        0,
+        householdId);
+    jdbcTemplate.update(
+        """
+        INSERT INTO chore_assignments
+            (id, household_id, chore_id, assigned_to_user_id, scheduled_for, due_at, status,
+             title_snapshot, priority_snapshot, difficulty_snapshot, estimated_minutes_snapshot)
+        SELECT ?, c.household_id, c.id, ?, CURRENT_DATE, TIMESTAMPTZ '2030-01-01 12:00:00+00',
+               'SUBMITTED', 'Submitted exit assignment', 'NORMAL', 1, 25
+        FROM chores c WHERE c.household_id=? ORDER BY c.created_at LIMIT 1
+        """,
+        submittedAssignmentId,
+        UUID.fromString(removedUser.userId()),
+        householdId);
+    jdbcTemplate.update(
+        """
+        INSERT INTO chore_assignments
+            (id, household_id, chore_id, assigned_to_user_id, scheduled_for, due_at, status,
+             title_snapshot, priority_snapshot, difficulty_snapshot, estimated_minutes_snapshot)
+        SELECT ?, c.household_id, c.id, ?, CURRENT_DATE - 1, NOW() - INTERVAL '1 day',
+               'PENDING', 'Overdue exit assignment', 'NORMAL', 1, 25
+        FROM chores c WHERE c.household_id=? ORDER BY c.created_at LIMIT 1
+        """,
+        overduePendingAssignmentId,
+        UUID.fromString(removedUser.userId()),
+        householdId);
+    jdbcTemplate.update(
+        """
+        INSERT INTO chore_assignment_assignees (household_id, assignment_id, user_id)
+        VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?)
+        """,
+        householdId,
+        currentDateAssignmentId,
+        UUID.fromString(removedUser.userId()),
+        householdId,
+        submittedAssignmentId,
+        UUID.fromString(removedUser.userId()),
+        householdId,
+        overduePendingAssignmentId,
+        UUID.fromString(removedUser.userId()));
+    jdbcTemplate.update(
+        """
+        INSERT INTO chore_assignment_assignees (household_id, assignment_id, user_id)
+        VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?)
+        """,
+        householdId,
+        sharedPrimaryAssignmentId,
+        UUID.fromString(owner.userId()),
+        householdId,
+        sharedPrimaryAssignmentId,
+        UUID.fromString(removedUser.userId()),
+        householdId,
+        sharedNonPrimaryAssignmentId,
+        UUID.fromString(owner.userId()),
+        householdId,
+        sharedNonPrimaryAssignmentId,
+        UUID.fromString(removedUser.userId()),
+        householdId,
+        lastAssigneeAssignmentId,
+        UUID.fromString(removedUser.userId()));
+    UUID notificationEventId =
+        jdbcTemplate.queryForObject(
+            """
+                    INSERT INTO notification_events
+                        (event_type, actor_user_id, household_id, reference_type, reference_id,
+                         title, message, category)
+                    VALUES ('CHORE_REMINDER', ?, ?, 'HOUSEHOLD', ?, 'Chore reminder', 'Upcoming chore',
+                            'CHORE_REMINDER')
+                    RETURNING id
+                    """,
+            UUID.class,
+            UUID.fromString(owner.userId()),
+            householdId,
+            householdId);
+    UUID otherHouseholdEventId =
+        jdbcTemplate.queryForObject(
+            """
+                    INSERT INTO notification_events
+                        (event_type, actor_user_id, household_id, reference_type, reference_id,
+                         title, message, category)
+                    VALUES ('CHORE_REMINDER', ?, ?, 'HOUSEHOLD', ?, 'Chore reminder', 'Upcoming chore',
+                            'CHORE_REMINDER')
+                    RETURNING id
+                    """,
+            UUID.class,
+            UUID.fromString(owner.userId()),
+            otherHouseholdId,
+            otherHouseholdId);
     jdbcTemplate.update(
         """
                 INSERT INTO notifications
-                    (recipient_user_id, type, category, title, message, status, scheduled_at, deduplication_key)
-                VALUES (?, 'CHORE_DUE_SOON', 'CHORE_REMINDER', 'Upcoming chore', 'Reminder',
+                    (recipient_user_id, event_id, type, category, title, message, status, scheduled_at,
+                     deduplication_key)
+                VALUES (?, ?, 'CHORE_DUE_SOON', 'CHORE_REMINDER', 'Upcoming chore', 'Reminder',
                         'PENDING', NOW() + INTERVAL '1 day', ?)
                 """,
         UUID.fromString(removedUser.userId()),
+        notificationEventId,
         futureNotificationKey);
+    jdbcTemplate.update(
+        """
+                INSERT INTO notifications
+                    (recipient_user_id, event_id, type, category, title, message, status, scheduled_at,
+                     deduplication_key)
+                VALUES (?, ?, 'CHORE_DUE_SOON', 'CHORE_REMINDER', 'Other household', 'Reminder',
+                        'PENDING', NOW() + INTERVAL '1 day', ?)
+                """,
+        UUID.fromString(removedUser.userId()),
+        otherHouseholdEventId,
+        otherHouseholdNotificationKey);
+    jdbcTemplate.update(
+        """
+                INSERT INTO notifications
+                    (recipient_user_id, type, category, title, message, status, scheduled_at,
+                     deduplication_key)
+                VALUES (?, 'CHORE_DUE_SOON', 'CHORE_REMINDER', 'Account notice', 'Reminder',
+                        'PENDING', NOW() + INTERVAL '1 day', ?)
+                """,
+        UUID.fromString(removedUser.userId()),
+        unattributableNotificationKey);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT event_id FROM notifications WHERE deduplication_key = ?",
+                UUID.class,
+                unattributableNotificationKey))
+        .isNull();
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT reference_type FROM notifications WHERE deduplication_key = ?",
+                String.class,
+                unattributableNotificationKey))
+        .isNull();
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT reference_id FROM notifications WHERE deduplication_key = ?",
+                UUID.class,
+                unattributableNotificationKey))
+        .isNull();
+    jdbcTemplate.update(
+        """
+                INSERT INTO notifications
+                    (recipient_user_id, event_id, type, category, title, message, status, scheduled_at,
+                     sent_at, read_at, deduplication_key)
+                VALUES (?, ?, 'CHORE_DUE_SOON', 'CHORE_REMINDER', 'Sent history', 'Reminder',
+                        'SENT', NOW() - INTERVAL '1 hour', NOW() - INTERVAL '1 hour',
+                        NOW() - INTERVAL '30 minutes', ?)
+                """,
+        UUID.fromString(removedUser.userId()),
+        notificationEventId,
+        sentHistoryKey);
+    jdbcTemplate.update(
+        """
+                INSERT INTO notification_deliveries (notification_id, channel, status)
+                SELECT id, 'WEB_PUSH', 'PENDING' FROM notifications WHERE deduplication_key=?
+                """,
+        futureNotificationKey);
+    jdbcTemplate.update(
+        """
+                INSERT INTO notification_deliveries (notification_id, channel, status)
+                SELECT id, 'WEB_PUSH', 'PENDING' FROM notifications
+                WHERE deduplication_key=?
+                """,
+        otherHouseholdNotificationKey);
+    jdbcTemplate.update(
+        """
+                INSERT INTO notification_deliveries (notification_id, channel, status, sent_at)
+                SELECT id, 'IN_APP', 'SENT', sent_at FROM notifications WHERE deduplication_key=?
+                """,
+        sentHistoryKey);
+    jdbcTemplate.update(
+        """
+                INSERT INTO notification_deliveries (notification_id, channel, status)
+                SELECT id, 'WEB_PUSH', 'FAILED' FROM notifications WHERE deduplication_key=?
+                """,
+        sentHistoryKey);
 
     mockMvc
         .perform(
@@ -2581,13 +3144,125 @@ class HouseholdControllerIntegrationTest {
     mockMvc
         .perform(get("/api/households").cookie(removedUser.cookie()))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.length()").value(0));
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].id").value(otherHouseholdId.toString()));
     assertThat(
             jdbcTemplate.queryForObject(
                 "SELECT status FROM notifications WHERE deduplication_key = ?",
                 String.class,
                 futureNotificationKey))
         .isEqualTo("CANCELLED");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT d.status FROM notification_deliveries d JOIN notifications n "
+                    + "ON n.id=d.notification_id WHERE n.deduplication_key=? AND d.channel='WEB_PUSH'",
+                String.class,
+                futureNotificationKey))
+        .isEqualTo("CANCELLED");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT status FROM notifications WHERE deduplication_key = ?",
+                String.class,
+                otherHouseholdNotificationKey))
+        .isEqualTo("PENDING");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT d.status FROM notification_deliveries d JOIN notifications n "
+                    + "ON n.id=d.notification_id WHERE n.deduplication_key=? AND d.channel='WEB_PUSH'",
+                String.class,
+                otherHouseholdNotificationKey))
+        .isEqualTo("PENDING");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT status FROM notifications WHERE deduplication_key = ?",
+                String.class,
+                unattributableNotificationKey))
+        .isEqualTo("PENDING");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT status FROM notifications WHERE deduplication_key = ?",
+                String.class,
+                sentHistoryKey))
+        .isEqualTo("SENT");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT read_at FROM notifications WHERE deduplication_key = ?",
+                OffsetDateTime.class,
+                sentHistoryKey))
+        .isNotNull();
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT d.status FROM notification_deliveries d JOIN notifications n "
+                    + "ON n.id=d.notification_id WHERE n.deduplication_key=? AND d.channel='WEB_PUSH'",
+                String.class,
+                sentHistoryKey))
+        .isEqualTo("CANCELLED");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT status FROM chore_assignments WHERE id=?",
+                String.class,
+                sharedPrimaryAssignmentId))
+        .isEqualTo("PENDING");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT assigned_to_user_id FROM chore_assignments WHERE id=?",
+                UUID.class,
+                sharedPrimaryAssignmentId))
+        .isEqualTo(UUID.fromString(owner.userId()));
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT due_at FROM chore_assignments WHERE id=?",
+                OffsetDateTime.class,
+                sharedPrimaryAssignmentId))
+        .isEqualTo(OffsetDateTime.parse("2030-01-01T12:00:00Z"));
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT title_snapshot FROM chore_assignments WHERE id=?",
+                String.class,
+                sharedPrimaryAssignmentId))
+        .isEqualTo("Shared exit assignment");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT user_id FROM chore_assignment_assignees WHERE assignment_id=?",
+                UUID.class,
+                sharedPrimaryAssignmentId))
+        .isEqualTo(UUID.fromString(owner.userId()));
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT status FROM chore_assignments WHERE id=?",
+                String.class,
+                sharedNonPrimaryAssignmentId))
+        .isEqualTo("PENDING");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT assigned_to_user_id FROM chore_assignments WHERE id=?",
+                UUID.class,
+                sharedNonPrimaryAssignmentId))
+        .isEqualTo(UUID.fromString(owner.userId()));
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT status FROM chore_assignments WHERE id=?",
+                String.class,
+                lastAssigneeAssignmentId))
+        .isEqualTo("CANCELLED");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT assigned_to_user_id FROM chore_assignments WHERE id=?",
+                UUID.class,
+                lastAssigneeAssignmentId))
+        .isNull();
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT status FROM chore_assignments WHERE id=?",
+                String.class,
+                legacyPrimaryAssignmentId))
+        .isEqualTo("CANCELLED");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT assigned_to_user_id FROM chore_assignments WHERE id=?",
+                UUID.class,
+                legacyPrimaryAssignmentId))
+        .isNull();
     java.sql.Timestamp removedAt =
         jdbcTemplate.queryForObject(
             "SELECT left_at FROM household_memberships WHERE household_id = ? AND user_id = ?",
@@ -2613,6 +3288,50 @@ class HouseholdControllerIntegrationTest {
                 String.class,
                 historicalAssignmentId))
         .isEqualTo("COMPLETED");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT status FROM chore_assignments WHERE id=?",
+                String.class,
+                currentDateAssignmentId))
+        .isEqualTo("CANCELLED");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT status FROM chore_assignments WHERE id=?",
+                String.class,
+                submittedAssignmentId))
+        .isEqualTo("SUBMITTED");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT assigned_to_user_id FROM chore_assignments WHERE id=?",
+                UUID.class,
+                submittedAssignmentId))
+        .isEqualTo(UUID.fromString(removedUser.userId()));
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM chore_assignment_assignees WHERE assignment_id=? AND user_id=?",
+                Integer.class,
+                submittedAssignmentId,
+                UUID.fromString(removedUser.userId())))
+        .isEqualTo(1);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT status FROM chore_assignments WHERE id=?",
+                String.class,
+                overduePendingAssignmentId))
+        .isEqualTo("PENDING");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT assigned_to_user_id FROM chore_assignments WHERE id=?",
+                UUID.class,
+                overduePendingAssignmentId))
+        .isEqualTo(UUID.fromString(removedUser.userId()));
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM chore_assignment_assignees WHERE assignment_id=? AND user_id=?",
+                Integer.class,
+                overduePendingAssignmentId,
+                UUID.fromString(removedUser.userId())))
+        .isEqualTo(1);
 
     // Exercise legacy rows that still retain an elevated role after removal.
     jdbcTemplate.update(
@@ -3061,6 +3780,102 @@ class HouseholdControllerIntegrationTest {
     return "{\"name\":\"Valid Home\",\"timezone\":\"UTC\"}";
   }
 
+  private void await(CountDownLatch latch, String description) {
+    try {
+      if (!latch.await(10, TimeUnit.SECONDS)) {
+        throw new IllegalStateException("Timed out waiting for " + description + ".");
+      }
+    } catch (InterruptedException exception) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException(
+          "Interrupted while waiting for " + description + ".", exception);
+    }
+  }
+
+  private boolean awaitAnyBackendBlockedBy(int blockerPid) throws InterruptedException {
+    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+    while (System.nanoTime() < deadline) {
+      Boolean blocked =
+          jdbcTemplate.queryForObject(
+              """
+              SELECT EXISTS (
+                  SELECT 1
+                  FROM pg_stat_activity
+                  WHERE ? = ANY(pg_blocking_pids(pid))
+              )
+              """,
+              Boolean.class,
+              blockerPid);
+      if (Boolean.TRUE.equals(blocked)) {
+        return true;
+      }
+      Thread.sleep(25);
+    }
+    return false;
+  }
+
+  private MvcResult requestWhileHouseholdDeletionCommits(
+      WebSession owner, UUID householdId, String householdName, HouseholdHttpRequest request)
+      throws Exception {
+    CountDownLatch householdLocked = new CountDownLatch(1);
+    CountDownLatch releaseDelete = new CountDownLatch(1);
+    AtomicInteger blockerPid = new AtomicInteger();
+    CompletableFuture<Void> deletion =
+        CompletableFuture.runAsync(
+            () ->
+                new TransactionTemplate(transactionManager)
+                    .executeWithoutResult(
+                        status -> {
+                          blockerPid.set(
+                              jdbcTemplate.queryForObject(
+                                  "SELECT pg_backend_pid()", Integer.class));
+                          jdbcTemplate.queryForObject(
+                              "SELECT id FROM households WHERE id = ? FOR UPDATE",
+                              UUID.class,
+                              householdId);
+                          householdLocked.countDown();
+                          await(releaseDelete, "household deletion release");
+                          householdService.deleteHousehold(
+                              householdId,
+                              new DeleteHouseholdRequest(householdName, PASSWORD),
+                              new UsernamePasswordAuthenticationToken(
+                                  userRepository
+                                      .findById(UUID.fromString(owner.userId()))
+                                      .orElseThrow()
+                                      .getEmail(),
+                                  null));
+                        }));
+    try {
+      assertThat(householdLocked.await(10, TimeUnit.SECONDS)).isTrue();
+      CompletableFuture<MvcResult> waitingRequest =
+          CompletableFuture.supplyAsync(
+              () -> {
+                try {
+                  return request.perform();
+                } catch (Exception exception) {
+                  throw new IllegalStateException(exception);
+                }
+              });
+      assertThat(awaitAnyBackendBlockedBy(blockerPid.get())).isTrue();
+      releaseDelete.countDown();
+      deletion.get(10, TimeUnit.SECONDS);
+      return waitingRequest.get(10, TimeUnit.SECONDS);
+    } finally {
+      releaseDelete.countDown();
+      deletion.get(10, TimeUnit.SECONDS);
+    }
+  }
+
+  private void assertHouseholdForbiddenResponse(MvcResult response, String path) throws Exception {
+    JsonNode body = objectMapper.readTree(response.getResponse().getContentAsString());
+    assertThat(response.getResponse().getStatus()).isEqualTo(403);
+    assertThat(body.path("status").asInt()).isEqualTo(403);
+    assertThat(body.path("error").asText()).isEqualTo("Forbidden");
+    assertThat(body.path("message").asText()).isNotBlank();
+    assertThat(body.path("path").asText()).isEqualTo(path);
+    assertThat(body.path("timestamp").isMissingNode()).isFalse();
+  }
+
   private void clearHouseholdData() {
     String testUsers = "SELECT id FROM users WHERE email LIKE 'hhtest-%@example.com'";
     String testHouseholds =
@@ -3111,4 +3926,9 @@ class HouseholdControllerIntegrationTest {
   }
 
   private record WebSession(Cookie cookie, String csrfHeader, String csrfToken, String userId) {}
+
+  @FunctionalInterface
+  private interface HouseholdHttpRequest {
+    MvcResult perform() throws Exception;
+  }
 }

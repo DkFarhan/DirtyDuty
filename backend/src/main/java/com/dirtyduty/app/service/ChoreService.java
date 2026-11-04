@@ -35,6 +35,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -48,6 +49,7 @@ public class ChoreService {
   private final HouseholdMembershipRepository membershipRepository;
   private final UserRepository userRepository;
   private final OccurrenceService occurrenceService;
+  private final JdbcTemplate jdbc;
 
   public ChoreService(
       ChoreRepository choreRepository,
@@ -55,13 +57,15 @@ public class ChoreService {
       ChoreScheduleRepository choreScheduleRepository,
       HouseholdMembershipRepository membershipRepository,
       UserRepository userRepository,
-      OccurrenceService occurrenceService) {
+      OccurrenceService occurrenceService,
+      JdbcTemplate jdbc) {
     this.choreRepository = choreRepository;
     this.choreCategoryRepository = choreCategoryRepository;
     this.choreScheduleRepository = choreScheduleRepository;
     this.membershipRepository = membershipRepository;
     this.userRepository = userRepository;
     this.occurrenceService = occurrenceService;
+    this.jdbc = jdbc;
   }
 
   @Transactional
@@ -104,6 +108,7 @@ public class ChoreService {
   @Transactional
   public ChoreResponse createChore(
       UUID householdId, ChoreRequest request, Authentication authentication) {
+    lockHousehold(householdId);
     HouseholdMembership actorMembership = authorize(householdId, authentication);
     Household household = actorMembership.getHousehold();
     Chore chore = new Chore();
@@ -124,6 +129,7 @@ public class ChoreService {
   @Transactional
   public ChoreResponse updateChore(
       UUID householdId, UUID choreId, ChoreRequest request, Authentication authentication) {
+    lockHousehold(householdId);
     authorize(householdId, authentication);
     Chore chore = findMutableChore(householdId, choreId);
     applyChoreFields(chore, householdId, request);
@@ -135,11 +141,12 @@ public class ChoreService {
 
   @Transactional
   public ChoreResponse pauseChore(UUID householdId, UUID choreId, Authentication authentication) {
+    lockHousehold(householdId);
     authorize(householdId, authentication);
     Chore chore = findMutableChore(householdId, choreId);
     chore.setActive(false);
     choreScheduleRepository
-        .findByChore_IdAndHousehold_Id(choreId, householdId)
+        .findByChore_IdAndHousehold_IdForUpdate(choreId, householdId)
         .ifPresent(
             schedule -> {
               schedule.setActive(false);
@@ -151,28 +158,37 @@ public class ChoreService {
   @Transactional
   public ChoreResponse activateChore(
       UUID householdId, UUID choreId, Authentication authentication) {
+    lockHousehold(householdId);
     authorize(householdId, authentication);
     Chore chore = findMutableChore(householdId, choreId);
-    chore.setActive(true);
     choreScheduleRepository
-        .findByChore_IdAndHousehold_Id(choreId, householdId)
+        .findByChore_IdAndHousehold_IdForUpdate(choreId, householdId)
         .ifPresent(
             schedule -> {
+              validateScheduleConfiguration(
+                  householdId,
+                  schedule.getAssignmentStrategy(),
+                  participantIds(schedule.getStrategyConfig()),
+                  peopleNeeded(schedule.getStrategyConfig()),
+                  schedule.getFixedAssignee() == null ? null : schedule.getFixedAssignee().getId());
+              chore.setActive(true);
               schedule.setActive(true);
-              occurrenceService.synchronizeSchedule(schedule);
+              occurrenceService.synchronizeSchedule(schedule, true, true);
             });
+    chore.setActive(true);
     return toResponse(chore);
   }
 
   @Transactional
   public ChoreResponse archiveChore(UUID householdId, UUID choreId, Authentication authentication) {
+    lockHousehold(householdId);
     authorize(householdId, authentication);
     Chore chore = findChore(householdId, choreId);
     if (chore.getArchivedAt() == null) {
       chore.setActive(false);
       chore.setArchivedAt(OffsetDateTime.now(ZoneOffset.UTC));
       choreScheduleRepository
-          .findByChore_IdAndHousehold_Id(choreId, householdId)
+          .findByChore_IdAndHousehold_IdForUpdate(choreId, householdId)
           .ifPresent(
               schedule -> {
                 schedule.setActive(false);
@@ -210,6 +226,11 @@ public class ChoreService {
     if (request == null) {
       return;
     }
+    lockHousehold(householdId);
+    ChoreSchedule schedule =
+        choreScheduleRepository
+            .findByChore_IdAndHousehold_IdForUpdate(chore.getId(), householdId)
+            .orElseGet(() -> createSchedule(chore, household));
     String recurrenceRule =
         request.recurrenceRule() == null ? null : request.recurrenceRule().strip();
     if (recurrenceRule == null
@@ -238,53 +259,31 @@ public class ChoreService {
       throw new InvalidHouseholdException("Schedule participants cannot contain duplicates.");
     }
 
-    User fixedAssignee = null;
+    User fixedAssignee;
     if (strategy == AssignmentStrategy.FIXED) {
       if (participantIds.isEmpty() && request.fixedAssigneeUserId() != null && peopleNeeded == 1) {
         participantIds = List.of(request.fixedAssigneeUserId());
-      }
-      if (participantIds.size() != peopleNeeded) {
-        throw new InvalidHouseholdException(
-            "FIXED assignment requires exactly People Needed distinct members.");
       }
       if (request.fixedAssigneeUserId() != null
           && !participantIds.contains(request.fixedAssigneeUserId())) {
         throw new InvalidHouseholdException(
             "The fixed assignee must be one of the selected participants.");
       }
-      if (participantIds.isEmpty()) {
-        throw new InvalidHouseholdException("FIXED assignment requires active household members.");
-      }
-      fixedAssignee =
-          validateActiveMember(
-              householdId,
-              request.fixedAssigneeUserId() == null
-                  ? participantIds.getFirst()
-                  : request.fixedAssigneeUserId());
     } else if (request.fixedAssigneeUserId() != null) {
       throw new InvalidHouseholdException("A fixed assignee is only valid for FIXED assignment.");
     }
-    if (strategy == AssignmentStrategy.ROUND_ROBIN || strategy == AssignmentStrategy.RANDOM) {
-      if (participantIds.size() < peopleNeeded) {
-        throw new InvalidHouseholdException(
-            "Rotation and random pools must contain at least People Needed members.");
-      }
-    } else if (!participantIds.isEmpty()) {
-      if (strategy != AssignmentStrategy.FIXED) {
-        throw new InvalidHouseholdException(
-            "Participants are only valid for FIXED, ROUND_ROBIN or RANDOM assignment.");
-      }
-    }
-    List<UUID> validatedParticipants = new ArrayList<>(participantIds.size());
-    for (UUID participantId : participantIds) {
-      validateActiveMember(householdId, participantId);
-      validatedParticipants.add(participantId);
-    }
-
-    ChoreSchedule schedule =
-        choreScheduleRepository
-            .findByChore_IdAndHousehold_Id(chore.getId(), householdId)
-            .orElseGet(() -> createSchedule(chore, household));
+    ScheduleConfiguration configuration =
+        validateScheduleConfiguration(
+            householdId,
+            strategy,
+            participantIds,
+            peopleNeeded,
+            strategy == AssignmentStrategy.FIXED && request.fixedAssigneeUserId() == null
+                ? (participantIds.isEmpty() ? null : participantIds.getFirst())
+                : request.fixedAssigneeUserId());
+    participantIds = configuration.participantIds();
+    fixedAssignee = configuration.fixedAssignee();
+    List<UUID> validatedParticipants = configuration.participantIds();
     String previousRecurrenceRule = schedule.getRecurrenceRule();
     occurrenceService.validateScheduleFrequencyChange(
         schedule, previousRecurrenceRule, recurrenceRule);
@@ -354,14 +353,76 @@ public class ChoreService {
   }
 
   private User validateActiveMember(UUID householdId, UUID userId) {
-    return membershipRepository
-        .findByHousehold_IdAndUser_Id(householdId, userId)
-        .filter(membership -> membership.getStatus() == MembershipStatus.ACTIVE)
-        .map(HouseholdMembership::getUser)
+    if (!membershipRepository.existsByHousehold_IdAndUser_IdAndStatus(
+        householdId, userId, MembershipStatus.ACTIVE)) {
+      throw new InvalidHouseholdException(
+          "Every selected participant must be an ACTIVE member of this household.");
+    }
+    return userRepository
+        .findById(userId)
         .orElseThrow(
             () ->
                 new InvalidHouseholdException(
                     "Every selected participant must be an ACTIVE member of this household."));
+  }
+
+  private ScheduleConfiguration validateScheduleConfiguration(
+      UUID householdId,
+      AssignmentStrategy strategy,
+      List<UUID> selectedParticipantIds,
+      int peopleNeeded,
+      UUID fixedAssigneeId) {
+    if (peopleNeeded < 1 || peopleNeeded > 50) {
+      throw new InvalidHouseholdException("People Needed must be between 1 and 50.");
+    }
+    List<UUID> participantIds = new ArrayList<>(selectedParticipantIds);
+    if (participantIds.stream().distinct().count() != participantIds.size()) {
+      throw new InvalidHouseholdException("Schedule participants cannot contain duplicates.");
+    }
+    if (strategy == AssignmentStrategy.FIXED
+        && participantIds.isEmpty()
+        && fixedAssigneeId != null
+        && peopleNeeded == 1) {
+      participantIds.add(fixedAssigneeId);
+    }
+    if (strategy == AssignmentStrategy.FIXED) {
+      if (participantIds.size() != peopleNeeded) {
+        throw new InvalidHouseholdException(
+            "FIXED assignment requires exactly People Needed distinct members.");
+      }
+      if (fixedAssigneeId == null || !participantIds.contains(fixedAssigneeId)) {
+        throw new InvalidHouseholdException(
+            "Choose a fixed assignee from the selected participants before activating this chore.");
+      }
+    } else if (strategy == AssignmentStrategy.ROUND_ROBIN
+        || strategy == AssignmentStrategy.RANDOM) {
+      if (participantIds.size() < peopleNeeded) {
+        throw new InvalidHouseholdException(
+            "Rotation and random pools must contain at least People Needed members.");
+      }
+      if (fixedAssigneeId != null) {
+        throw new InvalidHouseholdException("A fixed assignee is only valid for FIXED assignment.");
+      }
+    } else if (!participantIds.isEmpty() || fixedAssigneeId != null) {
+      throw new InvalidHouseholdException(
+          "Participants are only valid for FIXED, ROUND_ROBIN or RANDOM assignment.");
+    }
+    for (UUID participantId : participantIds) {
+      validateActiveMember(householdId, participantId);
+    }
+    return new ScheduleConfiguration(
+        List.copyOf(participantIds),
+        fixedAssigneeId == null ? null : validateActiveMember(householdId, fixedAssigneeId));
+  }
+
+  private void lockHousehold(UUID householdId) {
+    if (jdbc.query(
+            "SELECT id FROM households WHERE id=? FOR UPDATE",
+            (rs, row) -> rs.getObject("id", UUID.class),
+            householdId)
+        .isEmpty()) {
+      throw new HouseholdAccessDeniedException("You are not authorized to manage chores.");
+    }
   }
 
   private HouseholdMembership authorize(UUID householdId, Authentication authentication) {
@@ -385,8 +446,7 @@ public class ChoreService {
                         || found.getRole() == HouseholdRole.ADMIN)
             .orElseThrow(
                 () ->
-                    new HouseholdAccessDeniedException(
-                        "Only an ACTIVE household OWNER or ADMIN may manage chores."));
+                    new HouseholdAccessDeniedException("You are not authorized to manage chores."));
     return membership;
   }
 
@@ -468,4 +528,6 @@ public class ChoreService {
     Object value = config == null ? null : config.get("peopleNeeded");
     return value instanceof Number number ? number.intValue() : 1;
   }
+
+  private record ScheduleConfiguration(List<UUID> participantIds, User fixedAssignee) {}
 }

@@ -3,6 +3,9 @@ spring:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/dirtyduty_ci}
     username: ${DB_USERNAME:dirtyduty_ci_user}
     password: ${DB_PASSWORD:dirtyduty_ci_password}
+    hikari:
+      maximum-pool-size: 8
+      minimum-idle: 0
   jpa:
     hibernate:
       ddl-auto: validate

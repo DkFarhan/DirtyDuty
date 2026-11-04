@@ -11,7 +11,6 @@ import com.dirtyduty.app.entity.Household;
 import com.dirtyduty.app.entity.HouseholdInvitation;
 import com.dirtyduty.app.entity.HouseholdMembership;
 import com.dirtyduty.app.entity.User;
-import com.dirtyduty.app.entity.enums.AssignmentStrategy;
 import com.dirtyduty.app.entity.enums.HouseholdRole;
 import com.dirtyduty.app.entity.enums.MembershipStatus;
 import com.dirtyduty.app.exception.DuplicateResourceException;
@@ -23,7 +22,6 @@ import com.dirtyduty.app.mapper.HouseholdMapper;
 import com.dirtyduty.app.notification.NotificationEvent;
 import com.dirtyduty.app.notification.NotificationEventService;
 import com.dirtyduty.app.repository.ChoreCategoryRepository;
-import com.dirtyduty.app.repository.ChoreScheduleRepository;
 import com.dirtyduty.app.repository.HouseholdInvitationRepository;
 import com.dirtyduty.app.repository.HouseholdMembershipRepository;
 import com.dirtyduty.app.repository.HouseholdRepository;
@@ -36,7 +34,6 @@ import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
@@ -61,7 +58,7 @@ public class HouseholdService {
   private final HouseholdMembershipRepository householdMembershipRepository;
   private final HouseholdInvitationRepository householdInvitationRepository;
   private final ChoreCategoryRepository choreCategoryRepository;
-  private final ChoreScheduleRepository choreScheduleRepository;
+  private final MembershipExitCleanupService membershipExitCleanupService;
   private final UserRepository userRepository;
   private final NotificationEventService notificationEventService;
   private final JdbcTemplate jdbc;
@@ -73,9 +70,9 @@ public class HouseholdService {
       HouseholdMembershipRepository householdMembershipRepository,
       HouseholdInvitationRepository householdInvitationRepository,
       ChoreCategoryRepository choreCategoryRepository,
-      ChoreScheduleRepository choreScheduleRepository,
       UserRepository userRepository,
       NotificationEventService notificationEventService,
+      MembershipExitCleanupService membershipExitCleanupService,
       JdbcTemplate jdbc,
       PasswordEncoder passwordEncoder,
       @Value("${app.households.invitation-expiration:7d}") Duration invitationExpiration) {
@@ -83,7 +80,7 @@ public class HouseholdService {
     this.householdMembershipRepository = householdMembershipRepository;
     this.householdInvitationRepository = householdInvitationRepository;
     this.choreCategoryRepository = choreCategoryRepository;
-    this.choreScheduleRepository = choreScheduleRepository;
+    this.membershipExitCleanupService = membershipExitCleanupService;
     this.userRepository = userRepository;
     this.notificationEventService = notificationEventService;
     this.jdbc = jdbc;
@@ -105,6 +102,9 @@ public class HouseholdService {
   public HouseholdResponse createHousehold(
       CreateHouseholdRequest request, Authentication authentication) {
     User user = resolveUser(authentication);
+    if (!membershipExitCleanupService.lockActiveUser(user.getId())) {
+      throw new HouseholdAccessDeniedException("Authenticated user is unavailable.");
+    }
     String name = request.name().strip();
     String timezone = request.timezone().strip();
     if (name.length() < 2 || name.length() > 120) {
@@ -271,6 +271,7 @@ public class HouseholdService {
       throw new InvalidHouseholdException("Household name and password are required.");
     }
 
+    membershipExitCleanupService.lockHousehold(householdId);
     User user = resolveUser(authentication);
     HouseholdMembership membership =
         householdMembershipRepository
@@ -301,12 +302,8 @@ public class HouseholdService {
       throw new HouseholdAccessDeniedException("Current password is incorrect.");
     }
 
-    jdbc.update(
-        "DELETE FROM notification_deliveries WHERE notification_id IN (SELECT id FROM notifications WHERE recipient_user_id IN (SELECT user_id FROM household_memberships WHERE household_id = ?))",
-        householdId);
-    jdbc.update(
-        "DELETE FROM notifications WHERE recipient_user_id IN (SELECT user_id FROM household_memberships WHERE household_id = ?)",
-        householdId);
+    membershipExitCleanupService.lockHouseholdSchedules(householdId);
+    membershipExitCleanupService.deleteHouseholdNotifications(householdId);
     jdbc.update("DELETE FROM notification_events WHERE household_id = ?", householdId);
     jdbc.update("DELETE FROM activity_events WHERE household_id = ?", householdId);
     jdbc.update("DELETE FROM chore_assignment_assignees WHERE household_id = ?", householdId);
@@ -330,9 +327,21 @@ public class HouseholdService {
   public HouseholdResponse joinHousehold(
       JoinHouseholdRequest request, Authentication authentication) {
     String submittedCode = request.inviteCode().strip();
+    String inviteCodeHash = hashInviteCode(submittedCode);
+    UUID householdId =
+        jdbc
+            .query(
+                "SELECT household_id FROM household_invitations WHERE invite_code=?",
+                (rs, row) -> rs.getObject("household_id", UUID.class),
+                inviteCodeHash)
+            .stream()
+            .findFirst()
+            .orElseThrow(InvalidInvitationException::new);
+    membershipExitCleanupService.lockHousehold(householdId);
     HouseholdInvitation invitation =
         householdInvitationRepository
-            .findByInviteCodeForUpdate(hashInviteCode(submittedCode))
+            .findByInviteCodeForUpdate(inviteCodeHash)
+            .filter(existing -> existing.getHousehold().getId().equals(householdId))
             .orElseThrow(InvalidInvitationException::new);
     OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
     if (invitation.getUsedAt() != null
@@ -343,6 +352,9 @@ public class HouseholdService {
     }
 
     User user = resolveUser(authentication);
+    if (!membershipExitCleanupService.lockActiveUser(user.getId())) {
+      throw new HouseholdAccessDeniedException("Authenticated user is unavailable.");
+    }
     HouseholdMembership membership =
         householdMembershipRepository
             .findByHousehold_IdAndUser_Id(invitation.getHousehold().getId(), user.getId())
@@ -369,7 +381,6 @@ public class HouseholdService {
     invitation.setUsedAt(now);
     householdInvitationRepository.save(invitation);
 
-    UUID householdId = invitation.getHousehold().getId();
     if (rejoining) {
       recordActivityEvent(
           householdId,
@@ -414,6 +425,7 @@ public class HouseholdService {
   @Transactional
   public void updateMemberRole(
       UUID householdId, UUID targetUserId, HouseholdRole newRole, Authentication authentication) {
+    membershipExitCleanupService.lockHousehold(householdId);
     User actorUser = resolveUser(authentication);
     HouseholdMembership actorMembership = requireActiveMembership(householdId, actorUser.getId());
     if (actorMembership.getRole() != HouseholdRole.OWNER
@@ -464,6 +476,7 @@ public class HouseholdService {
   @Transactional
   public RemoveMemberResponse removeMember(
       UUID householdId, UUID targetUserId, Authentication authentication) {
+    membershipExitCleanupService.lockHousehold(householdId);
     User actorUser = resolveUser(authentication);
     HouseholdMembership actorMembership = requireActiveMembership(householdId, actorUser.getId());
     if (actorMembership.getRole() != HouseholdRole.OWNER
@@ -499,14 +512,9 @@ public class HouseholdService {
     targetMembership.setLeftAt(now);
     targetMembership.setRole(HouseholdRole.MEMBER);
     householdMembershipRepository.save(targetMembership);
-    int pausedScheduleCount = disableRemovedMemberParticipation(householdId, targetUserId);
+    int pausedScheduleCount =
+        membershipExitCleanupService.cleanupMembershipExit(householdId, targetUserId);
 
-    jdbc.update(
-        "UPDATE notifications SET status='CANCELLED', read_at=NOW() WHERE recipient_user_id=? AND status='PENDING'",
-        targetUserId);
-    jdbc.update(
-        "UPDATE notifications SET status='CANCELLED', read_at=NOW() WHERE recipient_user_id=? AND status='SENT' AND scheduled_at > NOW()",
-        targetUserId);
     recordActivityEvent(
         householdId,
         actorUser.getId(),
@@ -532,6 +540,7 @@ public class HouseholdService {
   @Transactional
   public void transferOwnership(
       UUID householdId, UUID targetUserId, Authentication authentication) {
+    membershipExitCleanupService.lockHousehold(householdId);
     User actorUser = resolveUser(authentication);
     HouseholdMembership actorMembership = requireActiveMembership(householdId, actorUser.getId());
     if (actorMembership.getRole() != HouseholdRole.OWNER) {
@@ -586,90 +595,6 @@ public class HouseholdService {
             () ->
                 new HouseholdAccessDeniedException(
                     "You are not an active member of this household."));
-  }
-
-  private int disableRemovedMemberParticipation(UUID householdId, UUID removedUserId) {
-    jdbc.update(
-        """
-                DELETE FROM chore_assignment_assignees
-                WHERE household_id=? AND user_id=?
-                  AND assignment_id IN (
-                      SELECT id FROM chore_assignments
-                      WHERE household_id=? AND scheduled_for >= CURRENT_DATE
-                        AND status IN ('PENDING', 'SUBMITTED')
-                  )
-                """,
-        householdId,
-        removedUserId,
-        householdId);
-
-    jdbc.update(
-        """
-                UPDATE chore_assignments
-                SET status='CANCELLED', updated_at=NOW()
-                WHERE household_id=?
-                  AND scheduled_for >= CURRENT_DATE
-                  AND status IN ('PENDING', 'SUBMITTED')
-                  AND (
-                      assigned_to_user_id = ?
-                      OR NOT EXISTS (SELECT 1 FROM chore_assignment_assignees WHERE assignment_id = chore_assignments.id)
-                  )
-                """,
-        householdId,
-        removedUserId);
-
-    int pausedScheduleCount = 0;
-    for (var schedule : choreScheduleRepository.findByHousehold_IdAndActiveTrue(householdId)) {
-      boolean invalidated = false;
-      if (schedule.getAssignmentStrategy() == AssignmentStrategy.FIXED) {
-        if (schedule.getFixedAssignee() != null
-            && schedule.getFixedAssignee().getId().equals(removedUserId)) {
-          schedule.setFixedAssignee(null);
-          schedule.setActive(false);
-          invalidated = true;
-        }
-      } else if (schedule.getAssignmentStrategy() == AssignmentStrategy.ROUND_ROBIN
-          || schedule.getAssignmentStrategy() == AssignmentStrategy.RANDOM) {
-        List<UUID> participantIds = new ArrayList<>();
-        Object configured =
-            schedule.getStrategyConfig() == null
-                ? null
-                : schedule.getStrategyConfig().get("participantUserIds");
-        if (configured instanceof List<?> list) {
-          for (Object item : list) {
-            if (item != null) {
-              participantIds.add(UUID.fromString(item.toString()));
-            }
-          }
-        }
-        List<UUID> nextParticipantIds =
-            participantIds.stream().filter(id -> !id.equals(removedUserId)).distinct().toList();
-        if (!nextParticipantIds.equals(participantIds)) {
-          schedule
-              .getStrategyConfig()
-              .put("participantUserIds", nextParticipantIds.stream().map(UUID::toString).toList());
-          if (nextParticipantIds.isEmpty() || nextParticipantIds.size() < peopleNeeded(schedule)) {
-            schedule.setActive(false);
-            invalidated = true;
-          } else {
-            schedule.setActive(true);
-          }
-        }
-      }
-      if (invalidated) {
-        choreScheduleRepository.save(schedule);
-        pausedScheduleCount++;
-      }
-    }
-    return pausedScheduleCount;
-  }
-
-  private int peopleNeeded(com.dirtyduty.app.entity.ChoreSchedule schedule) {
-    Object value =
-        schedule.getStrategyConfig() == null
-            ? null
-            : schedule.getStrategyConfig().get("peopleNeeded");
-    return value instanceof Number number ? Math.max(1, number.intValue()) : 1;
   }
 
   private void recordActivityEvent(
