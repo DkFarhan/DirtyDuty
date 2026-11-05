@@ -5,11 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { clearCsrfToken } from "@/lib/auth/api"
 import { ChoreSyncProvider } from "@/lib/chore-sync/store"
 import type { Notification } from "@/lib/notifications/api"
-import {
-  browserPushEndpointFingerprint,
-  inspectBrowserPushSubscription,
-  removeBrowserPushSubscription,
-} from "@/lib/notifications/push"
+import { removeBrowserPushSubscription } from "@/lib/notifications/push"
 import { NotificationsScreen } from "./screens/notifications-screen"
 
 const pushHealthMocks = vi.hoisted(() => ({
@@ -23,8 +19,6 @@ const pushHealthMocks = vi.hoisted(() => ({
 }))
 
 vi.mock("@/lib/notifications/push", () => ({
-  browserPushEndpointFingerprint: vi.fn(),
-  inspectBrowserPushSubscription: vi.fn(),
   removeBrowserPushSubscription: vi.fn(),
 }))
 vi.mock("@/lib/notifications/push-health", () => ({
@@ -120,8 +114,6 @@ describe("notifications screen", () => {
     currentPreferences = { ...preferences }
     currentNotifications = [...notifications]
     vi.mocked(removeBrowserPushSubscription).mockReset()
-    vi.mocked(browserPushEndpointFingerprint).mockReset().mockResolvedValue("a".repeat(64))
-    vi.mocked(inspectBrowserPushSubscription).mockReset()
     fetchMock.mockImplementation(async (input, init) => {
       const url = String(input)
       if (url.endsWith("/api/notifications") && !url.endsWith("/unread-count"))
@@ -384,44 +376,35 @@ describe("notifications screen", () => {
     expect(pushHealthMocks.restore).toHaveBeenCalledOnce()
   })
 
-  it("offers explicit renewal after an expired device test and confirms the repaired subscription", async () => {
-    const subscription = {
-      endpoint: "https://push.example.test/expired-endpoint",
-      expirationTime: null,
-      options: { applicationServerKey: null, userVisibleOnly: true },
-      getKey: () => null,
-      unsubscribe: async () => true,
-      toJSON: () => ({ keys: { p256dh: "public-key", auth: "auth-secret" } }),
-    } satisfies PushSubscription
+  it("keeps normal push status presentation and omits device diagnostics and test controls", async () => {
     currentPreferences = { ...preferences, pushEnabled: true }
     pushHealthMocks.state.mockReturnValue({
       status: "healthy",
       reason: null,
       message: null,
     })
-    pushHealthMocks.device.mockReturnValue({
-      permission: "granted",
-      worker: "ready",
-      subscription: "present",
-      serverSync: "confirmed",
+    render(
+      <ChoreSyncProvider>
+        <NotificationsScreen />
+      </ChoreSyncProvider>,
+    )
+
+    expect(
+      await screen.findByText("This browser’s push subscription is synchronized."),
+    ).toBeTruthy()
+    expect(screen.queryByText("This device’s push setup")).toBeNull()
+    expect(screen.queryByText(/Permission: .*worker:/)).toBeNull()
+    expect(screen.queryByRole("button", { name: /test notification/i })).toBeNull()
+  })
+
+  it("keeps explicit subscription repair in the existing push status area", async () => {
+    currentPreferences = { ...preferences, pushEnabled: true }
+    pushHealthMocks.state.mockReturnValue({
+      status: "attention",
+      reason: "vapid-key-mismatch",
+      message: "This browser subscription needs repair.",
     })
     pushHealthMocks.repair.mockResolvedValue(true)
-    vi.mocked(inspectBrowserPushSubscription).mockResolvedValue({
-      status: "subscribed",
-      subscription,
-    })
-    fetchMock.mockImplementation(async (input, init) => {
-      const url = String(input)
-      if (url.endsWith("/api/notifications") && !url.endsWith("/unread-count"))
-        return jsonResponse(notifications)
-      if (url.endsWith("/api/notifications/unread-count")) return jsonResponse({ count: 0 })
-      if (url.endsWith("/api/notifications/preferences")) return jsonResponse(currentPreferences)
-      if (url.endsWith("/api/notifications/push-subscriptions/test"))
-        return jsonResponse({ status: "UNAVAILABLE", category: "SUBSCRIPTION_EXPIRED" })
-      if (url.endsWith("/api/auth/csrf"))
-        return jsonResponse({ token: "expired-push-csrf", headerName: "X-CSRF-TOKEN" })
-      throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url}`)
-    })
 
     render(
       <ChoreSyncProvider>
@@ -429,19 +412,10 @@ describe("notifications screen", () => {
       </ChoreSyncProvider>,
     )
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Send test notification to this device" }),
-    )
-    expect(await screen.findByText(/subscription has expired/i)).toBeTruthy()
-    fireEvent.click(screen.getByRole("button", { name: "Renew this browser subscription" }))
-
+    expect(await screen.findByText("This browser subscription needs repair.")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Repair push notifications" }))
     await waitFor(() => expect(pushHealthMocks.repair).toHaveBeenCalledOnce())
-    expect(await screen.findByText(/subscription was renewed and synchronized/i)).toBeTruthy()
-    expect(
-      fetchMock.mock.calls.some(([url]) =>
-        String(url).endsWith("/api/notifications/push-subscriptions/test"),
-      ),
-    ).toBe(true)
+    expect(screen.queryByRole("button", { name: /test notification/i })).toBeNull()
   })
 
   it("shows a clear empty state when there are no notifications", async () => {
