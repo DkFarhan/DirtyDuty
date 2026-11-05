@@ -6,7 +6,8 @@ import { clearCsrfToken } from "@/lib/auth/api"
 import { ChoreSyncProvider } from "@/lib/chore-sync/store"
 import type { Notification } from "@/lib/notifications/api"
 import {
-  createBrowserPushSubscription,
+  browserPushEndpointFingerprint,
+  inspectBrowserPushSubscription,
   removeBrowserPushSubscription,
 } from "@/lib/notifications/push"
 import { NotificationsScreen } from "./screens/notifications-screen"
@@ -14,18 +15,26 @@ import { NotificationsScreen } from "./screens/notifications-screen"
 const pushHealthMocks = vi.hoisted(() => ({
   refresh: vi.fn(),
   restore: vi.fn(),
+  repair: vi.fn(),
+  cancelPendingSetup: vi.fn(),
   setPushEnabled: vi.fn(),
+  state: vi.fn(),
+  device: vi.fn(),
 }))
 
 vi.mock("@/lib/notifications/push", () => ({
-  createBrowserPushSubscription: vi.fn(),
+  browserPushEndpointFingerprint: vi.fn(),
+  inspectBrowserPushSubscription: vi.fn(),
   removeBrowserPushSubscription: vi.fn(),
 }))
 vi.mock("@/lib/notifications/push-health", () => ({
   usePushSubscriptionHealth: () => ({
-    state: { status: "disabled", reason: null, message: null },
+    state: pushHealthMocks.state(),
     refresh: pushHealthMocks.refresh,
     restore: pushHealthMocks.restore,
+    repair: pushHealthMocks.repair,
+    cancelPendingSetup: pushHealthMocks.cancelPendingSetup,
+    device: pushHealthMocks.device(),
     setPushEnabled: pushHealthMocks.setPushEnabled,
   }),
 }))
@@ -94,11 +103,25 @@ describe("notifications screen", () => {
     fetchMock.mockReset()
     pushHealthMocks.refresh.mockReset()
     pushHealthMocks.restore.mockReset()
+    pushHealthMocks.repair.mockReset()
+    pushHealthMocks.cancelPendingSetup.mockReset()
     pushHealthMocks.setPushEnabled.mockReset()
+    pushHealthMocks.state.mockReset().mockReturnValue({
+      status: "disabled",
+      reason: null,
+      message: null,
+    })
+    pushHealthMocks.device.mockReset().mockReturnValue({
+      permission: "default",
+      worker: "unknown",
+      subscription: "unknown",
+      serverSync: "unknown",
+    })
     currentPreferences = { ...preferences }
     currentNotifications = [...notifications]
     vi.mocked(removeBrowserPushSubscription).mockReset()
-    vi.mocked(createBrowserPushSubscription).mockReset()
+    vi.mocked(browserPushEndpointFingerprint).mockReset().mockResolvedValue("a".repeat(64))
+    vi.mocked(inspectBrowserPushSubscription).mockReset()
     fetchMock.mockImplementation(async (input, init) => {
       const url = String(input)
       if (url.endsWith("/api/notifications") && !url.endsWith("/unread-count"))
@@ -136,17 +159,7 @@ describe("notifications screen", () => {
         return new Response(null, { status: 204 })
       throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url}`)
     })
-    vi.mocked(createBrowserPushSubscription).mockResolvedValue({
-      endpoint: "https://push.example.test/subscription",
-      expirationTime: null,
-      options: {} as PushSubscriptionOptions,
-      getKey: (name: "p256dh" | "auth") => {
-        const key = name === "p256dh" ? "public-key" : "auth-secret"
-        return new Uint8Array(new TextEncoder().encode(key)).buffer as ArrayBuffer
-      },
-      toJSON: () => ({ keys: { p256dh: "public-key", auth: "auth-secret" } }),
-      unsubscribe: async () => true,
-    } as unknown as Awaited<ReturnType<typeof createBrowserPushSubscription>>)
+    pushHealthMocks.restore.mockResolvedValue(true)
     vi.mocked(removeBrowserPushSubscription).mockResolvedValue(null)
     vi.stubGlobal("fetch", fetchMock)
     clearCsrfToken()
@@ -368,11 +381,65 @@ describe("notifications screen", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Save preferences" }))
     expect(await screen.findByText("Preferences saved.")).toBeTruthy()
-    expect(vi.mocked(createBrowserPushSubscription)).toHaveBeenCalledWith(expect.any(String))
+    expect(pushHealthMocks.restore).toHaveBeenCalledOnce()
+  })
+
+  it("offers explicit renewal after an expired device test and confirms the repaired subscription", async () => {
+    const subscription = {
+      endpoint: "https://push.example.test/expired-endpoint",
+      expirationTime: null,
+      options: { applicationServerKey: null, userVisibleOnly: true },
+      getKey: () => null,
+      unsubscribe: async () => true,
+      toJSON: () => ({ keys: { p256dh: "public-key", auth: "auth-secret" } }),
+    } satisfies PushSubscription
+    currentPreferences = { ...preferences, pushEnabled: true }
+    pushHealthMocks.state.mockReturnValue({
+      status: "healthy",
+      reason: null,
+      message: null,
+    })
+    pushHealthMocks.device.mockReturnValue({
+      permission: "granted",
+      worker: "ready",
+      subscription: "present",
+      serverSync: "confirmed",
+    })
+    pushHealthMocks.repair.mockResolvedValue(true)
+    vi.mocked(inspectBrowserPushSubscription).mockResolvedValue({
+      status: "subscribed",
+      subscription,
+    })
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = String(input)
+      if (url.endsWith("/api/notifications") && !url.endsWith("/unread-count"))
+        return jsonResponse(notifications)
+      if (url.endsWith("/api/notifications/unread-count")) return jsonResponse({ count: 0 })
+      if (url.endsWith("/api/notifications/preferences")) return jsonResponse(currentPreferences)
+      if (url.endsWith("/api/notifications/push-subscriptions/test"))
+        return jsonResponse({ status: "UNAVAILABLE", category: "SUBSCRIPTION_EXPIRED" })
+      if (url.endsWith("/api/auth/csrf"))
+        return jsonResponse({ token: "expired-push-csrf", headerName: "X-CSRF-TOKEN" })
+      throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url}`)
+    })
+
+    render(
+      <ChoreSyncProvider>
+        <NotificationsScreen />
+      </ChoreSyncProvider>,
+    )
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Send test notification to this device" }),
+    )
+    expect(await screen.findByText(/subscription has expired/i)).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Renew this browser subscription" }))
+
+    await waitFor(() => expect(pushHealthMocks.repair).toHaveBeenCalledOnce())
+    expect(await screen.findByText(/subscription was renewed and synchronized/i)).toBeTruthy()
     expect(
-      fetchMock.mock.calls.some(
-        ([url, init]) =>
-          String(url).endsWith("/api/notifications/push-subscriptions") && init?.method === "PUT",
+      fetchMock.mock.calls.some(([url]) =>
+        String(url).endsWith("/api/notifications/push-subscriptions/test"),
       ),
     ).toBe(true)
   })

@@ -513,6 +513,15 @@ public class OccurrenceService {
               AND n.reference_id=? AND d.status IN ('PENDING','FAILED')
             """,
         occurrenceId);
+    jdbc.update(
+        """
+            UPDATE notification_push_delivery_targets t
+            SET status='CANCELLED', next_attempt_at=NULL, updated_at=NOW()
+            FROM notifications n
+            WHERE t.notification_id=n.id AND n.reference_type='CHORE_ASSIGNMENT'
+              AND n.reference_id=? AND t.status IN ('PENDING','FAILED')
+            """,
+        occurrenceId);
   }
 
   private void cancelPendingOccurrenceReminders(UUID occurrenceId) {
@@ -531,6 +540,17 @@ public class OccurrenceService {
               AND n.reference_id=?
               AND n.type IN ('CHORE_DUE_SOON','CHORE_DUE_NOW','CHORE_OVERDUE')
               AND d.status IN ('PENDING','FAILED')
+            """,
+        occurrenceId);
+    jdbc.update(
+        """
+            UPDATE notification_push_delivery_targets t
+            SET status='CANCELLED', next_attempt_at=NULL, updated_at=NOW()
+            FROM notifications n
+            WHERE t.notification_id=n.id AND n.reference_type='CHORE_ASSIGNMENT'
+              AND n.reference_id=?
+              AND n.type IN ('CHORE_DUE_SOON','CHORE_DUE_NOW','CHORE_OVERDUE')
+              AND t.status IN ('PENDING','FAILED')
             """,
         occurrenceId);
   }
@@ -884,6 +904,15 @@ public class OccurrenceService {
                 FROM notifications n
                 WHERE d.notification_id=n.id AND n.reference_type='CHORE_ASSIGNMENT'
                   AND n.reference_id=? AND d.status='PENDING'
+                """,
+        assignmentId);
+    jdbc.update(
+        """
+                UPDATE notification_push_delivery_targets t
+                SET status='CANCELLED', next_attempt_at=NULL, updated_at=NOW()
+                FROM notifications n
+                WHERE t.notification_id=n.id AND n.reference_type='CHORE_ASSIGNMENT'
+                  AND n.reference_id=? AND t.status IN ('PENDING','FAILED')
                 """,
         assignmentId);
   }

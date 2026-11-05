@@ -11,13 +11,24 @@ import { getLocalDateKey, WEEK_SUMMARY_TEMPLATES } from "./week-summary"
 const fetchMock = vi.fn<typeof fetch>()
 const pushMocks = vi.hoisted(() => ({
   inspect: vi.fn(),
+  inspectDevice: vi.fn(),
   create: vi.fn(),
   remove: vi.fn(),
+  prepareWorker: vi.fn(),
+  requestPermission: vi.fn(),
+  repair: vi.fn(),
+  fingerprint: vi.fn(),
 }))
 vi.mock("@/lib/notifications/push", () => ({
+  browserPushEndpointFingerprint: pushMocks.fingerprint,
   inspectBrowserPushSubscription: pushMocks.inspect,
+  inspectBrowserPushDevice: pushMocks.inspectDevice,
   createBrowserPushSubscription: pushMocks.create,
+  prepareBrowserPushWorker: pushMocks.prepareWorker,
+  requestBrowserNotificationPermission: pushMocks.requestPermission,
+  repairBrowserPushSubscription: pushMocks.repair,
   removeBrowserPushSubscription: pushMocks.remove,
+  PushVapidKeyMismatchError: class extends Error {},
 }))
 
 const user = {
@@ -99,8 +110,17 @@ describe("server-backed chore data", () => {
   beforeEach(() => {
     fetchMock.mockReset()
     pushMocks.inspect.mockReset().mockResolvedValue({ status: "unsupported", subscription: null })
+    pushMocks.inspectDevice.mockReset().mockResolvedValue({
+      permission: "unsupported",
+      worker: "unsupported",
+      subscription: "unknown",
+    })
     pushMocks.create.mockReset()
     pushMocks.remove.mockReset()
+    pushMocks.prepareWorker.mockReset().mockResolvedValue(undefined)
+    pushMocks.requestPermission.mockReset().mockResolvedValue("granted")
+    pushMocks.repair.mockReset()
+    pushMocks.fingerprint.mockReset().mockResolvedValue("a".repeat(64))
     stubAuthFeatures(fetchMock)
     clearCsrfToken()
     localStorage.clear()
@@ -263,6 +283,11 @@ describe("server-backed chore data", () => {
       toJSON: () => ({ keys: { p256dh: "public-key", auth: "auth-secret" } }),
     } satisfies PushSubscription
     pushMocks.inspect.mockResolvedValue({ status: "missing", subscription: null })
+    pushMocks.inspectDevice.mockResolvedValue({
+      permission: "granted",
+      worker: "ready",
+      subscription: "missing",
+    })
     pushMocks.create.mockResolvedValue(browserSubscription)
     fetchMock.mockImplementation(async (input) => {
       const url = String(input)
@@ -305,6 +330,7 @@ describe("server-backed chore data", () => {
       ).toBe(true),
     )
     expect(screen.queryByRole("region", { name: "Push notification status" })).toBeNull()
+    expect(pushMocks.prepareWorker).toHaveBeenCalled()
     expect(pushMocks.create).toHaveBeenCalledWith("vapid-key")
     const subscribeRequest = fetchMock.mock.calls.find(
       ([url, request]) =>

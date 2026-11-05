@@ -720,9 +720,13 @@ database recovery to an operator using the verified backup.
 ### Rollback and migrations
 
 V12 adds a nullable timestamp column to `push_subscriptions`; it does not rewrite
-existing subscription data. The prior backend does not reference the column and
-can run against the migrated database, so application rollback can retain the
-schema. Always take and verify a database backup before applying any migration.
+existing subscription data. V19 adds per-subscription delivery results and marks
+pre-existing notifications ineligible for target snapshots, preventing old
+reminders from being delivered to later subscriptions. The schema is additive,
+but a rollback to a backend without per-target tracking can resend a partially
+accepted notification to devices that already accepted it. Do not roll back
+that backend while partial push retries are outstanding. Always take and verify
+a database backup before applying any migration.
 
 ### Deployment behavior and constraints
 
@@ -745,6 +749,33 @@ schema. Always take and verify a database backup before applying any migration.
 - The production certificate, DNS, Oracle host, firewall, server-local
   configuration, and actual backup restoration must be verified by an operator;
   none are tested or changed by repository CI.
+
+### Web Push real-device acceptance
+
+Before calling Android Web Push ready, test with a real Android device and the
+same authenticated account used by the app:
+
+1. In Android Chrome, open DirtyDuty in a normal tab, sign in, enable the
+   account push preference, and use **Enable or restore this device**. Confirm
+   the UI reports permission granted, worker ready, subscription present, and
+   server sync confirmed.
+2. Repeat in the installed PWA. For a fresh install, verify the permission
+   prompt and that the browser subscription is created only after the explicit
+   action. Dismiss the prompt once, allow notifications through Chrome Site
+   Controls, return to DirtyDuty, and verify the pending explicit setup
+   completes without another prompt.
+3. Use **Send test notification to this device**. “Push service accepted” only
+   confirms provider acceptance; verify the notification actually appears on
+   the device, including with the tab in the background and the app closed.
+   Tap it and verify it opens the in-app notifications view.
+4. Check Android’s app notification settings and Chrome’s site notification
+   settings if delivery is accepted but nothing appears.
+5. Confirm an existing iPhone subscription still receives a normal test or
+   application notification after Android setup. A test to one browser does
+   not prove delivery to another device.
+
+Automated tests stub the external push service. They do not replace these
+physical-device checks or establish the reported Android device’s root cause.
 
 ## Branch protection
 

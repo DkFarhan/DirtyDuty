@@ -452,6 +452,15 @@ public class MembershipExitCleanupService {
             + scopedIds
             + ")",
         args);
+    jdbc.update(
+        """
+        UPDATE notification_push_delivery_targets SET status='CANCELLED',
+            next_attempt_at=NULL, updated_at=NOW()
+        WHERE status IN ('PENDING', 'FAILED') AND notification_id IN (
+        """
+            + scopedIds
+            + ")",
+        args);
   }
 
   private Object[] householdScopeArgs(UUID householdId) {
