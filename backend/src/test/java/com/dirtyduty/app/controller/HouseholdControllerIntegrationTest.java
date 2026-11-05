@@ -49,12 +49,15 @@ import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.flywaydb.core.Flyway;
+import org.flywaydb.core.api.MigrationVersion;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -169,6 +172,45 @@ class HouseholdControllerIntegrationTest {
         key);
   }
 
+  private UUID insertPreV19PushWork(
+      String schema,
+      UUID userId,
+      String notificationStatus,
+      OffsetDateTime scheduledAt,
+      OffsetDateTime expiresAt,
+      String deliveryStatus,
+      int attempts,
+      OffsetDateTime nextAttemptAt) {
+    UUID notificationId = UUID.randomUUID();
+    jdbcTemplate.update(
+        """
+                INSERT INTO %s.notifications
+                    (id, recipient_user_id, type, category, title, message, status,
+                     scheduled_at, expires_at, deduplication_key)
+                VALUES (?, ?, 'HOUSEHOLD_JOINED', 'HOUSEHOLD', 'Title', 'Body', ?, ?, ?, ?)
+                """
+            .formatted(schema),
+        notificationId,
+        userId,
+        notificationStatus,
+        scheduledAt,
+        expiresAt,
+        "v18-push-upgrade-" + UUID.randomUUID());
+    jdbcTemplate.update(
+        """
+                INSERT INTO %s.notification_deliveries
+                    (notification_id, channel, status, attempts, next_attempt_at, sent_at)
+                VALUES (?, 'WEB_PUSH', ?, ?, ?, CASE WHEN ?='SENT' THEN NOW() ELSE NULL END)
+                """
+            .formatted(schema),
+        notificationId,
+        deliveryStatus,
+        attempts,
+        nextAttemptAt,
+        deliveryStatus);
+    return notificationId;
+  }
+
   private String deliveryStatus(String deduplicationKey, String channel) {
     return jdbcTemplate.queryForObject(
         """
@@ -191,6 +233,30 @@ class HouseholdControllerIntegrationTest {
         Integer.class,
         deduplicationKey,
         channel);
+  }
+
+  private String targetStatus(UUID notificationId, String endpoint) {
+    return jdbcTemplate.queryForObject(
+        """
+                SELECT t.status FROM notification_push_delivery_targets t
+                JOIN push_subscriptions s ON s.id=t.subscription_id
+                WHERE t.notification_id=? AND s.endpoint=?
+                """,
+        String.class,
+        notificationId,
+        endpoint);
+  }
+
+  private int targetAttempts(UUID notificationId, String endpoint) {
+    return jdbcTemplate.queryForObject(
+        """
+                SELECT t.attempts FROM notification_push_delivery_targets t
+                JOIN push_subscriptions s ON s.id=t.subscription_id
+                WHERE t.notification_id=? AND s.endpoint=?
+                """,
+        Integer.class,
+        notificationId,
+        endpoint);
   }
 
   private boolean subscriptionActive(String endpoint) {
@@ -1093,8 +1159,8 @@ class HouseholdControllerIntegrationTest {
                 """,
         retryMessage.deduplicationKey());
     webPushProvider.deliver(retryMessage, null);
-    assertThat(deliveryStatus(retryMessage.deduplicationKey(), "WEB_PUSH")).isEqualTo("FAILED");
-    assertThat(deliveryAttempts(retryMessage.deduplicationKey(), "WEB_PUSH")).isEqualTo(3);
+    assertThat(deliveryStatus(retryMessage.deduplicationKey(), "WEB_PUSH")).isEqualTo("SENT");
+    assertThat(deliveryAttempts(retryMessage.deduplicationKey(), "WEB_PUSH")).isEqualTo(4);
     verify(webPushClient, times(2))
         .send(
             anyString(),
@@ -1104,6 +1170,152 @@ class HouseholdControllerIntegrationTest {
             anyString(),
             anyString(),
             any(byte[].class));
+  }
+
+  @Test
+  void v19UpgradePreservesEligiblePushWorkWithoutReplayingHistoricalDeliveries() {
+    String schema = "push_upgrade_" + UUID.randomUUID().toString().replace("-", "");
+    UUID userId = UUID.randomUUID();
+    OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+    OffsetDateTime retryAt = now.plusMinutes(2).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+    jdbcTemplate.execute("CREATE SCHEMA " + schema);
+    try {
+      var dataSource = Objects.requireNonNull(jdbcTemplate.getDataSource());
+      Flyway.configure()
+          .dataSource(dataSource)
+          .schemas(schema)
+          .defaultSchema(schema)
+          .locations("classpath:db/migration")
+          .target(MigrationVersion.fromVersion("18"))
+          .load()
+          .migrate();
+      jdbcTemplate.update(
+          "INSERT INTO "
+              + schema
+              + ".users (id, email, password_hash, display_name) VALUES (?, ?, 'hash', 'Upgrade test')",
+          userId,
+          "upgrade-" + UUID.randomUUID() + "@example.test");
+      String endpoint = "https://push.example.test/upgrade-" + UUID.randomUUID();
+      jdbcTemplate.update(
+          """
+              INSERT INTO %s.push_subscriptions (user_id, endpoint, public_key, auth_secret)
+              VALUES (?, ?, 'public-key', 'auth-secret')
+              """
+              .formatted(schema),
+          userId,
+          endpoint);
+      UUID queuedId =
+          insertPreV19PushWork(
+              schema, userId, "PENDING", now.plusHours(1), now.plusHours(2), "PENDING", 0, null);
+      UUID retryId =
+          insertPreV19PushWork(
+              schema, userId, "SENT", now.minusMinutes(5), now.plusHours(1), "FAILED", 1, retryAt);
+      UUID acceptedId =
+          insertPreV19PushWork(
+              schema, userId, "SENT", now.minusMinutes(5), now.plusHours(1), "SENT", 1, null);
+      UUID cancelledId =
+          insertPreV19PushWork(
+              schema,
+              userId,
+              "CANCELLED",
+              now.minusMinutes(5),
+              now.plusHours(1),
+              "CANCELLED",
+              1,
+              null);
+      UUID expiredId =
+          insertPreV19PushWork(
+              schema, userId, "SENT", now.minusHours(2), now.minusMinutes(1), "FAILED", 1, null);
+      UUID exhaustedId =
+          insertPreV19PushWork(
+              schema, userId, "SENT", now.minusMinutes(5), now.plusHours(1), "FAILED", 3, null);
+
+      Flyway.configure()
+          .dataSource(dataSource)
+          .schemas(schema)
+          .defaultSchema(schema)
+          .locations("classpath:db/migration")
+          .target(MigrationVersion.fromVersion("20"))
+          .load()
+          .migrate();
+
+      assertThat(
+              jdbcTemplate.queryForObject(
+                  "SELECT push_target_tracking_enabled FROM "
+                      + schema
+                      + ".notifications WHERE id=?",
+                  Boolean.class,
+                  queuedId))
+          .isTrue();
+      assertThat(
+              jdbcTemplate.queryForObject(
+                  "SELECT push_targets_snapshotted_at FROM "
+                      + schema
+                      + ".notification_deliveries WHERE notification_id=? AND channel='WEB_PUSH'",
+                  OffsetDateTime.class,
+                  queuedId))
+          .isNull();
+      assertThat(
+              jdbcTemplate.queryForObject(
+                  "SELECT COUNT(*) FROM "
+                      + schema
+                      + ".notification_push_delivery_targets WHERE notification_id=?",
+                  Integer.class,
+                  queuedId))
+          .isZero();
+
+      assertThat(
+              jdbcTemplate.queryForObject(
+                  "SELECT push_target_tracking_enabled FROM "
+                      + schema
+                      + ".notifications WHERE id=?",
+                  Boolean.class,
+                  retryId))
+          .isTrue();
+      assertThat(
+              jdbcTemplate.queryForObject(
+                  """
+                      SELECT t.status='FAILED' AND t.attempts=1 AND t.next_attempt_at=?
+                      FROM %s.notification_push_delivery_targets t
+                      JOIN %s.push_subscriptions s ON s.id=t.subscription_id
+                      WHERE t.notification_id=? AND s.endpoint=?
+                      """
+                      .formatted(schema, schema),
+                  Boolean.class,
+                  retryAt,
+                  retryId,
+                  endpoint))
+          .isTrue();
+      assertThat(
+              jdbcTemplate.queryForObject(
+                  "SELECT push_targets_snapshotted_at IS NOT NULL FROM "
+                      + schema
+                      + ".notification_deliveries WHERE notification_id=? AND channel='WEB_PUSH'",
+                  Boolean.class,
+                  retryId))
+          .isTrue();
+
+      for (UUID historicalId : List.of(acceptedId, cancelledId, expiredId, exhaustedId)) {
+        assertThat(
+                jdbcTemplate.queryForObject(
+                    "SELECT push_target_tracking_enabled FROM "
+                        + schema
+                        + ".notifications WHERE id=?",
+                    Boolean.class,
+                    historicalId))
+            .isFalse();
+        assertThat(
+                jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM "
+                        + schema
+                        + ".notification_push_delivery_targets WHERE notification_id=?",
+                    Integer.class,
+                    historicalId))
+            .isZero();
+      }
+    } finally {
+      jdbcTemplate.execute("DROP SCHEMA " + schema + " CASCADE");
+    }
   }
 
   @Test
@@ -1192,6 +1404,112 @@ class HouseholdControllerIntegrationTest {
             anyString(),
             anyString(),
             eq(androidEndpoint),
+            anyString(),
+            anyString(),
+            any(byte[].class));
+  }
+
+  @Test
+  void schedulerRetriesTargetsByTheirOwnBudgetsWhenAggregateAttemptsAreExhausted()
+      throws Exception {
+    WebSession owner = login("pushunevenretry");
+    UUID userId = UUID.fromString(owner.userId());
+    doReturn(true).when(webPushProvider).isConfigured();
+    jdbcTemplate.update(
+        """
+                INSERT INTO notification_preferences (user_id, push_enabled)
+                VALUES (?, TRUE) ON CONFLICT (user_id) DO UPDATE SET push_enabled=TRUE
+                """,
+        userId);
+    String acceptedEndpoint = "https://8.8.8.8/accepted-" + UUID.randomUUID();
+    String eligibleEndpoint = "https://8.8.8.8/eligible-" + UUID.randomUUID();
+    String exhaustedEndpoint = "https://8.8.8.8/exhausted-" + UUID.randomUUID();
+    addPushSubscription(userId, acceptedEndpoint);
+    addPushSubscription(userId, eligibleEndpoint);
+    addPushSubscription(userId, exhaustedEndpoint);
+    NotificationMessage notification = insertPushNotification(userId, "HOUSEHOLD_JOINED");
+    UUID notificationId =
+        jdbcTemplate.queryForObject(
+            "SELECT id FROM notifications WHERE deduplication_key=?",
+            UUID.class,
+            notification.deduplicationKey());
+    jdbcTemplate.update(
+        """
+            UPDATE notification_deliveries
+            SET status='FAILED', attempts=3, next_attempt_at=NOW() - INTERVAL '1 second',
+                push_targets_snapshotted_at=NOW()
+            WHERE notification_id=? AND channel='WEB_PUSH'
+            """,
+        notificationId);
+    jdbcTemplate.update(
+        """
+            INSERT INTO notification_push_delivery_targets
+                (notification_id, subscription_id, status, attempts, next_attempt_at)
+            SELECT ?, id, CASE endpoint
+                    WHEN ? THEN 'SENT'
+                    ELSE 'FAILED'
+                END,
+                CASE endpoint
+                    WHEN ? THEN 1
+                    WHEN ? THEN 2
+                    ELSE 3
+                END,
+                NOW() - INTERVAL '1 second'
+            FROM push_subscriptions
+            WHERE endpoint IN (?, ?, ?)
+            """,
+        notificationId,
+        acceptedEndpoint,
+        acceptedEndpoint,
+        eligibleEndpoint,
+        acceptedEndpoint,
+        eligibleEndpoint,
+        exhaustedEndpoint);
+    when(webPushClient.send(
+            anyString(),
+            anyString(),
+            anyString(),
+            eq(eligibleEndpoint),
+            anyString(),
+            anyString(),
+            any(byte[].class)))
+        .thenReturn(201);
+
+    notificationScheduler.run();
+    notificationScheduler.run();
+
+    assertThat(deliveryStatus(notification.deduplicationKey(), "WEB_PUSH")).isEqualTo("SENT");
+    assertThat(deliveryAttempts(notification.deduplicationKey(), "WEB_PUSH")).isEqualTo(4);
+    assertThat(targetStatus(notificationId, acceptedEndpoint)).isEqualTo("SENT");
+    assertThat(targetAttempts(notificationId, acceptedEndpoint)).isEqualTo(1);
+    assertThat(targetStatus(notificationId, eligibleEndpoint)).isEqualTo("SENT");
+    assertThat(targetAttempts(notificationId, eligibleEndpoint)).isEqualTo(3);
+    assertThat(targetStatus(notificationId, exhaustedEndpoint)).isEqualTo("FAILED");
+    assertThat(targetAttempts(notificationId, exhaustedEndpoint)).isEqualTo(3);
+    verify(webPushClient, times(1))
+        .send(
+            anyString(),
+            anyString(),
+            anyString(),
+            eq(eligibleEndpoint),
+            anyString(),
+            anyString(),
+            any(byte[].class));
+    verify(webPushClient, times(0))
+        .send(
+            anyString(),
+            anyString(),
+            anyString(),
+            eq(acceptedEndpoint),
+            anyString(),
+            anyString(),
+            any(byte[].class));
+    verify(webPushClient, times(0))
+        .send(
+            anyString(),
+            anyString(),
+            anyString(),
+            eq(exhaustedEndpoint),
             anyString(),
             anyString(),
             any(byte[].class));

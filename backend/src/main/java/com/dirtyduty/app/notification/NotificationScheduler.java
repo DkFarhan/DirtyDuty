@@ -94,7 +94,12 @@ public class NotificationScheduler {
         , candidate_scope AS (
             SELECT s.id, s.recipient_user_id, s.household_id, n.status, n.reference_type,
                    n.reference_id, n.scheduled_at, n.expires_at, n.type,
-                   d.status AS delivery_status, d.attempts, d.next_attempt_at
+                   d.status AS delivery_status, d.next_attempt_at, d.push_targets_snapshotted_at,
+                   EXISTS (
+                       SELECT 1 FROM notification_push_delivery_targets t
+                       WHERE t.notification_id=n.id
+                         AND t.status IN ('PENDING', 'FAILED') AND t.attempts<3
+                   ) AS has_eligible_push_target
             FROM notification_scope s
             JOIN notifications n ON n.id=s.id
             LEFT JOIN notification_deliveries d
@@ -133,7 +138,8 @@ public class NotificationScheduler {
                       OR (s.status IN ('PENDING', 'SENT', 'FAILED')
                           AND s.scheduled_at<=NOW()
                           AND (s.next_attempt_at IS NULL OR s.next_attempt_at<=NOW())
-                          AND s.attempts<3
+                          AND (s.push_targets_snapshotted_at IS NULL
+                               OR s.has_eligible_push_target)
                           AND (s.expires_at IS NULL OR s.expires_at>NOW()))
                   ))
               )
@@ -499,7 +505,12 @@ public class NotificationScheduler {
                 FROM notifications n
                 JOIN notification_scope s ON s.id=n.id
                 JOIN notification_deliveries d ON d.notification_id=n.id AND d.channel='WEB_PUSH'
-                WHERE d.status IN ('PENDING', 'FAILED') AND d.attempts<3
+                WHERE d.status IN ('PENDING', 'FAILED')
+                  AND (d.push_targets_snapshotted_at IS NULL OR EXISTS (
+                      SELECT 1 FROM notification_push_delivery_targets t
+                      WHERE t.notification_id=n.id
+                        AND t.status IN ('PENDING', 'FAILED') AND t.attempts<3
+                  ))
                   AND n.scheduled_at<=NOW()
                   AND (d.next_attempt_at IS NULL OR d.next_attempt_at<=NOW())
                   AND (n.expires_at IS NULL OR n.expires_at>NOW())

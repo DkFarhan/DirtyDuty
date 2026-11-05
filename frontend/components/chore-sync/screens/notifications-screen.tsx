@@ -95,6 +95,7 @@ export function NotificationsScreen({
   const [preferencesSaved, setPreferencesSaved] = useState(false)
   const [pushTestMessage, setPushTestMessage] = useState("")
   const [pushTestBusy, setPushTestBusy] = useState(false)
+  const [deviceSubscriptionExpired, setDeviceSubscriptionExpired] = useState(false)
   const itemsRef = useRef<Notification[]>([])
   const unreadCountRef = useRef(0)
   const hasLoadedRef = useRef(false)
@@ -378,6 +379,7 @@ export function NotificationsScreen({
     if (pushTestBusy) return
     setPushTestBusy(true)
     setPushTestMessage("")
+    setDeviceSubscriptionExpired(false)
     try {
       const inspection = await inspectBrowserPushSubscription()
       if (inspection.status !== "subscribed") {
@@ -387,6 +389,7 @@ export function NotificationsScreen({
 
       const fingerprint = await browserPushEndpointFingerprint(inspection.subscription.endpoint)
       const result = await notificationApi.testPushNotification(fingerprint)
+      setDeviceSubscriptionExpired(result.category === "SUBSCRIPTION_EXPIRED")
       setPushTestMessage(
         result.status === "ACCEPTED"
           ? "Push service accepted the test. This confirms server delivery acceptance, not that the device displayed it. If it did not appear, check browser/site notification settings and Android app notification settings."
@@ -410,7 +413,11 @@ export function NotificationsScreen({
   }
 
   const repairDevicePush = async () => {
-    if (await repairPush()) await loadPreferences()
+    if (await repairPush()) {
+      setDeviceSubscriptionExpired(false)
+      setPushTestMessage("This device’s push subscription was renewed and synchronized.")
+      await loadPreferences()
+    }
   }
 
   const updatePreference = <K extends keyof NotificationPreferences>(
@@ -735,20 +742,23 @@ export function NotificationsScreen({
                     {pushHealth.message}
                   </p>
                 )}
-                {(pushHealth.reason === "vapid-key-mismatch" ||
+                {(deviceSubscriptionExpired ||
+                  pushHealth.reason === "vapid-key-mismatch" ||
                   (preferences.pushEnabled && savedPreferences?.pushEnabled)) && (
                   <button
                     className="mt-2 font-bold text-teal-700 underline-offset-2 hover:underline dark:text-teal-300"
                     onClick={() =>
-                      void (pushHealth.reason === "vapid-key-mismatch"
+                      void (deviceSubscriptionExpired || pushHealth.reason === "vapid-key-mismatch"
                         ? repairDevicePush()
                         : restorePush())
                     }
                     type="button"
                   >
-                    {pushHealth.reason === "vapid-key-mismatch"
-                      ? "Repair this browser subscription"
-                      : "Enable or restore this device"}
+                    {deviceSubscriptionExpired
+                      ? "Renew this browser subscription"
+                      : pushHealth.reason === "vapid-key-mismatch"
+                        ? "Repair this browser subscription"
+                        : "Enable or restore this device"}
                   </button>
                 )}
                 {preferences.pushEnabled &&

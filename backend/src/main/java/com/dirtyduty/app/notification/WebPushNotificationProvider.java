@@ -73,7 +73,7 @@ public class WebPushNotificationProvider implements NotificationDeliveryProvider
     NotificationDeliveryState deliveryState =
         jdbc.query(
             """
-                SELECT n.id, n.scheduled_at, n.expires_at, d.status, d.attempts,
+                SELECT n.id, n.scheduled_at, n.expires_at, d.status,
                        n.recipient_user_id, n.push_target_tracking_enabled,
                        d.push_targets_snapshotted_at
                 FROM notifications n
@@ -89,7 +89,6 @@ public class WebPushNotificationProvider implements NotificationDeliveryProvider
                         rs.getObject("scheduled_at", java.time.OffsetDateTime.class),
                         rs.getObject("expires_at", java.time.OffsetDateTime.class),
                         rs.getString("status"),
-                        rs.getInt("attempts"),
                         rs.getObject("recipient_user_id", UUID.class),
                         rs.getBoolean("push_target_tracking_enabled"),
                         rs.getObject("push_targets_snapshotted_at", OffsetDateTime.class))
@@ -113,9 +112,6 @@ public class WebPushNotificationProvider implements NotificationDeliveryProvider
     if (!deliveryState.targetTrackingEnabled()) {
       setDeliveryStatus(
           notificationId, "CANCELLED", "Legacy notification is not eligible for push.", false);
-      return;
-    }
-    if (deliveryState.attempts() >= 3) {
       return;
     }
     if (!isConfigured()) {
@@ -409,7 +405,6 @@ public class WebPushNotificationProvider implements NotificationDeliveryProvider
       java.time.OffsetDateTime scheduledAt,
       java.time.OffsetDateTime expiresAt,
       String status,
-      int attempts,
       UUID recipientUserId,
       boolean targetTrackingEnabled,
       OffsetDateTime targetsSnapshottedAt) {}

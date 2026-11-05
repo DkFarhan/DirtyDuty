@@ -134,6 +134,15 @@ function clearSyncRequired(userId: string, fingerprint: string) {
   }
 }
 
+function clearConfirmation(userId: string, fingerprint: string) {
+  try {
+    localStorage.removeItem(`${CACHE_KEY_PREFIX}:${userId}:${fingerprint}`)
+  } catch {
+    return
+  }
+  clearSyncRequired(userId, fingerprint)
+}
+
 export function PushSubscriptionHealthProvider({ children }: { children: React.ReactNode }) {
   const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth()
   const [state, setState] = useState<PushHealthState>({
@@ -197,7 +206,9 @@ export function PushSubscriptionHealthProvider({ children }: { children: React.R
         try {
           const inspection = await inspectBrowserPushSubscription()
           if (!isCurrent(userId, generation)) return
-          setDevice(deviceStateFromInspection(await inspectBrowserPushDevice()))
+          const deviceInspection = await inspectBrowserPushDevice()
+          if (!isCurrent(userId, generation)) return
+          setDevice(deviceStateFromInspection(deviceInspection))
           if (inspection.status !== "subscribed") {
             const status = inspection.status
             const reason: PushHealthReason =
@@ -437,6 +448,11 @@ export function PushSubscriptionHealthProvider({ children }: { children: React.R
           const inspection = await inspectBrowserPushSubscription()
           if (!isCurrent(userId, generation)) return false
           if (inspection.status === "subscribed") {
+            const fingerprint = await browserPushEndpointFingerprint(
+              inspection.subscription.endpoint,
+            )
+            if (!isCurrent(userId, generation)) return false
+            clearConfirmation(userId, fingerprint)
             await notificationApi.unsubscribePush(inspection.subscription.endpoint)
             if (!isCurrent(userId, generation)) return false
           }
@@ -541,6 +557,7 @@ export function PushSubscriptionHealthProvider({ children }: { children: React.R
 
   useEffect(() => {
     generationRef.current += 1
+    const generation = generationRef.current
     inFlightRef.current = null
     restoreInFlightRef.current = null
     setupIntentInFlightRef.current = false
@@ -552,6 +569,7 @@ export function PushSubscriptionHealthProvider({ children }: { children: React.R
     preferenceFailedRef.current = false
     preferenceRetryInFlightRef.current = null
     pushEnabledRef.current = false
+    setDevice(initialDeviceState())
     if (isAuthLoading) {
       setPushEnabledState(null)
       setState({ status: "loading", reason: null, message: null })
@@ -576,15 +594,16 @@ export function PushSubscriptionHealthProvider({ children }: { children: React.R
         setPushEnabledState(preferences.pushEnabled)
         if (preferences.pushEnabled) {
           void prepareBrowserPushWorker()
-            .then(() =>
+            .then(() => {
+              if (!isCurrent(userId, generation)) return
               setDevice((current) => ({
                 ...current,
                 permission: currentPermission(),
                 worker: "ready",
-              })),
-            )
+              }))
+            })
             .catch((error: unknown) => {
-              if (cancelled || currentUserIdRef.current !== userId) return
+              if (cancelled || !isCurrent(userId, generation)) return
               setDevice((current) => ({ ...current, worker: "starting" }))
               setState({
                 status: "attention",
@@ -595,10 +614,20 @@ export function PushSubscriptionHealthProvider({ children }: { children: React.R
           void refresh(true)
         } else {
           setState({ status: "disabled", reason: null, message: null })
-          void inspectBrowserPushDevice().then((inspection) => {
-            if (cancelled || currentUserIdRef.current !== userId) return
-            setDevice(deviceStateFromInspection(inspection))
-          })
+          void inspectBrowserPushDevice()
+            .then((inspection) => {
+              if (cancelled || !isCurrent(userId, generation)) return
+              setDevice(deviceStateFromInspection(inspection))
+            })
+            .catch((error: unknown) => {
+              if (cancelled || !isCurrent(userId, generation)) return
+              setDevice(initialDeviceState())
+              setState({
+                status: "attention",
+                reason: "check-failed",
+                message: messageFor(error),
+              })
+            })
         }
       })
       .catch((error: unknown) => {
@@ -616,7 +645,7 @@ export function PushSubscriptionHealthProvider({ children }: { children: React.R
     return () => {
       cancelled = true
     }
-  }, [isAuthenticated, isAuthLoading, refresh, user?.userId])
+  }, [isAuthenticated, isAuthLoading, isCurrent, refresh, user?.userId])
 
   useEffect(() => {
     const continuePendingIntent = () => {
