@@ -26,7 +26,7 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-describe("redesigned household invitation dialog", () => {
+describe("household invitation dialog", () => {
   it("retries secure generation after errors and copies the generated code", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     const onOpenChange = vi.fn()
@@ -46,7 +46,6 @@ describe("redesigned household invitation dialog", () => {
         household={household}
         onOpenChange={onOpenChange}
         open
-        redesigned
         theme="light"
       />,
     )

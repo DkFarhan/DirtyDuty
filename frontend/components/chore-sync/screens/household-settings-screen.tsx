@@ -14,7 +14,6 @@ import {
 import { useHouseholds } from "@/lib/household/household-context"
 import { notificationApi, type NotificationStyle } from "@/lib/notifications/api"
 import { PasswordInput } from "@/components/ui/password-input"
-import { SubpageHeader } from "./subpage-header"
 import { useDialogFocus } from "../use-dialog-focus"
 import {
   HouseholdLiveDesignHeader,
@@ -66,13 +65,7 @@ function invitationExpiryLabel(value: string | null) {
   return `Expires ${dateText} · ${remainingText}`
 }
 
-export function HouseholdSettingsScreen({
-  redesigned = false,
-  theme = "light",
-}: {
-  redesigned?: boolean
-  theme?: PreviewTheme
-}) {
+export function HouseholdSettingsScreen({ theme = "light" }: { theme?: PreviewTheme }) {
   const { navigate, pendingAccountDeletionUserId, clearAccountDeletion } = useChoreSync()
   const { user, features } = useAuth()
   const { households, activeHousehold, refresh, updateHousehold, removeHousehold } = useHouseholds()
@@ -312,7 +305,7 @@ export function HouseholdSettingsScreen({
 
   useDialogFocus(
     revokeDialogRef,
-    redesigned && revokeTargetId !== null,
+    revokeTargetId !== null,
     () => {
       if (!revokeBusy) setRevokeTargetId(null)
     },
@@ -325,11 +318,8 @@ export function HouseholdSettingsScreen({
       )
     },
   )
-  useDialogFocus(
-    deleteDialogRef,
-    redesigned && deleteOpen && Boolean(household),
-    closeDeleteDialog,
-    () => document.querySelector<HTMLElement>("[data-household-delete-trigger]"),
+  useDialogFocus(deleteDialogRef, deleteOpen && Boolean(household), closeDeleteDialog, () =>
+    document.querySelector<HTMLElement>("[data-household-delete-trigger]"),
   )
 
   const submitDeleteHousehold = async () => {
@@ -391,13 +381,9 @@ export function HouseholdSettingsScreen({
 
   return (
     <div
-      className={`min-h-screen pb-8 ${
-        redesigned
-          ? `${designStyles.liveRoot} ${designStyles[theme]} ${designStyles.settingsPage}`
-          : "bg-stone-100 text-slate-800"
-      }`}
+      className={`min-h-screen pb-8 ${`${designStyles.liveRoot} ${designStyles[theme]} ${designStyles.settingsPage}`}`}
     >
-      {redesigned ? (
+      {
         <HouseholdLiveDesignHeader
           eyebrow="Household · Your home"
           heroDescription="The details and defaults that shape your shared space."
@@ -417,23 +403,8 @@ export function HouseholdSettingsScreen({
           }}
           title="Household settings"
         />
-      ) : (
-        <SubpageHeader
-          title="Household Settings"
-          subtitle={settings?.name ?? household?.name}
-          back={() => {
-            if (continuingAccountDeletion) clearAccountDeletion()
-            navigate("household")
-          }}
-        />
-      )}
-      <main
-        className={
-          redesigned
-            ? `${designStyles.liveContent} pt-4`
-            : "mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 pt-4"
-        }
-      >
+      }
+      <main className={`${designStyles.liveContent} pt-4`}>
         {reauthMessage && (
           <p role="status" className="rounded-xl bg-teal-50 p-3 text-sm text-teal-800">
             {reauthMessage}
@@ -461,58 +432,20 @@ export function HouseholdSettingsScreen({
         )}
         {visibleStatus === "loaded" && settings && (
           <>
-            <section
-              className={
-                redesigned
-                  ? designStyles.settingsCard
-                  : "flex flex-col gap-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
-              }
-            >
-              <div
-                className={
-                  redesigned ? designStyles.cardHeading : "flex items-start justify-between gap-3"
-                }
-              >
+            <section className={designStyles.settingsCard}>
+              <div className={designStyles.cardHeading}>
                 <div>
-                  <p
-                    className={
-                      redesigned
-                        ? designStyles.eyebrow
-                        : "text-xs font-bold uppercase tracking-[0.16em] text-slate-400"
-                    }
-                  >
-                    {redesigned ? "Your household" : "Household details"}
-                  </p>
-                  <h2 className={redesigned ? undefined : "mt-1 text-xl font-black text-slate-900"}>
-                    {settings.name}
-                  </h2>
+                  <p className={designStyles.eyebrow}>{"Your household"}</p>
+                  <h2 className={undefined}>{settings.name}</h2>
                 </div>
-                <span
-                  className={
-                    redesigned
-                      ? designStyles.rolePill
-                      : "rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600"
-                  }
-                >
-                  {settings.currentUserRole}
-                </span>
+                <span className={designStyles.rolePill}>{settings.currentUserRole}</span>
               </div>
 
-              <label
-                className={
-                  redesigned
-                    ? designStyles.fieldLabel
-                    : "flex flex-col gap-1.5 text-xs font-bold text-slate-500"
-                }
-              >
+              <label className={designStyles.fieldLabel}>
                 Household name
                 <input
                   aria-label="Household name"
-                  className={
-                    redesigned
-                      ? undefined
-                      : "rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-teal-500 disabled:bg-slate-50 disabled:text-slate-500"
-                  }
+                  className={undefined}
                   disabled={!canEdit}
                   maxLength={120}
                   onChange={(event) => {
@@ -523,24 +456,11 @@ export function HouseholdSettingsScreen({
                 />
               </label>
 
-              <label
-                className={
-                  redesigned
-                    ? designStyles.fieldLabel
-                    : "flex flex-col gap-1.5 text-xs font-bold text-slate-500"
-                }
-              >
-                {redesigned ? "A little about this home" : "Description"}{" "}
-                <span className={redesigned ? undefined : "font-normal text-slate-400"}>
-                  {redesigned ? "Optional" : "(optional)"}
-                </span>
+              <label className={designStyles.fieldLabel}>
+                {"A little about this home"} <span className={undefined}>{"Optional"}</span>
                 <textarea
                   aria-label="Household description"
-                  className={
-                    redesigned
-                      ? undefined
-                      : "min-h-[96px] resize-y rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-teal-500 disabled:bg-slate-50 disabled:text-slate-500"
-                  }
+                  className={undefined}
                   disabled={!canEdit}
                   maxLength={2000}
                   onChange={(event) => {
@@ -551,135 +471,65 @@ export function HouseholdSettingsScreen({
                 />
               </label>
 
-              <div className={redesigned ? designStyles.detailGrid : "grid gap-3 sm:grid-cols-2"}>
-                <div className={redesigned ? undefined : "rounded-xl bg-slate-50 p-3.5"}>
-                  {redesigned ? (
+              <div className={designStyles.detailGrid}>
+                <div className={undefined}>
+                  {
                     <>
                       <span>TIMEZONE</span>
                       <strong>{settings.timezone}</strong>
                     </>
-                  ) : (
-                    <>
-                      <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
-                        Timezone
-                      </p>
-                      <p className="mt-1 break-words text-sm font-semibold text-slate-700">
-                        {settings.timezone}
-                      </p>
-                    </>
-                  )}
+                  }
                 </div>
-                <div className={redesigned ? undefined : "rounded-xl bg-slate-50 p-3.5"}>
-                  {redesigned ? (
+                <div className={undefined}>
+                  {
                     <>
                       <span>STARTED</span>
                       <strong>{dateLabel(settings.createdAt)}</strong>
                     </>
-                  ) : (
-                    <>
-                      <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
-                        Created
-                      </p>
-                      <p className="mt-1 text-sm font-semibold text-slate-700">
-                        {dateLabel(settings.createdAt)}
-                      </p>
-                    </>
-                  )}
+                  }
                 </div>
               </div>
 
               {canEdit ? (
                 <button
-                  className={
-                    redesigned
-                      ? designStyles.primaryButton
-                      : "w-full rounded-xl bg-teal-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-50"
-                  }
+                  className={designStyles.primaryButton}
                   disabled={busy || name.trim().length < 2}
                   onClick={() => void save()}
                   type="button"
                 >
-                  {busy ? "Saving…" : redesigned ? "Save household details" : "Save changes"}
+                  {busy ? "Saving…" : "Save household details"}
                 </button>
               ) : (
-                <p
-                  className={
-                    redesigned
-                      ? designStyles.permissionNote
-                      : "rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-center text-xs text-slate-500"
-                  }
-                >
+                <p className={designStyles.permissionNote}>
                   Only the household owner can edit these details.
                 </p>
               )}
               {saved && (
-                <p
-                  role="status"
-                  className={
-                    redesigned
-                      ? designStyles.liveStatus
-                      : "text-center text-xs font-medium text-teal-700"
-                  }
-                >
+                <p role="status" className={designStyles.liveStatus}>
                   Household settings saved.
                 </p>
               )}
               {error && (
-                <p
-                  role="alert"
-                  className={redesigned ? designStyles.liveError : "text-xs text-rose-600"}
-                >
+                <p role="alert" className={designStyles.liveError}>
                   {error}
                 </p>
               )}
             </section>
 
-            <section
-              className={
-                redesigned
-                  ? designStyles.settingsCard
-                  : "flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
-              }
-            >
-              <div
-                className={
-                  redesigned ? designStyles.cardHeading : "flex items-start justify-between gap-3"
-                }
-              >
+            <section className={designStyles.settingsCard}>
+              <div className={designStyles.cardHeading}>
                 <div>
-                  <p
-                    className={
-                      redesigned
-                        ? designStyles.eyebrow
-                        : "text-xs font-bold uppercase tracking-[0.16em] text-slate-400"
-                    }
-                  >
-                    {redesigned ? "A shared default" : "Notifications"}
-                  </p>
-                  <h2 className={redesigned ? undefined : "mt-1 text-lg font-black text-slate-900"}>
-                    {redesigned ? "Notifications" : "Default notification style"}
-                  </h2>
+                  <p className={designStyles.eyebrow}>{"A shared default"}</p>
+                  <h2 className={undefined}>{"Notifications"}</h2>
                 </div>
-                {redesigned && (
-                  <Bell aria-hidden="true" className={designStyles.headingIcon} size={20} />
-                )}
+                {<Bell aria-hidden="true" className={designStyles.headingIcon} size={20} />}
               </div>
 
-              <label
-                className={
-                  redesigned
-                    ? designStyles.fieldLabel
-                    : "flex flex-col gap-1.5 text-xs font-bold text-slate-500"
-                }
-              >
-                {redesigned ? "Household notification style" : "Default style"}
+              <label className={designStyles.fieldLabel}>
+                {"Household notification style"}
                 <select
                   aria-label="Default notification style"
-                  className={
-                    redesigned
-                      ? undefined
-                      : "rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-900 disabled:bg-slate-50 disabled:text-slate-500"
-                  }
+                  className={undefined}
                   disabled={!canEditNotificationStyle || busy}
                   onChange={(event) => {
                     if (isNotificationStyle(event.target.value)) {
@@ -700,110 +550,52 @@ export function HouseholdSettingsScreen({
                   ))}
                 </select>
               </label>
-              <p className={redesigned ? designStyles.helperText : "text-xs text-slate-500"}>
-                {redesigned
-                  ? "This is the shared household default. Each member can choose a personal style in their own notification settings."
-                  : "Members can choose their own style in notification settings."}
+              <p className={designStyles.helperText}>
+                {
+                  "This is the shared household default. Each member can choose a personal style in their own notification settings."
+                }
               </p>
               {canEditNotificationStyle && (
                 <button
-                  className={
-                    redesigned
-                      ? designStyles.secondaryButton
-                      : "w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  }
+                  className={designStyles.secondaryButton}
                   disabled={busy}
                   onClick={() => void saveNotificationStyle()}
                   type="button"
                 >
-                  {redesigned ? "Save default style" : "Save default notification style"}
+                  {"Save default style"}
                 </button>
               )}
               {styleSaved && (
-                <p
-                  role="status"
-                  className={
-                    redesigned
-                      ? designStyles.liveStatus
-                      : "text-center text-xs font-medium text-teal-700"
-                  }
-                >
+                <p role="status" className={designStyles.liveStatus}>
                   Default style saved.
                 </p>
               )}
               {styleError && (
-                <p
-                  role="alert"
-                  className={redesigned ? designStyles.liveError : "text-xs text-rose-600"}
-                >
+                <p role="alert" className={designStyles.liveError}>
                   {styleError}
                 </p>
               )}
             </section>
 
             {canManageInvitations && (
-              <section
-                className={
-                  redesigned
-                    ? designStyles.settingsCard
-                    : "rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
-                }
-              >
-                <div
-                  className={
-                    redesigned
-                      ? designStyles.cardHeading
-                      : "flex items-center justify-between gap-3"
-                  }
-                >
+              <section className={designStyles.settingsCard}>
+                <div className={designStyles.cardHeading}>
                   <div>
-                    <p
-                      className={
-                        redesigned
-                          ? designStyles.eyebrow
-                          : "text-xs font-bold uppercase tracking-[0.16em] text-slate-400"
-                      }
-                    >
-                      {redesigned ? "Invitations" : "Active invitations"}
-                    </p>
-                    <h2
-                      className={redesigned ? undefined : "mt-1 text-lg font-black text-slate-900"}
-                    >
-                      {redesigned ? "Who can join" : "Manage access"}
-                    </h2>
+                    <p className={designStyles.eyebrow}>{"Invitations"}</p>
+                    <h2 className={undefined}>{"Who can join"}</h2>
                   </div>
-                  {redesigned && (
-                    <span className={designStyles.countPill}>{invitations.length} active</span>
-                  )}
+                  {<span className={designStyles.countPill}>{invitations.length} active</span>}
                 </div>
 
-                <div className={redesigned ? undefined : "mt-4 space-y-3"}>
+                <div className={undefined}>
                   {visibleInvitationStatus === "loading" && (
-                    <p
-                      className={
-                        redesigned
-                          ? designStyles.helperText
-                          : "rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500"
-                      }
-                    >
-                      Loading invitations…
-                    </p>
+                    <p className={designStyles.helperText}>Loading invitations…</p>
                   )}
                   {visibleInvitationStatus === "error" && (
-                    <div
-                      className={
-                        redesigned
-                          ? designStyles.statusBanner
-                          : "rounded-xl border border-rose-100 bg-rose-50 px-3 py-3 text-sm text-rose-700"
-                      }
-                    >
+                    <div className={designStyles.statusBanner}>
                       <p role="alert">{invitationError}</p>
                       <button
-                        className={
-                          redesigned
-                            ? designStyles.textButton
-                            : "mt-2 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs font-bold text-rose-700"
-                        }
+                        className={designStyles.textButton}
                         onClick={() => void loadInvitations()}
                         type="button"
                       >
@@ -812,20 +604,12 @@ export function HouseholdSettingsScreen({
                     </div>
                   )}
                   {visibleInvitationStatus === "loaded" && invitationError && (
-                    <div
-                      className={
-                        redesigned
-                          ? designStyles.statusBanner
-                          : "flex items-center gap-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900"
-                      }
-                    >
+                    <div className={designStyles.statusBanner}>
                       <p role="alert" className="flex-1">
                         {invitationError}
                       </p>
                       <button
-                        className={
-                          redesigned ? designStyles.textButton : "shrink-0 font-bold underline"
-                        }
+                        className={designStyles.textButton}
                         onClick={() => void loadInvitations()}
                         type="button"
                       >
@@ -834,39 +618,18 @@ export function HouseholdSettingsScreen({
                     </div>
                   )}
                   {visibleInvitationStatus === "loaded" && invitations.length === 0 && (
-                    <p
-                      className={
-                        redesigned
-                          ? designStyles.permissionNote
-                          : "rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-500"
-                      }
-                    >
-                      No active invitations.
-                    </p>
+                    <p className={designStyles.permissionNote}>No active invitations.</p>
                   )}
                   {visibleInvitationStatus === "loaded" &&
                     invitations.map((invitation) => (
-                      <div
-                        className={
-                          redesigned
-                            ? designStyles.invitationRow
-                            : "rounded-xl border border-slate-200 bg-slate-50 p-3.5"
-                        }
-                        key={invitation.id}
-                      >
-                        {redesigned && (
+                      <div className={designStyles.invitationRow} key={invitation.id}>
+                        {
                           <span className={designStyles.inviteMark}>
                             <UsersRound aria-hidden="true" size={17} />
                           </span>
-                        )}
-                        <div
-                          className={
-                            redesigned
-                              ? designStyles.invitationDetails
-                              : "space-y-1 text-sm text-slate-600"
-                          }
-                        >
-                          {redesigned ? (
+                        }
+                        <div className={designStyles.invitationDetails}>
+                          {
                             <>
                               <div className={designStyles.invitationPrimaryLine}>
                                 <strong>
@@ -880,38 +643,12 @@ export function HouseholdSettingsScreen({
                               <small>Created {invitationCreatedLabel(invitation.createdAt)}</small>
                               <small>{invitationExpiryLabel(invitation.expiresAt)}</small>
                             </>
-                          ) : (
-                            <>
-                              <p className="font-semibold text-slate-800">
-                                Created {dateLabel(invitation.createdAt)}
-                              </p>
-                              <p>
-                                Expires{" "}
-                                {invitation.expiresAt ? dateLabel(invitation.expiresAt) : "—"}
-                              </p>
-                              <p>
-                                Status:{" "}
-                                <span className="font-medium text-slate-700">
-                                  {invitation.status}
-                                </span>
-                              </p>
-                              {invitation.createdByDisplayName && (
-                                <p>Created by {invitation.createdByDisplayName}</p>
-                              )}
-                              {invitation.roleToAssign && (
-                                <p>Granted role: {invitation.roleToAssign}</p>
-                              )}
-                            </>
-                          )}
+                          }
                         </div>
-                        <div className={redesigned ? designStyles.invitationActions : undefined}>
+                        <div className={designStyles.invitationActions}>
                           <button
                             data-revoke-invitation-trigger={invitation.id}
-                            className={
-                              redesigned
-                                ? designStyles.textDanger
-                                : "rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-700 transition hover:bg-rose-50"
-                            }
+                            className={designStyles.textDanger}
                             onClick={() => {
                               setRevokeError("")
                               setRevokeTargetId(invitation.id)
@@ -924,24 +661,18 @@ export function HouseholdSettingsScreen({
                       </div>
                     ))}
                 </div>
-                {redesigned && (
+                {
                   <p className={designStyles.helperText}>
                     Only active invitations appear here. Revoking one prevents anyone from using its
                     code.
                   </p>
-                )}
+                }
               </section>
             )}
 
             {canEdit && (
-              <section
-                className={
-                  redesigned
-                    ? designStyles.dangerZone
-                    : "rounded-2xl border border-rose-200 bg-rose-50/60 p-5 shadow-sm"
-                }
-              >
-                {redesigned ? (
+              <section className={designStyles.dangerZone}>
+                {
                   <div className={designStyles.cardHeading}>
                     <div>
                       <p className={designStyles.dangerEyebrow}>Irreversible</p>
@@ -949,44 +680,25 @@ export function HouseholdSettingsScreen({
                     </div>
                     <LockKeyhole aria-hidden="true" size={20} />
                   </div>
-                ) : (
-                  <>
-                    <p className="text-xs font-bold uppercase tracking-[0.16em] text-rose-500">
-                      Danger zone
-                    </p>
-                    <h2 className="mt-1 text-lg font-black text-slate-900">Delete household</h2>
-                  </>
-                )}
-                <p
-                  className={redesigned ? undefined : "mt-2 text-sm leading-relaxed text-slate-600"}
-                >
-                  {redesigned
-                    ? "Deleting removes this household and its data for everyone. If you only want to stop managing the home, transfer ownership instead."
-                    : "Permanently remove this household and its data."}
+                }
+                <p className={undefined}>
+                  {
+                    "Deleting removes this household and its data for everyone. If you only want to stop managing the home, transfer ownership instead."
+                  }
                 </p>
                 {continuingAccountDeletion && (
-                  <p
-                    className={
-                      redesigned
-                        ? designStyles.helperText
-                        : "mt-2 text-sm leading-relaxed text-amber-800"
-                    }
-                  >
+                  <p className={designStyles.helperText}>
                     This does not delete your account. After the household is deleted, you will
                     return to Account &amp; Privacy to continue.
                   </p>
                 )}
                 <button
                   data-household-delete-trigger
-                  className={
-                    redesigned
-                      ? designStyles.dangerOutline
-                      : "mt-4 w-full rounded-xl border border-rose-200 bg-white px-3 py-2.5 text-sm font-bold text-rose-700 transition hover:bg-rose-50"
-                  }
+                  className={designStyles.dangerOutline}
                   onClick={() => setDeleteOpen(true)}
                   type="button"
                 >
-                  {redesigned ? "Review deletion steps" : "Delete household"}
+                  {"Review deletion steps"}
                 </button>
               </section>
             )}
@@ -1059,11 +771,7 @@ export function HouseholdSettingsScreen({
           <section
             aria-labelledby="household-delete-dialog-title"
             aria-modal="true"
-            className={
-              redesigned
-                ? designStyles.deletionDialog
-                : "w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"
-            }
+            className={designStyles.deletionDialog}
             role="dialog"
             ref={deleteDialogRef}
             tabIndex={-1}
@@ -1082,33 +790,21 @@ export function HouseholdSettingsScreen({
                 </p>
                 <div className="mt-5 flex flex-col gap-2">
                   <button
-                    className={
-                      redesigned
-                        ? designStyles.dialogNeutralAction
-                        : "rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700"
-                    }
+                    className={designStyles.dialogNeutralAction}
                     onClick={() => navigate("household")}
                     type="button"
                   >
                     Transfer ownership
                   </button>
                   <button
-                    className={
-                      redesigned
-                        ? `${designStyles.dangerButton} ${designStyles.deletionAction} w-full`
-                        : "rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm font-bold text-rose-700"
-                    }
+                    className={`${designStyles.dangerButton} ${designStyles.deletionAction} w-full`}
                     onClick={() => setDeleteStage(2)}
                     type="button"
                   >
                     Continue to deletion
                   </button>
                   <button
-                    className={
-                      redesigned
-                        ? designStyles.dialogCancelAction
-                        : "rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700"
-                    }
+                    className={designStyles.dialogCancelAction}
                     onClick={() => {
                       closeDeleteDialog()
                     }}
@@ -1167,22 +863,14 @@ export function HouseholdSettingsScreen({
                 </div>
                 <div className="mt-5 flex gap-2">
                   <button
-                    className={
-                      redesigned
-                        ? `${designStyles.dialogNeutralAction} flex-1`
-                        : "flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700"
-                    }
+                    className={`${designStyles.dialogNeutralAction} flex-1`}
                     onClick={() => setDeleteStage(1)}
                     type="button"
                   >
                     Back
                   </button>
                   <button
-                    className={
-                      redesigned
-                        ? `${designStyles.dangerButton} ${designStyles.deletionAction} flex-1`
-                        : "flex-1 rounded-xl bg-rose-600 px-3 py-2.5 text-sm font-bold text-white disabled:opacity-60"
-                    }
+                    className={`${designStyles.dangerButton} ${designStyles.deletionAction} flex-1`}
                     disabled={!deleteConsent.one || !deleteConsent.two || !deleteConsent.three}
                     onClick={() => setDeleteStage(3)}
                     type="button"
@@ -1205,11 +893,7 @@ export function HouseholdSettingsScreen({
                     Type “{household.name}” to confirm
                     <input
                       autoFocus
-                      className={
-                        redesigned
-                          ? `${designStyles.dialogInput} mt-2 w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-teal-400`
-                          : "mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-teal-400 focus:bg-white"
-                      }
+                      className={`${designStyles.dialogInput} mt-2 w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-teal-400`}
                       onChange={(event) => setDeleteName(event.target.value)}
                       placeholder={household.name}
                       type="text"
@@ -1221,11 +905,7 @@ export function HouseholdSettingsScreen({
                       Password
                       <PasswordInput
                         autoComplete="current-password"
-                        className={
-                          redesigned
-                            ? `${designStyles.dialogInput} mt-2 w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-teal-400`
-                            : "mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-teal-400 focus:bg-white"
-                        }
+                        className={`${designStyles.dialogInput} mt-2 w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-teal-400`}
                         id="delete-household-password"
                         name="password"
                         onChange={(event) => setDeletePassword(event.target.value)}
@@ -1261,22 +941,14 @@ export function HouseholdSettingsScreen({
                 )}
                 <div className="mt-5 flex gap-2">
                   <button
-                    className={
-                      redesigned
-                        ? `${designStyles.dialogNeutralAction} flex-1`
-                        : "flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700"
-                    }
+                    className={`${designStyles.dialogNeutralAction} flex-1`}
                     onClick={() => setDeleteStage(2)}
                     type="button"
                   >
                     Back
                   </button>
                   <button
-                    className={
-                      redesigned
-                        ? `${designStyles.dangerButton} ${designStyles.deletionAction} flex-1`
-                        : "flex-1 rounded-xl bg-rose-600 px-3 py-2.5 text-sm font-bold text-white disabled:opacity-60"
-                    }
+                    className={`${designStyles.dangerButton} ${designStyles.deletionAction} flex-1`}
                     disabled={deleteBusy || !canContinueDelete}
                     onClick={() => void submitDeleteHousehold()}
                     type="button"

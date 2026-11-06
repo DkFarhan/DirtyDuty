@@ -68,10 +68,6 @@ vi.mock("@/components/ui/password-input", () => ({
   PasswordInput: (props: React.InputHTMLAttributes<HTMLInputElement>) => <input {...props} />,
 }))
 
-vi.mock("./subpage-header", () => ({
-  SubpageHeader: ({ title }: { title: string }) => <h1>{title}</h1>,
-}))
-
 import { HouseholdSettingsScreen } from "./household-settings-screen"
 import designStyles from "../redesign/household-secondary-design-preview.module.css"
 
@@ -162,7 +158,7 @@ describe("household settings screen", () => {
       { ...activeInvitation, id: "invitation-2", roleToAssign: "ADMIN" },
       { ...activeInvitation, id: "invitation-3", roleToAssign: "OWNER" },
     ])
-    render(<HouseholdSettingsScreen redesigned theme="light" />)
+    render(<HouseholdSettingsScreen theme="light" />)
 
     expect(await screen.findByRole("heading", { name: "Make it feel like yours." })).toBeTruthy()
     expect(screen.getByRole("heading", { name: "Home A" })).toBeTruthy()
@@ -183,8 +179,8 @@ describe("household settings screen", () => {
     expect(screen.getByRole("button", { name: "Review deletion steps" })).toBeTruthy()
   })
 
-  it("uses the redesigned destructive action hierarchy in the deletion dialog", async () => {
-    const { container } = render(<HouseholdSettingsScreen redesigned theme="dark" />)
+  it("uses the current destructive action hierarchy in the deletion dialog", async () => {
+    const { container } = render(<HouseholdSettingsScreen theme="dark" />)
     const trigger = await screen.findByRole("button", { name: "Review deletion steps" })
     fireEvent.click(trigger)
 
@@ -241,7 +237,7 @@ describe("household settings screen", () => {
 
     mocks.setHouseholdStyle.mockResolvedValueOnce(undefined)
     mocks.settings.mockResolvedValueOnce({ ...homeASettings, notificationStyle: "MINIMAL" })
-    fireEvent.click(screen.getByRole("button", { name: "Save default notification style" }))
+    fireEvent.click(screen.getByRole("button", { name: "Save default style" }))
     await waitFor(() =>
       expect(screen.getByLabelText("Default notification style")).toHaveProperty(
         "value",
@@ -254,7 +250,7 @@ describe("household settings screen", () => {
   it("returns to account deletion after household deletion when that flow is pending", async () => {
     mocks.pendingAccountDeletionUserId = "user-1"
     render(<HouseholdSettingsScreen />)
-    fireEvent.click(await screen.findByRole("button", { name: "Delete household" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Review deletion steps" }))
     fireEvent.click(screen.getByRole("button", { name: "Continue to deletion" }))
     fireEvent.click(screen.getByRole("checkbox", { name: "All members will lose access." }))
     fireEvent.click(

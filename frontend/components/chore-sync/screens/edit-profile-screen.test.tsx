@@ -45,9 +45,9 @@ describe("EditProfileScreen", () => {
 
   afterEach(cleanup)
 
-  it("uses the redesigned form in dark mode and saves the updated profile", async () => {
+  it("uses the current form in dark mode and saves the updated profile", async () => {
     mocks.update.mockResolvedValue({ ...profile, displayName: "Sam Chen" })
-    render(<EditProfileScreen redesigned theme="dark" />)
+    render(<EditProfileScreen theme="dark" />)
 
     expect(await screen.findByText("YOUR DETAILS")).toBeTruthy()
     expect(screen.getByRole("heading", { name: "Edit profile", level: 1 })).toBeTruthy()
