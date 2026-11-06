@@ -389,7 +389,9 @@ public class OccurrenceService {
     OffsetDateTime dueAt =
         schedule.getDueTime() == null ? null : dueAt(scheduledFor, schedule.getDueTime(), zone);
     if (!occurrence.scheduledFor().equals(scheduledFor)
-        || !java.util.Objects.equals(occurrence.dueAt(), dueAt)) {
+        || (occurrence.dueAt() == null
+            ? dueAt != null
+            : dueAt == null || !occurrence.dueAt().isEqual(dueAt))) {
       cancelPendingOccurrenceReminders(occurrence.id());
     }
     Chore chore = schedule.getChore();
