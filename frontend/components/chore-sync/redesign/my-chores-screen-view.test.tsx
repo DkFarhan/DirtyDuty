@@ -2,6 +2,7 @@
 
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import navigationStyles from "../bottom-nav.module.css"
 import styles from "./my-chores-screen-view.module.css"
 import { MyChoresDesignPreview } from "./my-chores-design-preview"
 import { myChoresPreviewFixture } from "./my-chores-preview-fixtures"
@@ -67,12 +68,11 @@ describe("MyChoresScreenView", () => {
       styles.categoryGlyph,
       styles.priorityIndicator,
       styles.listCheck,
-      styles.navigationIcon,
     ]) {
       expect(container.querySelector(`.${selector}`)).not.toBeNull()
     }
     expect(container.querySelectorAll(`.${styles.categoryGlyph}`)).toHaveLength(9)
-    expect(container.querySelectorAll(`.${styles.navigationIcon}`)).toHaveLength(4)
+    expect(container.querySelectorAll(`.${navigationStyles.icon}`)).toHaveLength(4)
 
     rerender(
       <MyChoresScreenView

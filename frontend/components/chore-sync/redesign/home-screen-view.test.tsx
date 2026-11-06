@@ -2,6 +2,7 @@
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import navigationStyles from "../bottom-nav.module.css"
 import { HomeDesignPreview } from "./home-design-preview"
 import { createEmptyHomePreviewFixture, homePreviewFixture } from "./home-preview-fixtures"
 import styles from "./home-screen-view.module.css"
@@ -103,7 +104,7 @@ describe("HomeScreenView", () => {
     for (const assetSlot of assetSlots) {
       expect(container.querySelector(`.${assetSlot}`)).not.toBeNull()
     }
-    expect(container.querySelectorAll(`.${styles.navigationIcon}`)).toHaveLength(4)
+    expect(container.querySelectorAll(`.${navigationStyles.icon}`)).toHaveLength(4)
   })
 
   it("renders loading and recoverable error states", () => {

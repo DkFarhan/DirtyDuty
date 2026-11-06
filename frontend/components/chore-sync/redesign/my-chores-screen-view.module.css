@@ -45,13 +45,6 @@
   --state-title: #f7f8f1;
   --state-body: #a9c1c2;
   --state-footnote: #82a4a7;
-  --nav-surface: rgb(21 56 67 / 71%);
-  --nav-border: rgb(215 255 251 / 63%);
-  --nav-active-surface: rgb(105 207 200 / 19%);
-  --nav-active-border: rgb(190 255 252 / 17%);
-  --nav-active-text: #b6fff5;
-  --nav-inactive-text: #a5bdc0;
-  --nav-shadow: 0 9px 21px -4px rgb(0 12 18 / 38%);
   position: relative;
   width: 100%;
   height: 100vh;
@@ -119,13 +112,6 @@
   --state-title: #17383d;
   --state-body: #4a6569;
   --state-footnote: #4a6569;
-  --nav-surface: rgb(247 255 252 / 81%);
-  --nav-border: rgb(255 255 255 / 88%);
-  --nav-active-surface: rgb(206 241 231 / 96%);
-  --nav-active-border: rgb(13 112 108 / 28%);
-  --nav-active-text: #0d706c;
-  --nav-inactive-text: #536f70;
-  --nav-shadow: 0 10px 24px rgb(54 83 90 / 17%);
   background-image: linear-gradient(
     100.718587deg,
     #edf8f4 6.8376%,
@@ -421,8 +407,7 @@
 .inlineCompleteButton:focus-visible,
 .attentionCompleteButton:focus-visible,
 .errorPanel button:focus-visible,
-.refreshError button:focus-visible,
-.navigationItem:focus-visible {
+.refreshError button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
@@ -1356,142 +1341,6 @@
   animation-delay: 240ms;
 }
 
-.navigation {
-  position: fixed;
-  z-index: 20;
-  right: 0;
-  bottom: env(safe-area-inset-bottom);
-  left: 0;
-  box-sizing: border-box;
-  width: min(390px, 100%);
-  height: 84px;
-  margin-inline: auto;
-  padding-top: 9px;
-}
-
-.navigationCapsule {
-  position: relative;
-  box-sizing: border-box;
-  width: min(364px, calc(100% - 26px));
-  height: 66px;
-  margin-inline: auto;
-  overflow: hidden;
-  border: 1px solid var(--nav-border);
-  border-radius: 33px;
-  background: var(--nav-surface);
-  box-shadow: var(--nav-shadow);
-  backdrop-filter: blur(11px);
-  -webkit-backdrop-filter: blur(11px);
-}
-
-.navigationItems {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  height: 100%;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  align-items: center;
-  padding-inline: 1px;
-}
-
-.activeIsland {
-  position: absolute;
-  z-index: 0;
-  top: 5px;
-  left: calc(1px + (100% - 2px) / 4 + 6px);
-  width: 87px;
-  height: 54px;
-  box-sizing: border-box;
-  border: 1px solid var(--nav-active-border);
-  border-radius: 25px;
-  background: var(--nav-active-surface);
-  box-shadow: inset 0 1px 1px rgb(229 255 255 / 19%);
-  transition: left 180ms ease;
-}
-
-.activeIsland[data-active-destination="home"] {
-  left: calc(1px + 6px);
-}
-
-.activeIsland[data-active-destination="household"] {
-  left: calc(1px + (100% - 2px) / 4 * 2 + 6px);
-}
-
-.activeIsland[data-active-destination="profile"] {
-  left: calc(1px + (100% - 2px) / 4 * 3 + 6px);
-}
-
-.navigationItem {
-  display: flex;
-  min-width: 0;
-  height: 60px;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  padding: 1px 0 0;
-  border: 0;
-  background: transparent;
-  color: var(--nav-inactive-text);
-  cursor: pointer;
-  font: inherit;
-}
-
-.activeNavigationItem {
-  color: var(--nav-active-text);
-}
-
-.navigationIcon {
-  display: block;
-  width: 23px;
-  height: 23px;
-  background-position: center;
-  background-repeat: no-repeat;
-}
-
-.darkTheme .homeIcon {
-  background-image: url("./assets/dark-home.svg");
-}
-
-.darkTheme .choresIcon {
-  background-image: url("./assets/dark-my-chores.svg");
-}
-
-.darkTheme .householdIcon {
-  background-image: url("./assets/dark-household.svg");
-}
-
-.darkTheme .profileIcon {
-  background-image: url("./assets/dark-profile.svg");
-}
-
-.lightTheme .homeIcon {
-  background-image: url("./assets/light-home.svg");
-}
-
-.lightTheme .choresIcon {
-  background-image: url("./assets/light-my-chores.svg");
-}
-
-.lightTheme .householdIcon {
-  background-image: url("./assets/light-household.svg");
-}
-
-.lightTheme .profileIcon {
-  background-image: url("./assets/light-profile.svg");
-}
-
-.navigationLabel {
-  font-size: 10.5px;
-  font-weight: 500;
-  line-height: 13px;
-  white-space: nowrap;
-}
-
-.activeNavigationItem .navigationLabel {
-  font-weight: 700;
-}
-
 @keyframes pulse {
   50% {
     opacity: 0.5;
@@ -1558,7 +1407,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .tab,
-  .activeIsland,
   .loadingState span {
     animation: none;
     transition: none;

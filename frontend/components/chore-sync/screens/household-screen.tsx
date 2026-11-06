@@ -730,7 +730,7 @@ export function HouseholdScreen({
         pendingMemberAction={pendingMemberAction}
       />
 
-      <BottomNav active="household" navigate={navigate} />
+      <BottomNav active="household" navigate={navigate} theme={theme} />
     </div>
   )
 }
