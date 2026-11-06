@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { AppShell } from "./app-shell"
 import { clearCsrfToken } from "@/lib/auth/api"
@@ -113,8 +113,8 @@ async function openHousehold() {
 }
 
 async function enterChores() {
-  fireEvent.click(screen.getByRole("button", { name: /Manage Chores/ }))
-  await screen.findByRole("heading", { name: "Household Management" })
+  fireEvent.click(screen.getByRole("button", { name: /Manage chores/ }))
+  await screen.findByRole("heading", { name: "Manage chores" })
 }
 
 describe("chore management", () => {
@@ -146,7 +146,7 @@ describe("chore management", () => {
     await enterChores()
     expect(screen.getByLabelText("Loading chores")).toBeTruthy()
     resolveList(jsonResponse([]))
-    expect(await screen.findByText("No chores yet")).toBeTruthy()
+    expect(await screen.findByText("No shared chores yet.")).toBeTruthy()
     expect(screen.getByText("Create your first chore and keep the household moving.")).toBeTruthy()
   })
 
@@ -160,7 +160,7 @@ describe("chore management", () => {
       "textContent",
       "Unable to connect to DirtyDuty. Please try again.",
     )
-    expect(screen.queryByText("No chores yet")).toBeNull()
+    expect(screen.queryByText("No shared chores yet.")).toBeNull()
   })
 
   it("renders backend chore definitions and persists pause lifecycle actions", async () => {
@@ -171,7 +171,8 @@ describe("chore management", () => {
     await enterChores()
 
     expect(await screen.findByRole("heading", { name: "Clean Kitchen" })).toBeTruthy()
-    expect(screen.getByText("Every Monday · 6:00 PM")).toBeTruthy()
+    const choreCard = screen.getByRole("heading", { name: "Clean Kitchen" }).closest("article")
+    expect(choreCard?.textContent).toContain("Every Monday · 6:00 PM")
     expect(screen.getByText("Fixed · Jahid · Effort 3/5 · ~20 min")).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "Actions for Clean Kitchen" }))
     fetchMock
@@ -194,7 +195,7 @@ describe("chore management", () => {
         ),
       ).toBe(true),
     )
-    expect(await screen.findByText("Paused")).toBeTruthy()
+    expect(await within(choreCard!).findByText("Paused")).toBeTruthy()
   })
 
   it("creates a real weekly chore using the household timezone and selected category", async () => {
@@ -208,17 +209,17 @@ describe("chore management", () => {
       .mockResolvedValueOnce(jsonResponse([]))
       .mockResolvedValueOnce(jsonResponse(options))
     await enterChores()
-    await screen.findByText("No chores yet")
+    await screen.findByText("No shared chores yet.")
 
     fireEvent.click(screen.getByRole("button", { name: "Create a chore" }))
-    await screen.findByRole("heading", { name: "Create Chore" })
+    await screen.findByRole("heading", { name: "Create a chore" })
     fireEvent.change(screen.getByLabelText("Category"), { target: { value: "category-1" } })
     fireEvent.change(screen.getByPlaceholderText("e.g. Clean Kitchen"), {
       target: { value: "  Clean Kitchen  " },
     })
     fireEvent.click(screen.getByRole("button", { name: "Create Chore" }))
 
-    await screen.findByRole("heading", { name: "Household Management" })
+    await screen.findByRole("heading", { name: "Manage chores" })
     const createRequest = fetchMock.mock.calls.find(
       ([url, request]) =>
         url === "http://localhost:8080/api/households/home-1/chores" && request?.method === "POST",
@@ -258,7 +259,7 @@ describe("chore management", () => {
       .mockResolvedValueOnce(jsonResponse(options))
     fireEvent.click(screen.getByRole("button", { name: "Edit" }))
 
-    expect(await screen.findByRole("heading", { name: "Edit Chore" })).toBeTruthy()
+    expect(await screen.findByRole("heading", { name: "Edit a chore" })).toBeTruthy()
     expect(await screen.findByDisplayValue("Clean Kitchen")).toBeTruthy()
     fireEvent.change(screen.getByDisplayValue("Clean Kitchen"), {
       target: { value: "Wipe Kitchen" },
@@ -306,7 +307,7 @@ describe("chore management", () => {
       )
     fireEvent.click(screen.getByRole("button", { name: "Edit" }))
 
-    await screen.findByRole("heading", { name: "Edit Chore" })
+    await screen.findByRole("heading", { name: "Edit a chore" })
     fireEvent.click(screen.getByRole("button", { name: "One time" }))
     fireEvent.click(screen.getByRole("button", { name: "Save Changes" }))
 
@@ -314,7 +315,7 @@ describe("chore management", () => {
       "textContent",
       "This chore has recurring assignment history and can't be changed to a one-time chore. Keep its recurring schedule or create a new one-time chore.",
     )
-    expect(screen.getByRole("heading", { name: "Edit Chore" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Edit a chore" })).toBeTruthy()
     expect(screen.getByRole("button", { name: "One time" }).getAttribute("aria-pressed")).toBe(
       "true",
     )
@@ -349,7 +350,7 @@ describe("chore management", () => {
       .mockResolvedValueOnce(jsonResponse(options))
     fireEvent.click(screen.getByRole("button", { name: "Archive" }))
 
-    expect(await screen.findByText("No chores yet")).toBeTruthy()
+    expect(await screen.findByText("No shared chores yet.")).toBeTruthy()
     expect(
       fetchMock.mock.calls.some(
         ([url, request]) =>
@@ -363,33 +364,33 @@ describe("chore management", () => {
     await openHousehold()
     fetchMock.mockResolvedValueOnce(jsonResponse([])).mockResolvedValueOnce(jsonResponse(options))
     await enterChores()
-    await screen.findByText("No chores yet")
+    await screen.findByText("No shared chores yet.")
     fetchMock.mockResolvedValueOnce(jsonResponse(options))
     fireEvent.click(screen.getByRole("button", { name: "Create a chore" }))
-    await screen.findByRole("heading", { name: "Create Chore" })
+    await screen.findByRole("heading", { name: "Create a chore" })
 
     fireEvent.change(screen.getByPlaceholderText("e.g. Clean Kitchen"), {
       target: { value: "New chore" },
     })
-    fireEvent.click(screen.getByRole("button", { name: "Back to chores" }))
+    fireEvent.click(screen.getByRole("button", { name: "Back" }))
     expect(screen.getByRole("dialog", { name: "Discard changes?" })).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "Keep editing" }))
-    expect(screen.getByRole("heading", { name: "Create Chore" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Create a chore" })).toBeTruthy()
 
-    fireEvent.click(screen.getByRole("button", { name: "Back to chores" }))
+    fireEvent.click(screen.getByRole("button", { name: "Back" }))
     fireEvent.click(screen.getByRole("button", { name: "Discard" }))
-    expect(await screen.findByRole("heading", { name: "Household Management" })).toBeTruthy()
+    expect(await screen.findByRole("heading", { name: "Manage chores" })).toBeTruthy()
   })
 
   it("requires exactly K fixed members and persists multi-person scheduling", async () => {
     await openHousehold()
     fetchMock.mockResolvedValueOnce(jsonResponse([])).mockResolvedValueOnce(jsonResponse(options))
     await enterChores()
-    await screen.findByText("No chores yet")
+    await screen.findByText("No shared chores yet.")
 
     fetchMock.mockResolvedValueOnce(jsonResponse(options))
     fireEvent.click(screen.getByRole("button", { name: "Create a chore" }))
-    await screen.findByRole("heading", { name: "Create Chore" })
+    await screen.findByRole("heading", { name: "Create a chore" })
     fireEvent.change(screen.getByPlaceholderText("e.g. Clean Kitchen"), {
       target: { value: "Move Sofa" },
     })
@@ -418,7 +419,7 @@ describe("chore management", () => {
       .mockResolvedValueOnce(jsonResponse([]))
       .mockResolvedValueOnce(jsonResponse(options))
     fireEvent.click(screen.getByRole("button", { name: "Create Chore" }))
-    await screen.findByRole("heading", { name: "Household Management" })
+    await screen.findByRole("heading", { name: "Manage chores" })
 
     const createRequest = fetchMock.mock.calls.find(
       ([url, request]) =>
@@ -439,10 +440,10 @@ describe("chore management", () => {
     await openHousehold()
     fetchMock.mockResolvedValueOnce(jsonResponse([])).mockResolvedValueOnce(jsonResponse(options))
     await enterChores()
-    await screen.findByText("No chores yet")
+    await screen.findByText("No shared chores yet.")
     fetchMock.mockResolvedValueOnce(jsonResponse(options))
     fireEvent.click(screen.getByRole("button", { name: "Create a chore" }))
-    await screen.findByRole("heading", { name: "Create Chore" })
+    await screen.findByRole("heading", { name: "Create a chore" })
 
     fireEvent.change(screen.getByPlaceholderText("e.g. Clean Kitchen"), {
       target: { value: "Sweep Floor" },

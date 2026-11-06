@@ -186,7 +186,7 @@ describe("PrivacySecurityScreen", () => {
   it("preserves deletion intent for household resolution without deleting the account", async () => {
     mocks.households = [{ id: "house-1", name: "Maple House", currentUserRole: "OWNER" }]
     render(<PrivacySecurityScreen />)
-    fireEvent.click(screen.getByRole("button", { name: "Delete account" }))
+    fireEvent.click(screen.getByRole("button", { name: /^Delete account/ }))
 
     await screen.findByText("Maple House")
     expect(screen.getAllByText("You still own households.").length).toBeGreaterThan(0)
@@ -201,7 +201,7 @@ describe("PrivacySecurityScreen", () => {
     expect(mocks.navigate).toHaveBeenCalledWith("household")
     expect(mocks.deleteAccount).not.toHaveBeenCalled()
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete account" }))
+    fireEvent.click(screen.getByRole("button", { name: /^Delete account/ }))
     fireEvent.click(screen.getByRole("button", { name: "Delete household" }))
     expect(mocks.beginAccountDeletion).toHaveBeenLastCalledWith("user-1")
     expect(mocks.selectHousehold).toHaveBeenCalledWith("house-1")
@@ -217,7 +217,7 @@ describe("PrivacySecurityScreen", () => {
   it("requires acknowledgement, full email, and password before reviewing deletion", async () => {
     mocks.deleteAccount.mockResolvedValue(undefined)
     render(<PrivacySecurityScreen />)
-    fireEvent.click(screen.getByRole("button", { name: "Delete account" }))
+    fireEvent.click(screen.getByRole("button", { name: /^Delete account/ }))
     await screen.findByLabelText("I understand that deleting my account is permanent.")
     const continueButton = screen.getByRole("button", { name: "Continue" })
     expect((continueButton as HTMLButtonElement).disabled).toBe(true)
@@ -293,7 +293,7 @@ describe("PrivacySecurityScreen", () => {
       },
     ])
     render(<PrivacySecurityScreen />)
-    fireEvent.click(screen.getByRole("button", { name: "Delete account" }))
+    fireEvent.click(screen.getByRole("button", { name: /^Delete account/ }))
     await screen.findByLabelText("I understand that deleting my account is permanent.")
     fireEvent.click(screen.getByLabelText("I understand that deleting my account is permanent."))
     fireEvent.click(screen.getByRole("button", { name: "Continue" }))
@@ -329,7 +329,7 @@ describe("PrivacySecurityScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "Set a password by email" }))
     expect(mocks.navigate).toHaveBeenCalledWith("forgot-password")
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete account" }))
+    fireEvent.click(screen.getByRole("button", { name: /^Delete account/ }))
     await screen.findByLabelText("I understand that deleting my account is permanent.")
     fireEvent.click(screen.getByLabelText("I understand that deleting my account is permanent."))
     fireEvent.click(screen.getByRole("button", { name: "Continue" }))

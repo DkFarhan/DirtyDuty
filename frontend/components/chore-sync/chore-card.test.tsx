@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
 import type { AssignmentDTO } from "@/lib/household/chores"
-import { ServerAssignmentCard } from "./chore-card"
+import { assignmentAssigneeNames } from "./chore-card"
 
 const assignment: AssignmentDTO = {
   id: "assignment-1",
@@ -29,16 +28,14 @@ const assignment: AssignmentDTO = {
   overdue: false,
 }
 
-describe("assignment card assignees", () => {
+describe("assignment assignee formatting", () => {
   it("shows the current user first by user ID while preserving other members' order", () => {
-    render(
-      <ServerAssignmentCard
-        assignment={assignment}
-        currentUserId="current-user"
-        householdTimezone="UTC"
-      />,
-    )
+    expect(assignmentAssigneeNames(assignment, "current-user")).toBe("You, Farhan Habib, Alex")
+  })
 
-    expect(screen.getByText("Assigned to You, Farhan Habib, Alex")).toBeTruthy()
+  it("describes assignments with no assignees", () => {
+    expect(assignmentAssigneeNames({ ...assignment, assignees: [] }, "current-user")).toBe(
+      "No assignee",
+    )
   })
 })

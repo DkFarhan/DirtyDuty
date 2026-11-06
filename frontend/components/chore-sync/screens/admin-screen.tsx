@@ -14,7 +14,6 @@ import { useHouseholds } from "@/lib/household/household-context"
 import { householdChoreResource, useDataSync } from "@/lib/data-sync/data-sync-context"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { ChevronLeftIcon } from "../icons"
 import { useDialogFocus } from "../use-dialog-focus"
 import {
   HouseholdLiveDesignHeader,
@@ -25,11 +24,9 @@ import designStyles from "../redesign/household-secondary-design-preview.module.
 
 export function AdminScreen({
   initialTab = "chores",
-  redesigned = false,
   theme = "light",
 }: {
   initialTab?: "members" | "chores"
-  redesigned?: boolean
   theme?: PreviewTheme
 }) {
   void initialTab
@@ -55,7 +52,7 @@ export function AdminScreen({
   const { revision, invalidate } = useDataSync(choreResource)
   useDialogFocus(
     archiveDialogRef,
-    redesigned && archiveChore !== null,
+    archiveChore !== null,
     () => setArchiveChore(null),
     () => {
       if (!archiveChore) return null
@@ -198,13 +195,9 @@ export function AdminScreen({
 
   return (
     <div
-      className={`flex min-h-screen flex-col ${
-        redesigned
-          ? `${designStyles.liveRoot} ${designStyles[theme]} ${designStyles.adminPage}`
-          : "bg-slate-50"
-      }`}
+      className={`flex min-h-screen flex-col ${`${designStyles.liveRoot} ${designStyles[theme]} ${designStyles.adminPage}`}`}
     >
-      {redesigned ? (
+      {
         <HouseholdLiveDesignHeader
           action={
             <button
@@ -230,33 +223,10 @@ export function AdminScreen({
           onBack={() => navigate("household")}
           title="Manage chores"
         />
-      ) : (
-        <header className="border-b border-slate-100 bg-white px-5 pb-4 pt-12">
-          <div className="flex items-center gap-3 mb-1">
-            <button
-              onClick={() => navigate("household")}
-              aria-label="Back"
-              className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 transition-colors"
-            >
-              <ChevronLeftIcon className="w-5 h-5 text-slate-500" />
-            </button>
-            <div>
-              <h1 className="text-xl font-black text-slate-900 font-display">
-                Household Management
-              </h1>
-              <p className="text-slate-400 text-xs">{household?.name ?? "Your household"}</p>
-            </div>
-          </div>
+      }
 
-          <div className="mt-4 flex items-center gap-2 border-t border-slate-100 pt-4 text-sm font-semibold text-slate-600">
-            <span aria-hidden="true">📋</span>
-            <span>Chores</span>
-          </div>
-        </header>
-      )}
-
-      <div className={redesigned ? designStyles.liveContent : "px-4 pt-4"}>
-        {redesigned && (
+      <div className={designStyles.liveContent}>
+        {
           <>
             <div className={designStyles.summaryGrid}>
               <article className={designStyles.summaryCard}>
@@ -285,18 +255,8 @@ export function AdminScreen({
               title="Household chores"
             />
           </>
-        )}
-        <div className={redesigned ? designStyles.choreList : "flex flex-col gap-3"}>
-          {!redesigned && (
-            <Button
-              aria-label="Create a chore"
-              onClick={() => navigate("create-chore")}
-              className="h-12 w-full rounded-xl bg-teal-600 text-[15px] font-bold text-white shadow-sm hover:bg-teal-700"
-              type="button"
-            >
-              <span>+</span> Create Chore
-            </Button>
-          )}
+        }
+        <div className={designStyles.choreList}>
           {(actionError || (visibleChoreState === "loaded" && refreshError)) && (
             <div className="flex items-center gap-3 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">
               <p role="alert" className="flex-1">
@@ -314,37 +274,21 @@ export function AdminScreen({
             </div>
           )}
           {visibleChoreState === "loading" && (
-            <div
-              aria-label="Loading chores"
-              className={redesigned ? designStyles.choreList : "space-y-3"}
-            >
+            <div aria-label="Loading chores" className={designStyles.choreList}>
               {[0, 1, 2].map((item) => (
-                <div
-                  className={
-                    redesigned
-                      ? `${designStyles.choreCard} ${designStyles.skeleton}`
-                      : "h-28 animate-pulse rounded-2xl bg-white shadow-sm"
-                  }
-                  key={item}
-                />
+                <div className={`${designStyles.choreCard} ${designStyles.skeleton}`} key={item} />
               ))}
             </div>
           )}
           {visibleChoreState === "error" && (
-            <div
-              className={
-                redesigned
-                  ? designStyles.emptyCard
-                  : "rounded-2xl border border-slate-100 bg-white p-5 text-center shadow-sm"
-              }
-            >
-              {redesigned && <p className={designStyles.eyebrow}>A momentary pause</p>}
-              {redesigned && <h3>Chores didn’t load.</h3>}
+            <div className={designStyles.emptyCard}>
+              {<p className={designStyles.eyebrow}>A momentary pause</p>}
+              {<h3>Chores didn’t load.</h3>}
               <p role="alert" className="text-sm text-slate-600">
                 {choreError}
               </p>
               <Button
-                className={redesigned ? designStyles.secondaryButton : "mt-3 rounded-xl"}
+                className={designStyles.secondaryButton}
                 onClick={() => void loadChores()}
                 type="button"
                 variant="outline"
@@ -354,14 +298,8 @@ export function AdminScreen({
             </div>
           )}
           {visibleChoreState === "loaded" && visibleChores.length === 0 && (
-            <div
-              className={
-                redesigned
-                  ? designStyles.emptyCard
-                  : "rounded-2xl border border-slate-100 bg-white px-5 py-8 text-center shadow-sm"
-              }
-            >
-              {redesigned ? (
+            <div className={designStyles.emptyCard}>
+              {
                 <>
                   <span aria-hidden="true" className={designStyles.emptyGlyph}>
                     <Plus size={24} />
@@ -369,23 +307,12 @@ export function AdminScreen({
                   <p className={designStyles.eyebrow}>A fresh start</p>
                   <h3>No shared chores yet.</h3>
                 </>
-              ) : (
-                <>
-                  <div aria-hidden="true" className="mb-2 text-3xl">
-                    🧹
-                  </div>
-                  <p className="font-display font-bold text-slate-900">No chores yet</p>
-                </>
-              )}
+              }
               <p className="mt-1 text-sm text-slate-400">
                 Create your first chore and keep the household moving.
               </p>
               <Button
-                className={
-                  redesigned
-                    ? designStyles.primaryButton
-                    : "mt-4 rounded-xl bg-teal-600 text-white hover:bg-teal-700"
-                }
+                className={designStyles.primaryButton}
                 onClick={() => navigate("create-chore")}
                 type="button"
               >
@@ -407,18 +334,8 @@ export function AdminScreen({
               const peopleLabel = `${participantCount} ${
                 participantCount === 1 ? "person" : "people"
               }`
-              const legacyAssignment =
+              const assignment =
                 chore.schedule?.assignmentStrategy === "FIXED"
-                  ? peopleNeeded === 1
-                    ? `Fixed · ${managementOptions?.activeMembers.find((member) => member.userId === chore.schedule?.fixedAssigneeUserId)?.displayName ?? "Member"}`
-                    : `Fixed · ${peopleNeeded} people`
-                  : chore.schedule?.assignmentStrategy === "ROUND_ROBIN"
-                    ? `Rotate ${peopleNeeded}/${participantCount} people fairly`
-                    : chore.schedule?.assignmentStrategy === "RANDOM"
-                      ? `Random · ${peopleNeeded}/${participantCount} people`
-                      : null
-              const assignment = redesigned
-                ? chore.schedule?.assignmentStrategy === "FIXED"
                   ? fixedAssignee
                     ? `Fixed · ${fixedAssignee.displayName}`
                     : "Fixed assignment"
@@ -433,7 +350,6 @@ export function AdminScreen({
                           participantCount > 0 ? peopleLabel : "participants"
                         }`
                       : null
-                : legacyAssignment
               const scheduleDescription = chore.schedule
                 ? [
                     chore.schedule.recurrenceRule
@@ -456,62 +372,38 @@ export function AdminScreen({
                 .join(" · ")
               return (
                 <article
-                  className={
-                    redesigned
-                      ? cn(
-                          designStyles.choreCard,
-                          openMenuId === chore.id && designStyles.choreCardMenuOpen,
-                        )
-                      : "relative rounded-2xl border border-slate-100 bg-white p-4 shadow-sm"
-                  }
+                  className={cn(
+                    designStyles.choreCard,
+                    openMenuId === chore.id && designStyles.choreCardMenuOpen,
+                  )}
                   key={chore.id}
                 >
-                  <div className={redesigned ? "contents" : "flex items-start gap-3"}>
-                    <span
-                      aria-hidden="true"
-                      className={
-                        redesigned
-                          ? designStyles.choreIcon
-                          : "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-2xl"
-                      }
-                    >
+                  <div className={"contents"}>
+                    <span aria-hidden="true" className={designStyles.choreIcon}>
                       {categoryIcon(category?.iconKey)}
                     </span>
-                    <div
-                      className={`min-w-0 flex-1 ${redesigned ? designStyles.choreInfo : "pr-8"}`}
-                    >
+                    <div className={`min-w-0 flex-1 ${designStyles.choreInfo}`}>
                       <div
                         className={`flex flex-wrap items-center gap-x-2 gap-y-1 ${
-                          redesigned ? designStyles.choreTitleLine : ""
+                          designStyles.choreTitleLine
                         }`}
                       >
                         <h3 className="min-w-0 break-words font-display text-base font-extrabold leading-snug text-slate-900">
                           {chore.title}
                         </h3>
                         <span
-                          className={
-                            redesigned
-                              ? `${designStyles.statusPill} ${
-                                  chore.active ? designStyles.activePill : designStyles.pausedPill
-                                }`
-                              : cn(
-                                  "shrink-0 rounded-full px-2 py-1 text-[10px] font-bold",
-                                  chore.active
-                                    ? "bg-emerald-50 text-emerald-700"
-                                    : "bg-slate-100 text-slate-500",
-                                )
-                          }
+                          className={`${designStyles.statusPill} ${
+                            chore.active ? designStyles.activePill : designStyles.pausedPill
+                          }`}
                         >
                           {chore.active ? "Active" : "Paused"}
                         </span>
                       </div>
-                      {(categoryScheduleParts.length > 0 || !redesigned) && (
+                      {(categoryScheduleParts.length > 0 || false) && (
                         <p
-                          className={`mt-1.5 text-xs ${
-                            redesigned ? "" : "font-medium "
-                          }text-slate-600 ${redesigned ? designStyles.metaLine : ""}`}
+                          className={`mt-1.5 text-xs ${""}text-slate-600 ${designStyles.metaLine}`}
                         >
-                          {redesigned ? (
+                          {
                             <>
                               {categoryScheduleParts[0]}
                               {categoryScheduleParts.length > 1 && (
@@ -521,47 +413,28 @@ export function AdminScreen({
                                 </>
                               )}
                             </>
-                          ) : (
-                            (categoryLabel ?? "Uncategorized")
-                          )}
+                          }
                         </p>
                       )}
-                      {redesigned ? (
-                        choreDetails && (
-                          <p
-                            className={`mt-1 text-xs leading-relaxed text-slate-500 ${designStyles.metaLine}`}
-                          >
-                            {choreDetails}
-                          </p>
-                        )
-                      ) : (
-                        <>
-                          <p className="mt-1 text-xs leading-relaxed text-slate-600">
-                            {scheduleDescription}
-                          </p>
-                          {(assignment || chore.estimatedMinutes || chore.difficulty) && (
-                            <p className="mt-1 text-xs leading-relaxed text-slate-500">
-                              {choreDetails}
-                            </p>
-                          )}
-                        </>
+                      {choreDetails && (
+                        <p
+                          className={`mt-1 text-xs leading-relaxed text-slate-500 ${designStyles.metaLine}`}
+                        >
+                          {choreDetails}
+                        </p>
                       )}
                     </div>
                     <button
                       aria-expanded={openMenuId === chore.id}
                       aria-label={`Actions for ${chore.title}`}
                       data-archive-trigger={chore.id}
-                      className={
-                        redesigned
-                          ? designStyles.moreButton
-                          : "absolute right-3 top-3 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-                      }
+                      className={designStyles.moreButton}
                       onClick={(event) => {
                         if (openMenuId === chore.id) {
                           setOpenMenuId(null)
                           return
                         }
-                        if (redesigned) {
+                        {
                           const buttonBounds = event.currentTarget.getBoundingClientRect()
                           const availableAbove = buttonBounds.top
                           const availableBelow = window.innerHeight - buttonBounds.bottom
@@ -580,14 +453,10 @@ export function AdminScreen({
                   </div>
                   {openMenuId === chore.id && (
                     <div
-                      className={`absolute right-4 top-12 z-10 w-36 overflow-hidden rounded-xl border border-slate-100 bg-white py-1 shadow-lg ${
-                        redesigned
-                          ? cn(
-                              designStyles.actionMenu,
-                              openMenuPlacement === "above" && designStyles.actionMenuAbove,
-                            )
-                          : ""
-                      }`}
+                      className={`absolute right-4 top-12 z-10 w-36 overflow-hidden rounded-xl border border-slate-100 bg-white py-1 shadow-lg ${cn(
+                        designStyles.actionMenu,
+                        openMenuPlacement === "above" && designStyles.actionMenuAbove,
+                      )}`}
                     >
                       <button
                         className="w-full px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"

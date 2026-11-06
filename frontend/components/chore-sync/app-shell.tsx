@@ -55,17 +55,7 @@ const screenTargets = new Map<string, Screen>([
   ["legal-acceptance", "legal-acceptance"],
 ])
 
-function ScreenRouter({
-  redesignedHomeEnabled,
-  redesignedMyChoresEnabled,
-  redesignedHouseholdEnabled,
-  redesignedProfileEnabled,
-}: {
-  redesignedHomeEnabled: boolean
-  redesignedMyChoresEnabled: boolean
-  redesignedHouseholdEnabled: boolean
-  redesignedProfileEnabled: boolean
-}) {
+function ScreenRouter() {
   const {
     screen,
     adminTab,
@@ -262,106 +252,36 @@ function ScreenRouter({
     case "join-household":
       return <JoinHouseholdScreen />
     case "dashboard":
-      return <DashboardScreen redesigned={redesignedHomeEnabled} theme={resolvedTheme} />
+      return <DashboardScreen theme={resolvedTheme} />
     case "my-chores":
-      return <MyChoresScreen redesigned={redesignedMyChoresEnabled} theme={resolvedTheme} />
+      return <MyChoresScreen theme={resolvedTheme} />
     case "household":
-      return <HouseholdScreen redesigned={redesignedHouseholdEnabled} theme={resolvedTheme} />
+      return <HouseholdScreen theme={resolvedTheme} />
     case "admin":
-      return (
-        <AdminScreen
-          initialTab={adminTab}
-          redesigned={redesignedHouseholdEnabled}
-          theme={resolvedTheme}
-        />
-      )
+      return <AdminScreen initialTab={adminTab} theme={resolvedTheme} />
     case "create-chore":
-      return <ChoreFormScreen redesigned={redesignedHouseholdEnabled} theme={resolvedTheme} />
+      return <ChoreFormScreen theme={resolvedTheme} />
     case "edit-chore":
-      return <ChoreFormScreen redesigned={redesignedHouseholdEnabled} theme={resolvedTheme} />
+      return <ChoreFormScreen theme={resolvedTheme} />
     case "profile":
-      return <ProfileScreen redesigned={redesignedProfileEnabled} theme={resolvedTheme} />
+      return <ProfileScreen theme={resolvedTheme} />
     case "appearance":
-      return <AppearanceScreen redesigned={redesignedProfileEnabled} theme={resolvedTheme} />
+      return <AppearanceScreen theme={resolvedTheme} />
     case "household-settings":
-      return (
-        <HouseholdSettingsScreen redesigned={redesignedHouseholdEnabled} theme={resolvedTheme} />
-      )
+      return <HouseholdSettingsScreen theme={resolvedTheme} />
     case "notifications":
-      return <NotificationsScreen redesigned={redesignedProfileEnabled} theme={resolvedTheme} />
+      return <NotificationsScreen theme={resolvedTheme} />
     case "edit-profile":
-      return <EditProfileScreen redesigned={redesignedProfileEnabled} theme={resolvedTheme} />
+      return <EditProfileScreen theme={resolvedTheme} />
     case "privacy-security":
-      return <PrivacySecurityScreen redesigned={redesignedProfileEnabled} theme={resolvedTheme} />
+      return <PrivacySecurityScreen theme={resolvedTheme} />
     case "help-support":
-      return <HelpSupportScreen redesigned={redesignedProfileEnabled} theme={resolvedTheme} />
+      return <HelpSupportScreen theme={resolvedTheme} />
     case "legal-acceptance":
       return <LegalAcceptanceScreen />
     default:
       return <LoginScreen />
   }
-}
-
-function AppFrame({
-  children,
-  redesignedHomeEnabled,
-  redesignedMyChoresEnabled,
-  redesignedHouseholdEnabled,
-  redesignedProfileEnabled,
-}: {
-  children: React.ReactNode
-  redesignedHomeEnabled: boolean
-  redesignedMyChoresEnabled: boolean
-  redesignedHouseholdEnabled: boolean
-  redesignedProfileEnabled: boolean
-}) {
-  const { screen } = useChoreSync()
-  const { isAuthenticated, user, features } = useAuth()
-  const requiresEmailVerification =
-    isAuthenticated && features.emailVerification !== false && user?.emailVerified === false
-  const useWideFrame =
-    [
-      "login",
-      "register",
-      "forgot-password",
-      "reset-password",
-      "welcome",
-      "create-household",
-      "join-household",
-      "display-name-personalization",
-      "legal-acceptance",
-      "verify-email",
-    ].includes(screen) ||
-    requiresEmailVerification ||
-    (screen === "dashboard" && redesignedHomeEnabled) ||
-    (screen === "my-chores" && redesignedMyChoresEnabled) ||
-    ((screen === "household" ||
-      screen === "admin" ||
-      screen === "household-settings" ||
-      screen === "create-chore" ||
-      screen === "edit-chore") &&
-      redesignedHouseholdEnabled) ||
-    ([
-      "profile",
-      "edit-profile",
-      "appearance",
-      "notifications",
-      "privacy-security",
-      "help-support",
-    ].includes(screen) &&
-      redesignedProfileEnabled)
-
-  return (
-    <div className="min-h-screen bg-slate-200 flex items-start justify-center">
-      <div
-        className={`w-full bg-white min-h-screen relative overflow-hidden ${
-          useWideFrame ? "max-w-none shadow-none" : "max-w-sm shadow-2xl"
-        }`}
-      >
-        {children}
-      </div>
-    </div>
-  )
 }
 
 function HouseholdRefreshNotice() {
@@ -385,19 +305,7 @@ function HouseholdRefreshNotice() {
   )
 }
 
-export function AppShell({
-  initialScreen = "login",
-  redesignedHomeEnabled = false,
-  redesignedMyChoresEnabled = false,
-  redesignedHouseholdEnabled = false,
-  redesignedProfileEnabled = false,
-}: {
-  initialScreen?: Screen
-  redesignedHomeEnabled?: boolean
-  redesignedMyChoresEnabled?: boolean
-  redesignedHouseholdEnabled?: boolean
-  redesignedProfileEnabled?: boolean
-}) {
+export function AppShell({ initialScreen = "login" }: { initialScreen?: Screen }) {
   return (
     <ThemeProvider>
       <AuthProvider>
@@ -405,22 +313,14 @@ export function AppShell({
           <HouseholdProvider>
             <ChoreSyncProvider initialScreen={initialScreen}>
               <PushSubscriptionHealthProvider>
-                <AppFrame
-                  redesignedHomeEnabled={redesignedHomeEnabled}
-                  redesignedMyChoresEnabled={redesignedMyChoresEnabled}
-                  redesignedHouseholdEnabled={redesignedHouseholdEnabled}
-                  redesignedProfileEnabled={redesignedProfileEnabled}
-                >
-                  <AppLaunchGate>
-                    <HouseholdRefreshNotice />
-                    <ScreenRouter
-                      redesignedHomeEnabled={redesignedHomeEnabled}
-                      redesignedMyChoresEnabled={redesignedMyChoresEnabled}
-                      redesignedHouseholdEnabled={redesignedHouseholdEnabled}
-                      redesignedProfileEnabled={redesignedProfileEnabled}
-                    />
-                  </AppLaunchGate>
-                </AppFrame>
+                <div className="min-h-screen bg-slate-200 flex items-start justify-center">
+                  <div className="w-full bg-white min-h-screen relative overflow-hidden max-w-none shadow-none">
+                    <AppLaunchGate>
+                      <HouseholdRefreshNotice />
+                      <ScreenRouter />
+                    </AppLaunchGate>
+                  </div>
+                </div>
               </PushSubscriptionHealthProvider>
             </ChoreSyncProvider>
           </HouseholdProvider>

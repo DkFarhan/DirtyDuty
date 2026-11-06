@@ -44,7 +44,7 @@ vi.mock("@/lib/data-sync/data-sync-context", () => ({
 
 import { ChoreFormScreen } from "./chore-form-screen"
 
-describe("ChoreFormScreen redesigned integration", () => {
+describe("ChoreFormScreen integration", () => {
   beforeEach(() => {
     mocks.options.mockReset().mockResolvedValue({
       categories: [
@@ -68,7 +68,7 @@ describe("ChoreFormScreen redesigned integration", () => {
   afterEach(() => cleanup())
 
   it("uses the proposed shell while saving the live form state through the existing API", async () => {
-    render(<ChoreFormScreen redesigned theme="dark" />)
+    render(<ChoreFormScreen theme="dark" />)
 
     expect(await screen.findByRole("heading", { name: "Create a chore" })).toBeTruthy()
     expect(screen.getByText("Real household")).toBeTruthy()

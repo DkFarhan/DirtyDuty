@@ -12,7 +12,6 @@ import { removeBrowserPushSubscription } from "@/lib/notifications/push"
 import { usePushSubscriptionHealth } from "@/lib/notifications/push-health"
 import { useChoreSync } from "@/lib/chore-sync/store"
 import { notificationResource, useDataSync } from "@/lib/data-sync/data-sync-context"
-import { SubpageHeader } from "./subpage-header"
 import { SettingsRow } from "../primitives"
 import type { Theme } from "@/components/theme/theme-provider"
 import { ProfileDestinationHeader, ProfileDestinationView } from "./profile-screen-view"
@@ -61,13 +60,7 @@ const notificationStyles: Array<[NotificationStyle, string]> = [
   ["MINIMAL", "Minimal"],
 ]
 
-export function NotificationsScreen({
-  redesigned = false,
-  theme = "light",
-}: {
-  redesigned?: boolean
-  theme?: Exclude<Theme, "system">
-}) {
+export function NotificationsScreen({ theme = "light" }: { theme?: Exclude<Theme, "system"> }) {
   const { returnFromNotifications } = useChoreSync()
   const {
     state: pushHealth,
@@ -393,13 +386,8 @@ export function NotificationsScreen({
   }, [preferences, savedPreferences])
 
   return (
-    <ProfileDestinationView
-      destination="notifications"
-      legacyClassName="min-h-screen bg-slate-50 pb-8"
-      redesigned={redesigned}
-      theme={theme}
-    >
-      {redesigned ? (
+    <ProfileDestinationView destination="notifications" theme={theme}>
+      {
         <ProfileDestinationHeader
           eyebrow="STAY IN THE LOOP"
           title="Notifications"
@@ -419,34 +407,14 @@ export function NotificationsScreen({
             ) : undefined
           }
         />
-      ) : (
-        <SubpageHeader
-          title="Notifications"
-          subtitle={unreadCount ? `${unreadCount} unread` : "You're all caught up"}
-          back={returnFromNotifications}
-          action={
-            unreadCount > 0 ? (
-              <button
-                className="rounded-lg px-2 py-1 text-xs font-bold text-teal-700 transition-colors hover:bg-teal-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 disabled:opacity-50 dark:text-teal-300 dark:hover:bg-slate-700"
-                disabled={markAllBusy || busyIds.size > 0}
-                onClick={() => void markAllRead()}
-                type="button"
-              >
-                Read all
-              </button>
-            ) : undefined
-          }
-        />
-      )}
-      <main
-        className={redesigned ? profileStyles.notificationsMain : "flex flex-col gap-4 px-4 pt-4"}
-      >
-        {redesigned && (
+      }
+      <main className={profileStyles.notificationsMain}>
+        {
           <div className={profileStyles.notificationsIntro}>
             <p>HOUSEHOLD UPDATES</p>
             <h2>Your activity</h2>
           </div>
-        )}
+        }
         {(actionError || (status === "loaded" && error)) && (
           <div className="flex items-center gap-3 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">
             <p className="flex-1" role="alert">
@@ -499,76 +467,28 @@ export function NotificationsScreen({
               return (
                 <article
                   key={item.id}
-                  className={
-                    redesigned
-                      ? profileStyles.notificationCard
-                      : `rounded-2xl border p-4 ${read ? "border-slate-100 bg-white dark:border-slate-700 dark:bg-slate-800/70" : "border-teal-100 bg-teal-50 dark:border-teal-800 dark:bg-teal-950/40"}`
-                  }
+                  className={profileStyles.notificationCard}
                   data-read={read ? "true" : "false"}
                 >
-                  <div
-                    className={
-                      redesigned ? profileStyles.notificationCardContent : "flex items-start gap-3"
-                    }
-                  >
+                  <div className={profileStyles.notificationCardContent}>
                     <span
                       aria-hidden="true"
-                      className={
-                        redesigned
-                          ? profileStyles.notificationStatus
-                          : `mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${read ? "bg-slate-200" : "bg-teal-500"}`
-                      }
+                      className={profileStyles.notificationStatus}
                       data-read={read ? "true" : "false"}
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h2
-                          className={
-                            redesigned
-                              ? profileStyles.notificationTitle
-                              : `min-w-0 break-words text-sm ${read ? "font-semibold text-slate-700 dark:text-slate-200" : "font-bold text-slate-900 dark:text-white"}`
-                          }
-                        >
-                          {item.title}
-                        </h2>
-                        {!read && (
-                          <span
-                            className={
-                              redesigned
-                                ? "sr-only"
-                                : "rounded-full bg-teal-100 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-teal-700 dark:bg-teal-900/70 dark:text-teal-200"
-                            }
-                          >
-                            Unread
-                          </span>
-                        )}
+                        <h2 className={profileStyles.notificationTitle}>{item.title}</h2>
+                        {!read && <span className={"sr-only"}>Unread</span>}
                       </div>
-                      <p
-                        className={
-                          redesigned
-                            ? profileStyles.notificationMessage
-                            : "mt-1 text-sm leading-relaxed text-slate-600"
-                        }
-                      >
-                        {item.message}
-                      </p>
-                      <p
-                        className={
-                          redesigned
-                            ? profileStyles.notificationTimestamp
-                            : "mt-2 text-xs leading-relaxed text-slate-500 dark:text-slate-300"
-                        }
-                      >
+                      <p className={profileStyles.notificationMessage}>{item.message}</p>
+                      <p className={profileStyles.notificationTimestamp}>
                         {dateLabel(item.deliveredAt ?? item.sentAt ?? item.createdAt)}
                       </p>
                       {!read && (
                         <button
                           aria-label={`Mark ${item.title} as read`}
-                          className={
-                            redesigned
-                              ? profileStyles.notificationMarkRead
-                              : "mt-2 text-xs font-bold text-teal-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 disabled:opacity-50 dark:text-teal-300"
-                          }
+                          className={profileStyles.notificationMarkRead}
                           disabled={busyIds.has(item.id) || markAllBusy}
                           onClick={() => void markRead(item)}
                           type="button"

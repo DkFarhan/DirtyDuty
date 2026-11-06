@@ -7,20 +7,11 @@ import { choreApi, type AssignmentDTO } from "@/lib/household/chores"
 import { useHouseholds } from "@/lib/household/household-context"
 import { householdChoreResource, useDataSync } from "@/lib/data-sync/data-sync-context"
 import { optimisticAssignmentCompletion } from "@/lib/household/assignment-state"
-import { cn } from "@/lib/utils"
-import { BottomNav } from "../bottom-nav"
-import { ServerAssignmentCard } from "../chore-card"
 import { MyChoresScreenView, type MyChoresTab } from "../redesign/my-chores-screen-view"
 import { createMyChoresApplicationViewModel } from "../redesign/my-chores-application-adapter"
 import type { HomeNavigationDestination, HomeVisualTheme } from "../redesign/home-screen-view"
 
-export function MyChoresScreen({
-  redesigned = false,
-  theme = "dark",
-}: {
-  redesigned?: boolean
-  theme?: HomeVisualTheme
-} = {}) {
+export function MyChoresScreen({ theme = "dark" }: { theme?: HomeVisualTheme } = {}) {
   const { state, navigate } = useChoreSync()
   const { activeHousehold: household } = useHouseholds()
   const [tab, setTab] = useState<MyChoresTab>("upcoming")
@@ -238,149 +229,30 @@ export function MyChoresScreen({
     })
   }, [displayed, targetAssignmentId, visibleStatus])
 
-  if (redesigned) {
-    const viewModel = createMyChoresApplicationViewModel({
-      upcoming,
-      completed,
-      currentUserId: state.currentUser.id,
-      householdTimezone: household?.timezone ?? "UTC",
-      householdId: household?.id ?? null,
-      completingIds,
-      status: visibleStatus,
-      errorMessage: error,
-      refreshError,
-      actionError,
-    })
-    const onNavigate = (destination: HomeNavigationDestination) =>
-      navigate(destination === "home" ? "dashboard" : destination)
-
-    return (
-      <MyChoresScreenView
-        activeDestination="my-chores"
-        onCompleteChore={(id) => void completeAssignment(id)}
-        onNavigate={onNavigate}
-        onRetry={() => void loadChores()}
-        onSelectTab={setTab}
-        tab={tab}
-        theme={theme}
-        viewModel={viewModel}
-      />
-    )
-  }
-
+  const viewModel = createMyChoresApplicationViewModel({
+    upcoming,
+    completed,
+    currentUserId: state.currentUser.id,
+    householdTimezone: household?.timezone ?? "UTC",
+    householdId: household?.id ?? null,
+    completingIds,
+    status: visibleStatus,
+    errorMessage: error,
+    refreshError,
+    actionError,
+  })
+  const onNavigate = (destination: HomeNavigationDestination) =>
+    navigate(destination === "home" ? "dashboard" : destination)
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50 pb-20">
-      <header className="bg-white px-5 pt-12 pb-4">
-        <h1 className="text-2xl font-black text-slate-900 font-display">My Chores</h1>
-        <p className="text-slate-500 text-sm mt-0.5">
-          {visibleStatus === "loaded"
-            ? `${upcoming.length} upcoming · ${completed.length} completed`
-            : status === "loading"
-              ? "Loading your chores…"
-              : "Chore counts unavailable"}
-        </p>
-
-        <div className="mt-4 flex gap-1 rounded-xl bg-slate-100 p-1">
-          {(["upcoming", "completed"] as const).map((value) => {
-            const isActive = tab === value
-            const count =
-              visibleStatus === "loaded"
-                ? value === "upcoming"
-                  ? upcoming.length
-                  : completed.length
-                : "—"
-            return (
-              <button
-                key={value}
-                onClick={() => setTab(value)}
-                aria-pressed={isActive}
-                className={cn(
-                  "min-h-10 flex-1 rounded-lg py-2 text-sm font-bold capitalize transition-colors",
-                  isActive ? "bg-white text-teal-600 shadow-sm" : "text-slate-500",
-                )}
-                type="button"
-              >
-                {value}
-                <span
-                  className={cn(
-                    "ml-1.5 text-xs px-1.5 py-0.5 rounded-full",
-                    isActive ? "bg-teal-50 text-teal-700" : "bg-slate-200 text-slate-600",
-                  )}
-                >
-                  {count}
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      </header>
-
-      <main className="flex flex-col gap-3 px-4 pb-4 pt-5">
-        {visibleStatus === "loading" && (
-          <div aria-label="Loading my chores" className="space-y-3">
-            {[0, 1, 2].map((item) => (
-              <div className="h-28 animate-pulse rounded-2xl bg-white" key={item} />
-            ))}
-          </div>
-        )}
-        {visibleStatus === "error" && (
-          <div className="rounded-2xl border border-slate-100 bg-white p-8 text-center">
-            <p role="alert" className="text-sm text-slate-600">
-              {error}
-            </p>
-            <button
-              className="mt-3 rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700"
-              onClick={() => void loadChores()}
-              type="button"
-            >
-              Try again
-            </button>
-          </div>
-        )}
-        {visibleStatus === "loaded" && (actionError || refreshError) && (
-          <div className="flex items-center gap-3 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-            <p role="alert" className="flex-1">
-              {actionError ?? refreshError}
-            </p>
-            {refreshError && (
-              <button
-                className="shrink-0 font-bold underline"
-                onClick={() => void loadChores()}
-                type="button"
-              >
-                Retry
-              </button>
-            )}
-          </div>
-        )}
-        {visibleStatus === "loaded" && displayed.length === 0 && (
-          <div className="rounded-2xl border border-slate-100 bg-white px-5 py-7 text-center">
-            <div className="text-4xl mb-3">{tab === "upcoming" ? "🎉" : "📋"}</div>
-            <p className="font-bold text-slate-900">
-              {tab === "upcoming" ? "All caught up!" : "Nothing completed yet"}
-            </p>
-            <p className="text-slate-400 text-sm mt-1">
-              {tab === "upcoming"
-                ? "No upcoming chores assigned to you"
-                : "Completed chores will appear here"}
-            </p>
-          </div>
-        )}
-        {visibleStatus === "loaded" &&
-          displayed.map((assignment) => (
-            <div id={`assignment-${assignment.id}`} key={assignment.id}>
-              <ServerAssignmentCard
-                assignment={assignment}
-                completing={completingIds.has(`${household?.id}:${assignment.id}`)}
-                currentUserId={state.currentUser.id}
-                householdTimezone={household?.timezone ?? "UTC"}
-                onComplete={(id) => void completeAssignment(id)}
-              />
-            </div>
-          ))}
-      </main>
-
-      <BottomNav active="my-chores" navigate={navigate} theme={theme} />
-    </div>
+    <MyChoresScreenView
+      activeDestination="my-chores"
+      onCompleteChore={(id) => void completeAssignment(id)}
+      onNavigate={onNavigate}
+      onRetry={() => void loadChores()}
+      onSelectTab={setTab}
+      tab={tab}
+      theme={theme}
+      viewModel={viewModel}
+    />
   )
 }

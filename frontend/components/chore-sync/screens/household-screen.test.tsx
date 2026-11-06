@@ -86,7 +86,7 @@ describe("HouseholdScreen owner leave confirmation", () => {
   afterEach(() => cleanup())
 
   async function openOwnerSuccessorSelection() {
-    render(<HouseholdScreen redesigned theme="dark" />)
+    render(<HouseholdScreen theme="dark" />)
     await screen.findByText("Jordan")
     fireEvent.click(screen.getByRole("button", { name: "Leave household" }))
     fireEvent.click(screen.getByRole("radio", { name: /Alex/ }))
@@ -153,7 +153,7 @@ describe("HouseholdScreen owner leave confirmation", () => {
   })
 
   it("keeps management cards connected to their existing application routes", async () => {
-    render(<HouseholdScreen redesigned theme="dark" />)
+    render(<HouseholdScreen theme="dark" />)
     await screen.findByText("Jordan")
 
     expect(screen.getByRole("heading", { name: "Manage household" })).toBeTruthy()
@@ -170,7 +170,7 @@ describe("HouseholdScreen owner leave confirmation", () => {
       { ...ownerMembers[0], role: "MEMBER" },
       { ...ownerMembers[1], role: "OWNER" },
     ])
-    render(<HouseholdScreen redesigned theme="dark" />)
+    render(<HouseholdScreen theme="dark" />)
     await screen.findByText("Jordan")
     fireEvent.click(screen.getByRole("button", { name: "Leave household" }))
     fireEvent.click(
@@ -182,7 +182,7 @@ describe("HouseholdScreen owner leave confirmation", () => {
     cleanup()
     mocks.household.currentUserRole = "OWNER"
     mocks.members.mockResolvedValue([ownerMembers[0]])
-    render(<HouseholdScreen redesigned theme="dark" />)
+    render(<HouseholdScreen theme="dark" />)
     await screen.findByText("Jordan")
     fireEvent.click(screen.getByRole("button", { name: "Leave household" }))
     expect(await screen.findByText("You’re the only active member")).toBeTruthy()

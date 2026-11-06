@@ -8,21 +8,21 @@ import { ThemeProvider, themeStorageKey, useTheme } from "./theme-provider"
 const mediaListeners = new Set<(event: MediaQueryListEvent) => void>()
 let prefersDark = false
 
-function TestTheme({ redesigned = false }: { redesigned?: boolean }) {
+function TestTheme() {
   const { theme, resolvedTheme } = useTheme()
   return (
     <>
-      <ThemeSelector redesigned={redesigned} />
+      <ThemeSelector />
       <output data-testid="selected-theme">{theme}</output>
       <output data-testid="resolved-theme">{resolvedTheme}</output>
     </>
   )
 }
 
-function renderTheme(redesigned = false) {
+function renderTheme() {
   return render(
     <ThemeProvider>
-      <TestTheme redesigned={redesigned} />
+      <TestTheme />
     </ThemeProvider>,
   )
 }
@@ -84,23 +84,20 @@ describe("theme selection", () => {
     ).toBe("false")
   })
 
-  it.each([false, true])(
-    "references an existing description for every radio in %s mode",
-    (redesigned) => {
-      renderTheme(redesigned)
+  it("references an existing description for every radio", () => {
+    renderTheme()
 
-      for (const [value, label, description] of [
-        ["light", "Light", "Bright and clear"],
-        ["dark", "Dark", "Easy on the eyes"],
-        ["system", "System", "Use your device appearance"],
-      ]) {
-        const radio = screen.getByRole("radio", { name: label })
-        const descriptionId = radio.getAttribute("aria-describedby")
-        expect(descriptionId).toBe(`theme-description-${value}`)
-        expect(document.getElementById(descriptionId ?? "")?.textContent).toBe(description)
-      }
-    },
-  )
+    for (const [value, label, description] of [
+      ["light", "Light", "Bright and clear"],
+      ["dark", "Dark", "Easy on the eyes"],
+      ["system", "System", "Use your device appearance"],
+    ]) {
+      const radio = screen.getByRole("radio", { name: label })
+      const descriptionId = radio.getAttribute("aria-describedby")
+      expect(descriptionId).toBe(`theme-description-${value}`)
+      expect(document.getElementById(descriptionId ?? "")?.textContent).toBe(description)
+    }
+  })
 
   it("selects Light and persists the explicit preference", async () => {
     renderTheme()

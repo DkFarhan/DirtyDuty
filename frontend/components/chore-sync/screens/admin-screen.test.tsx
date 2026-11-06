@@ -187,7 +187,7 @@ describe("admin screen household isolation", () => {
       ],
     })
 
-    const { container } = render(<AdminScreen redesigned />)
+    const { container } = render(<AdminScreen />)
 
     expect(await screen.findByRole("heading", { name: "Laundry" })).toBeTruthy()
     expect(screen.queryByText("Archived routine")).toBeNull()
@@ -222,12 +222,12 @@ describe("admin screen household isolation", () => {
     expect(mocks.navigate).toHaveBeenCalledWith("create-chore")
   })
 
-  it("preserves chore menu edit and pause actions in the redesigned screen", async () => {
+  it("preserves chore menu edit and pause actions", async () => {
     const pausedRoutine = { ...choreA, active: false }
     mocks.list.mockResolvedValueOnce([choreA])
     mocks.pause.mockResolvedValueOnce(pausedRoutine)
 
-    render(<AdminScreen redesigned />)
+    render(<AdminScreen />)
     await screen.findByRole("heading", { name: "Home A chore" })
 
     fireEvent.click(screen.getByRole("button", { name: "Actions for Home A chore" }))
@@ -240,8 +240,8 @@ describe("admin screen household isolation", () => {
     await waitFor(() => expect(mocks.pause).toHaveBeenCalledWith("home-a", "chore-a"))
   })
 
-  it("contains focus in the redesigned archive dialog and restores its action trigger", async () => {
-    render(<AdminScreen redesigned />)
+  it("contains focus in the archive dialog and restores its action trigger", async () => {
+    render(<AdminScreen />)
     await screen.findByRole("heading", { name: "Home A chore" })
 
     const trigger = screen.getByRole("button", { name: "Actions for Home A chore" })
@@ -260,14 +260,14 @@ describe("admin screen household isolation", () => {
     expect(document.activeElement).toBe(trigger)
   })
 
-  it("raises only the card whose redesigned action menu is open", async () => {
+  it("raises only the card whose action menu is open", async () => {
     mocks.list.mockResolvedValueOnce([
       choreA,
       { ...choreA, id: "chore-b", title: "Middle chore" },
       choreC,
     ])
 
-    render(<AdminScreen redesigned />)
+    render(<AdminScreen />)
     await screen.findByRole("heading", { name: "Home A chore" })
 
     const firstCard = screen.getByRole("heading", { name: "Home A chore" }).closest("article")

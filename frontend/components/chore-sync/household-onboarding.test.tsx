@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { AppShell } from "./app-shell"
 import { clearCsrfToken } from "../../lib/auth/api"
 import { stubAuthFeatures } from "../../test/stub-auth-features"
+import { themeStorageKey } from "@/components/theme/theme-provider"
+import householdStyles from "./redesign/household-screen-view.module.css"
 
 vi.mock("@/lib/notifications/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/notifications/api")>()
@@ -123,42 +125,54 @@ describe("household onboarding", () => {
     expect(await screen.findByText("Welcome!")).toBeTruthy()
   })
 
-  it("creates a household with browser timezone and trimmed description, then refreshes into the dashboard", async () => {
-    await openWelcome()
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse({ token: "household-csrf", headerName: "X-CSRF-TOKEN" }))
-      .mockResolvedValueOnce(jsonResponse(household, 201))
-      .mockResolvedValueOnce(jsonResponse([household]))
-      .mockResolvedValueOnce(jsonResponse(dashboard))
+  it.each(["light", "dark"] as const)(
+    "creates a household and opens the invitation dialog in the %s theme",
+    async (theme) => {
+      localStorage.setItem(themeStorageKey, theme)
+      await openWelcome()
+      fetchMock
+        .mockResolvedValueOnce(
+          jsonResponse({ token: "household-csrf", headerName: "X-CSRF-TOKEN" }),
+        )
+        .mockResolvedValueOnce(jsonResponse(household, 201))
+        .mockResolvedValueOnce(jsonResponse([household]))
+        .mockResolvedValueOnce(jsonResponse(dashboard))
 
-    fireEvent.click(screen.getByRole("button", { name: /Create a Household/ }))
-    fireEvent.change(screen.getByLabelText(/Household Name/), {
-      target: { value: "  Our Place  " },
-    })
-    fireEvent.change(screen.getByLabelText(/Description/), {
-      target: { value: "  A welcoming home  " },
-    })
-    fireEvent.click(screen.getByRole("button", { name: "Create Household" }))
+      fireEvent.click(screen.getByRole("button", { name: /Create a Household/ }))
+      fireEvent.change(screen.getByLabelText(/Household Name/), {
+        target: { value: "  Our Place  " },
+      })
+      fireEvent.change(screen.getByLabelText(/Description/), {
+        target: { value: "  A welcoming home  " },
+      })
+      fireEvent.click(screen.getByRole("button", { name: "Create Household" }))
 
-    expect(await screen.findByText("Today")).toBeTruthy()
-    const createRequest = fetchMock.mock.calls.find(
-      ([url, options]) =>
-        url === "http://localhost:8080/api/households" && options?.method === "POST",
-    )
-    expect(createRequest?.[1]?.body).toBe(
-      JSON.stringify({
-        name: "Our Place",
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        description: "A welcoming home",
-      }),
-    )
-    expect(new Headers(createRequest?.[1]?.headers).get("X-CSRF-TOKEN")).toBe("household-csrf")
-    const inviteDialog = await screen.findByRole("dialog", { name: "Invite a housemate" })
-    expect(inviteDialog.textContent).toContain("add to Apartment 305")
-    expect(screen.getByRole("button", { name: "Generate invite" })).toBeTruthy()
-    expect(localStorage.length).toBe(0)
-    expect(sessionStorage.length).toBe(0)
-  })
+      expect(await screen.findByText("Today")).toBeTruthy()
+      const createRequest = fetchMock.mock.calls.find(
+        ([url, options]) =>
+          url === "http://localhost:8080/api/households" && options?.method === "POST",
+      )
+      expect(createRequest?.[1]?.body).toBe(
+        JSON.stringify({
+          name: "Our Place",
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          description: "A welcoming home",
+        }),
+      )
+      expect(new Headers(createRequest?.[1]?.headers).get("X-CSRF-TOKEN")).toBe("household-csrf")
+      const inviteDialog = await screen.findByRole("dialog", { name: "Invite a housemate." })
+      expect(inviteDialog.textContent).toContain("Apartment 305")
+      expect(
+        inviteDialog.classList.contains(
+          theme === "dark" ? householdStyles.darkTheme : householdStyles.lightTheme,
+        ),
+      ).toBe(true)
+      expect(screen.getByRole("button", { name: "Generate code" })).toBeTruthy()
+      expect(localStorage.length).toBe(1)
+      expect(localStorage.key(0)).toBe(themeStorageKey)
+      expect(sessionStorage.length).toBe(0)
+    },
+  )
 
   it("sends a null description for whitespace-only input", async () => {
     await openWelcome()
@@ -218,8 +232,8 @@ describe("household onboarding", () => {
     expect(await screen.findByText("Today")).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "Household" }))
-    fireEvent.click(screen.getByRole("button", { name: /Invite Member/ }))
-    expect(screen.getByRole("dialog", { name: "Invite a housemate" })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: /Invite member/ }))
+    expect(screen.getByRole("dialog", { name: "Invite a housemate." })).toBeTruthy()
     expect(screen.queryByText("one-time-code-from-server")).toBeNull()
 
     fetchMock
@@ -230,10 +244,10 @@ describe("household onboarding", () => {
           expiresAt: "2026-09-26T12:00:00Z",
         }),
       )
-    fireEvent.click(screen.getByRole("button", { name: "Generate invite" }))
+    fireEvent.click(screen.getByRole("button", { name: "Generate code" }))
 
     expect(await screen.findByText("one-time-code-from-server")).toBeTruthy()
-    expect(screen.getByText("This invite can be used once.")).toBeTruthy()
+    expect(screen.getByText(/This code can be used once\./)).toBeTruthy()
     expect(screen.getByText(/Expires/)).toBeTruthy()
     const createRequest = fetchMock.mock.calls.find(
       ([url, options]) =>
@@ -245,8 +259,8 @@ describe("household onboarding", () => {
 
     const writeText = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal("navigator", { clipboard: { writeText } })
-    fireEvent.click(screen.getByRole("button", { name: "Copy" }))
-    expect(await screen.findByRole("button", { name: "Copied" })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Copy invitation code" }))
+    expect(await screen.findByRole("button", { name: "Invitation code copied" })).toBeTruthy()
     expect(writeText).toHaveBeenCalledWith("one-time-code-from-server")
 
     fireEvent.click(screen.getByRole("button", { name: "Done" }))
@@ -257,12 +271,10 @@ describe("household onboarding", () => {
     await startAuthenticated([{ ...household, currentUserRole: "MEMBER" }])
 
     expect(await screen.findByText("Today")).toBeTruthy()
-    expect(screen.queryByRole("button", { name: "Invite housemate" })).toBeNull()
-
     fireEvent.click(screen.getByRole("button", { name: "Household" }))
-    expect(await screen.findByRole("heading", { name: "Members" })).toBeTruthy()
-    expect(screen.queryByRole("heading", { name: "Admin Actions" })).toBeNull()
-    expect(screen.queryByRole("button", { name: "Invite Member" })).toBeNull()
+    expect(await screen.findByRole("heading", { name: "Apartment 305" })).toBeTruthy()
+    expect(screen.queryByRole("region", { name: "Manage household" })).toBeNull()
+    expect(screen.queryByRole("button", { name: /Invite member/ })).toBeNull()
   })
 
   it("restores owner admin actions and routes secure invitations and chore management", async () => {
@@ -270,18 +282,18 @@ describe("household onboarding", () => {
     expect(await screen.findByText("Today")).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "Household" }))
-    expect(await screen.findByRole("heading", { name: "Admin Actions" })).toBeTruthy()
+    expect(await screen.findByRole("heading", { name: "Manage household" })).toBeTruthy()
     expect(screen.queryByText("APT305")).toBeNull()
 
-    fireEvent.click(screen.getByRole("button", { name: /Invite Member/ }))
-    expect(screen.getByRole("dialog", { name: "Invite a housemate" })).toBeTruthy()
-    expect(screen.getByRole("button", { name: "Generate invite" })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: /Invite member/ }))
+    expect(screen.getByRole("dialog", { name: "Invite a housemate." })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Generate code" })).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "Close invitation dialog" }))
 
-    fireEvent.click(screen.getByRole("button", { name: /Manage Chores/ }))
-    expect(await screen.findByRole("heading", { name: "Household Management" })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: /Manage chores/ }))
+    expect(await screen.findByRole("heading", { name: "Manage chores" })).toBeTruthy()
     expect(screen.getByRole("button", { name: "Create a chore" })).toBeTruthy()
-    expect(screen.queryByRole("button", { name: /Invite Member/ })).toBeNull()
+    expect(screen.queryByRole("button", { name: /Invite member/ })).toBeNull()
   })
 
   it("shows household admin actions to admins", async () => {
@@ -289,7 +301,7 @@ describe("household onboarding", () => {
     expect(await screen.findByText("Today")).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "Household" }))
-    expect(await screen.findByRole("heading", { name: "Admin Actions" })).toBeTruthy()
+    expect(await screen.findByRole("heading", { name: "Manage household" })).toBeTruthy()
   })
 
   it("guards against duplicate create submissions while a request is pending", async () => {

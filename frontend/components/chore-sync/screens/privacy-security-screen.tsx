@@ -12,7 +12,6 @@ import { removeBrowserPushSubscription } from "@/lib/notifications/push"
 import { PasswordInput } from "@/components/ui/password-input"
 import { useDialogFocus } from "../use-dialog-focus"
 import { getLegalDocumentUrl } from "@/lib/chore-sync/legal-navigation"
-import { SubpageHeader } from "./subpage-header"
 import type { Theme } from "@/components/theme/theme-provider"
 import { ProfileDestinationHeader, ProfileDestinationView } from "./profile-screen-view"
 import profileStyles from "./profile-screen-view.module.css"
@@ -59,13 +58,7 @@ function ownedHouseholdsFromError(error: ApiError): OwnedHousehold[] {
   )
 }
 
-export function PrivacySecurityScreen({
-  redesigned = false,
-  theme = "light",
-}: {
-  redesigned?: boolean
-  theme?: Exclude<Theme, "system">
-}) {
+export function PrivacySecurityScreen({ theme = "light" }: { theme?: Exclude<Theme, "system"> }) {
   const {
     navigate,
     resetUserData,
@@ -330,46 +323,32 @@ export function PrivacySecurityScreen({
   }
 
   return (
-    <ProfileDestinationView
-      destination="privacy-security"
-      legacyClassName="min-h-screen bg-slate-50 pb-8"
-      redesigned={redesigned}
-      theme={theme}
-    >
-      {redesigned ? (
+    <ProfileDestinationView destination="privacy-security" theme={theme}>
+      {
         <ProfileDestinationHeader
           eyebrow="ACCOUNT CONTROL"
           title="Privacy & Security"
           back={() => navigate(households.length > 0 ? "profile" : "welcome")}
           theme={theme}
         />
-      ) : (
-        <SubpageHeader
-          title="Privacy & Security"
-          back={() => navigate(households.length > 0 ? "profile" : "welcome")}
-        />
-      )}
-      <main className={redesigned ? profileStyles.privacyMain : "flex flex-col gap-4 px-4 pt-4"}>
-        {redesigned && (
+      }
+      <main className={profileStyles.privacyMain}>
+        {
           <div className={profileStyles.privacySectionIntro}>
             <p>IDENTITY &amp; ACCESS</p>
             <h2 id="account-security-heading">Account security</h2>
           </div>
-        )}
+        }
         {reauthMessage && (
           <p role="status" className="rounded-xl bg-teal-50 p-3 text-sm text-teal-800">
             {reauthMessage}
           </p>
         )}
         <section
-          aria-labelledby={redesigned ? "account-security-heading" : undefined}
-          className={
-            redesigned
-              ? profileStyles.privacyAccountCard
-              : "rounded-2xl border border-slate-100 bg-white p-4 shadow-sm"
-          }
+          aria-labelledby={"account-security-heading"}
+          className={profileStyles.privacyAccountCard}
         >
-          {redesigned ? (
+          {
             <>
               <div className={profileStyles.privacyAccountSummary}>
                 <span className={profileStyles.privacyLockTile}>
@@ -404,23 +383,7 @@ export function PrivacySecurityScreen({
                 />
               </button>
             </>
-          ) : (
-            <>
-              <h2 className="font-bold text-slate-900">Account Security</h2>
-              <p className="mt-1 text-sm text-slate-500">Signed in as</p>
-              <p className="mt-0.5 break-all text-sm font-semibold text-slate-800">
-                {user?.email ?? "—"}
-              </p>
-              <button
-                className="mt-4 w-full rounded-xl border border-slate-200 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                disabled={signOutBusy}
-                onClick={() => void signOut()}
-                type="button"
-              >
-                {signOutBusy ? "Signing out…" : "Sign out"}
-              </button>
-            </>
-          )}
+          }
           {!hasPassword && hasGoogle && features.google && (
             <button
               className="mt-3 w-full rounded-xl border border-teal-200 py-3 text-sm font-bold text-teal-700 hover:bg-teal-50"
@@ -432,84 +395,57 @@ export function PrivacySecurityScreen({
           )}
         </section>
 
-        {redesigned && (
+        {
           <div className={profileStyles.privacySectionIntro}>
             <p>YOUR RIGHTS</p>
             <h2 id="legal-documents-heading">Legal documents</h2>
           </div>
-        )}
+        }
         <section
           aria-labelledby="legal-documents-heading"
-          className={
-            redesigned
-              ? profileStyles.privacyLegalCard
-              : "rounded-2xl border border-slate-100 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900"
-          }
+          className={profileStyles.privacyLegalCard}
         >
-          {!redesigned && (
-            <h2
-              className="font-bold text-slate-900 dark:text-slate-100"
-              id="legal-documents-heading"
-            >
-              Legal documents
-            </h2>
-          )}
-          <div
-            className={
-              redesigned
-                ? profileStyles.privacyLegalRows
-                : "mt-2 flex flex-col divide-y divide-slate-100 dark:divide-slate-800"
-            }
-          >
+          <div className={profileStyles.privacyLegalRows}>
             <a
-              className={
-                redesigned
-                  ? profileStyles.privacyLegalLink
-                  : "flex min-h-11 items-center text-sm font-semibold text-teal-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 dark:text-teal-300"
-              }
+              className={profileStyles.privacyLegalLink}
               href={getLegalDocumentUrl("/terms", "privacy-security")}
             >
               Terms of Service
-              {redesigned && (
+              {
                 <PrivacyAsset
                   className={profileStyles.privacyChevron}
                   name="chevron"
                   theme={theme}
                 />
-              )}
+              }
             </a>
             <a
-              className={
-                redesigned
-                  ? profileStyles.privacyLegalLink
-                  : "flex min-h-11 items-center text-sm font-semibold text-teal-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 dark:text-teal-300"
-              }
+              className={profileStyles.privacyLegalLink}
               href={getLegalDocumentUrl("/privacy", "privacy-security")}
             >
               Privacy Policy
-              {redesigned && (
+              {
                 <PrivacyAsset
                   className={profileStyles.privacyChevron}
                   name="chevron"
                   theme={theme}
                 />
-              )}
+              }
             </a>
           </div>
         </section>
 
-        {redesigned && (
+        {
           <div className={profileStyles.privacySectionIntro}>
             <p>SIGN-IN</p>
             <h2 id="password-sign-in-heading">Password &amp; sign-in</h2>
           </div>
-        )}
+        }
         <form
-          aria-labelledby={redesigned ? "password-sign-in-heading" : undefined}
+          aria-labelledby={"password-sign-in-heading"}
           className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm"
           onSubmit={(event) => void handlePasswordChange(event)}
         >
-          {!redesigned && <h2 className="font-bold text-slate-900">Password &amp; Sign-In</h2>}
           {hasPassword ? (
             <>
               <p className="mt-1 text-xs leading-relaxed text-slate-500">
@@ -613,7 +549,7 @@ export function PrivacySecurityScreen({
           )}
         </form>
 
-        {redesigned && (
+        {
           <div className={profileStyles.privacyDataIntro}>
             <p>PERSONAL DATA</p>
             <h2 id="personal-data-heading">Your data, your choice</h2>
@@ -622,36 +558,19 @@ export function PrivacySecurityScreen({
               needed by other members remains.
             </p>
           </div>
-        )}
+        }
         <section
           data-expanded={deleteStage !== null}
-          aria-labelledby={redesigned ? "personal-data-heading" : undefined}
-          className={
-            redesigned
-              ? profileStyles.privacyDataCard
-              : "rounded-2xl border border-slate-100 bg-white p-4 shadow-sm"
-          }
+          aria-labelledby={"personal-data-heading"}
+          className={profileStyles.privacyDataCard}
         >
-          {!redesigned && (
-            <>
-              <h2 className="font-bold text-slate-900">Personal Data</h2>
-              <p className="mt-1 text-xs leading-relaxed text-slate-500">
-                Deleting your account removes your personal sign-in and notification data. Household
-                history needed by other members is retained.
-              </p>
-            </>
-          )}
           {deleteStage === null && (
             <button
-              className={
-                redesigned
-                  ? profileStyles.privacyDeleteAction
-                  : "mt-3 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
-              }
+              className={profileStyles.privacyDeleteAction}
               onClick={() => void openDeleteFlow()}
               type="button"
             >
-              {redesigned && (
+              {
                 <span className={profileStyles.privacyDeleteIconTile}>
                   <PrivacyAsset
                     className={profileStyles.privacyDeleteIcon}
@@ -659,18 +578,18 @@ export function PrivacySecurityScreen({
                     theme={theme}
                   />
                 </span>
-              )}
+              }
               <span className={profileStyles.privacyDeleteCopy}>
                 <span>{deleteBusy ? "Deleting…" : "Delete account"}</span>
-                {redesigned && <small>Permanent · requires confirmation</small>}
+                {<small>Permanent · requires confirmation</small>}
               </span>
-              {redesigned && (
+              {
                 <PrivacyAsset
                   className={profileStyles.privacyChevron}
                   name="delete-chevron"
                   theme={theme}
                 />
-              )}
+              }
             </button>
           )}
 
@@ -856,11 +775,11 @@ export function PrivacySecurityScreen({
             </form>
           )}
         </section>
-        {redesigned && (
+        {
           <p className={profileStyles.privacyDataHelper}>
             Account deletion checks household ownership first.
           </p>
-        )}
+        }
       </main>
       {confirmationOpen &&
         createPortal(

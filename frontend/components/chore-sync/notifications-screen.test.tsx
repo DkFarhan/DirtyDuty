@@ -163,7 +163,7 @@ describe("notifications screen", () => {
     clearCsrfToken()
   })
 
-  it("renders read and unread styles, marks a notification read and saves preferences", async () => {
+  it("renders read and unread states, marks a notification read and saves preferences", async () => {
     render(
       <ChoreSyncProvider>
         <NotificationsScreen />
@@ -172,12 +172,8 @@ describe("notifications screen", () => {
 
     const unreadArticle = await screen.findByText("Kitchen chore due")
     expect(unreadArticle.closest("article")?.getAttribute("data-read")).toBe("false")
-    expect(unreadArticle.closest("article")?.className).toContain("dark:bg-teal-950/40")
     expect(screen.getByText("Welcome home").closest("article")?.getAttribute("data-read")).toBe(
       "true",
-    )
-    expect(screen.getByText("Welcome home").closest("article")?.className).toContain(
-      "dark:bg-slate-800/70",
     )
     expect(screen.getByText("1 unread")).toBeTruthy()
     expect(screen.queryByText("CHORES")).toBeNull()

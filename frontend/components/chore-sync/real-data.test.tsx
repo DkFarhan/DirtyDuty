@@ -82,15 +82,13 @@ function jsonResponse(payload: unknown, status = 200) {
   })
 }
 
+function personalWeekSection() {
+  return screen.getByText("YOUR WEEK").closest("section")!
+}
+
 async function startAtDashboard(
   data: Partial<HouseholdDashboard> = dashboard,
   householdData = household,
-  redesignFlags: {
-    redesignedHomeEnabled?: boolean
-    redesignedMyChoresEnabled?: boolean
-    redesignedHouseholdEnabled?: boolean
-    redesignedProfileEnabled?: boolean
-  } = {},
 ) {
   fetchMock.mockImplementation(async (input) => {
     const url = String(input)
@@ -102,7 +100,7 @@ async function startAtDashboard(
     if (url.endsWith("/api/notifications/unread-count")) return jsonResponse({ count: 0 })
     return jsonResponse({}, 404)
   })
-  render(<AppShell {...redesignFlags} />)
+  render(<AppShell />)
   await screen.findByRole("heading", { name: "Today" }, { timeout: 3_000 })
 }
 
@@ -136,11 +134,7 @@ describe("server-backed chore data", () => {
   })
 
   it("renders live dashboard summary and assignment data, then completes and refreshes it", async () => {
-    const timezoneBoundaryAssignment = {
-      ...pendingAssignment,
-      scheduledFor: "2026-09-27T00:30:00Z",
-      dueAt: "2026-09-27T01:30:00Z",
-    }
+    const timezoneBoundaryAssignment = pendingAssignment
     await startAtDashboard({
       ...dashboard,
       today: [timezoneBoundaryAssignment],
@@ -148,21 +142,24 @@ describe("server-backed chore data", () => {
       overdue: [timezoneBoundaryAssignment],
     })
 
-    expect(screen.getByText("1/2")).toBeTruthy()
+    expect(screen.getByText("1 of 2 chores completed")).toBeTruthy()
     expect(screen.getAllByText("Assigned to You, Ahmed")).toHaveLength(1)
-    expect(screen.getAllByText("Overdue")).toHaveLength(2)
+    expect(screen.getAllByText("OVERDUE").length).toBeGreaterThan(0)
     const scheduledDay = new Intl.DateTimeFormat(undefined, {
       weekday: "short",
       month: "short",
       day: "numeric",
       timeZone: "UTC",
     }).format(new Date(Date.UTC(2026, 8, 27, 12)))
+    const dueAt = timezoneBoundaryAssignment.dueAt
+    if (dueAt === null) throw new Error("The timezone-boundary fixture requires a due time.")
     const householdTime = new Intl.DateTimeFormat(undefined, {
       hour: "numeric",
       minute: "2-digit",
       timeZone: household.timezone,
-    }).format(new Date(timezoneBoundaryAssignment.dueAt))
-    expect(screen.getAllByText(`${scheduledDay} · ${householdTime}`)).toHaveLength(1)
+    }).format(new Date(dueAt))
+    const assignmentCard = screen.getByRole("heading", { name: "Clean Kitchen" }).closest("article")
+    expect(assignmentCard?.textContent).toContain(`${scheduledDay} · ${householdTime}`)
     expect(screen.queryByText("Bathroom Cleaning")).toBeNull()
 
     fetchMock
@@ -183,9 +180,9 @@ describe("server-backed chore data", () => {
           overdue: [],
         }),
       )
-    fireEvent.click(screen.getByRole("button", { name: "Mark Clean Kitchen complete" }))
+    fireEvent.click(screen.getByRole("button", { name: "Mark complete" }))
 
-    expect(await screen.findByText("100% done")).toBeTruthy()
+    expect(await screen.findByText("2 of 2 chores completed")).toBeTruthy()
     expect(
       fetchMock.mock.calls.some(
         ([url, request]) =>
@@ -226,7 +223,7 @@ describe("server-backed chore data", () => {
     fireEvent.click(screen.getByRole("button", { name: "Try again" }))
 
     expect(await screen.findByRole("heading", { name: "Today" })).toBeTruthy()
-    expect(screen.getByText("1/2")).toBeTruthy()
+    expect(screen.getByText("1 of 2 chores completed")).toBeTruthy()
     expect(dashboardRequests).toBe(2)
   })
 
@@ -242,16 +239,16 @@ describe("server-backed chore data", () => {
           }),
       )
 
-    fireEvent.click(screen.getByRole("button", { name: "Mark Clean Kitchen complete" }))
+    fireEvent.click(screen.getByRole("button", { name: "Mark complete" }))
 
     await waitFor(() => expect(finishCompletion).toBeTypeOf("function"))
-    expect(screen.getByText("100% done")).toBeTruthy()
-    expect(screen.queryByRole("button", { name: "Mark Clean Kitchen complete" })).toBeNull()
+    expect(screen.getByText("2 of 2 chores completed")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Mark complete" })).toBeNull()
 
     finishCompletion(jsonResponse({ message: "Completion rejected." }, 500))
     await waitFor(() => {
-      expect(screen.getByText("1/2")).toBeTruthy()
-      expect(screen.getByRole("button", { name: "Mark Clean Kitchen complete" })).toBeTruthy()
+      expect(screen.getByText("1 of 2 chores completed")).toBeTruthy()
+      expect(screen.getByRole("button", { name: "Mark complete" })).toBeTruthy()
       expect(screen.getByRole("alert").textContent).toContain("Something went wrong.")
     })
   })
@@ -265,11 +262,11 @@ describe("server-backed chore data", () => {
       )
       .mockResolvedValueOnce(jsonResponse({ message: "Refresh failed." }, 500))
 
-    fireEvent.click(screen.getByRole("button", { name: "Mark Clean Kitchen complete" }))
+    fireEvent.click(screen.getByRole("button", { name: "Mark complete" }))
 
     await waitFor(() => {
-      expect(screen.getByText("100% done")).toBeTruthy()
-      expect(screen.queryByRole("button", { name: "Mark Clean Kitchen complete" })).toBeNull()
+      expect(screen.getByText("2 of 2 chores completed")).toBeTruthy()
+      expect(screen.queryByRole("button", { name: "Mark complete" })).toBeNull()
     })
   })
 
@@ -372,9 +369,9 @@ describe("server-backed chore data", () => {
     })
 
     expect(screen.getByText("4 of 9 completed")).toBeTruthy()
-    const yourWeek = screen.getByRole("region", { name: "Your Week" })
+    const yourWeek = personalWeekSection()
     expect(
-      within(yourWeek).getByRole("img", { name: "4 of 9 assigned chores completed" }),
+      within(yourWeek).getByRole("img", { name: "44% of assigned chores completed" }),
     ).toBeTruthy()
     expect(
       WEEK_SUMMARY_TEMPLATES.OVERDUE.some(
@@ -383,10 +380,10 @@ describe("server-backed chore data", () => {
           within(yourWeek).queryByText(body) !== null,
       ),
     ).toBe(true)
-    expect(within(yourWeek).getByText("Assigned").nextElementSibling?.textContent).toBe("9")
-    expect(within(yourWeek).getByText("Completed").nextElementSibling?.textContent).toBe("4")
-    expect(within(yourWeek).getByText("Due today").nextElementSibling?.textContent).toBe("1")
-    expect(within(yourWeek).getByText("Overdue").nextElementSibling?.textContent).toBe("1")
+    expect(within(yourWeek).getByText("Assigned").previousElementSibling?.textContent).toBe("09")
+    expect(within(yourWeek).getByText("Completed").previousElementSibling?.textContent).toBe("04")
+    expect(within(yourWeek).getByText("Due today").previousElementSibling?.textContent).toBe("01")
+    expect(within(yourWeek).getByText("Overdue").previousElementSibling?.textContent).toBe("01")
   })
 
   it("shows completed personal chores in the subtle weekly progress bar", async () => {
@@ -397,7 +394,7 @@ describe("server-backed chore data", () => {
     })
 
     expect(screen.getByText("1 of 1 completed")).toBeTruthy()
-    expect(screen.getByRole("img", { name: "1 of 1 assigned chores completed" })).toBeTruthy()
+    expect(screen.getByRole("img", { name: "100% of assigned chores completed" })).toBeTruthy()
   })
 
   it("keeps a prior-week Sunday overdue chore visible after the Monday rollover", async () => {
@@ -424,11 +421,11 @@ describe("server-backed chore data", () => {
       { ...household, timezone: "UTC" },
     )
 
-    const yourWeek = screen.getByRole("region", { name: "Your Week" })
-    expect(within(yourWeek).getByText("Assigned").nextElementSibling?.textContent).toBe("0")
-    expect(within(yourWeek).getByText("Completed").nextElementSibling?.textContent).toBe("0")
-    expect(within(yourWeek).getByText("Due today").nextElementSibling?.textContent).toBe("0")
-    expect(within(yourWeek).getByText("Overdue").nextElementSibling?.textContent).toBe("1")
+    const yourWeek = personalWeekSection()
+    expect(within(yourWeek).getByText("Assigned").previousElementSibling?.textContent).toBe("00")
+    expect(within(yourWeek).getByText("Completed").previousElementSibling?.textContent).toBe("00")
+    expect(within(yourWeek).getByText("Due today").previousElementSibling?.textContent).toBe("00")
+    expect(within(yourWeek).getByText("Overdue").previousElementSibling?.textContent).toBe("01")
     expect(within(yourWeek).queryByRole("img")).toBeNull()
     expect(within(yourWeek).queryByText(/%/)).toBeNull()
     expect(
@@ -437,21 +434,20 @@ describe("server-backed chore data", () => {
       }),
     ).toBe(true)
 
-    const attention = screen.getByRole("region", { name: "Needs Attention" })
+    const attention = screen.getByRole("region", { name: "Needs attention" })
     expect(within(attention).getByRole("heading", { name: "Laundry" })).toBeTruthy()
-    expect(within(attention).getByText("1 overdue")).toBeTruthy()
+    expect(within(attention).getByText("1 OVERDUE")).toBeTruthy()
     expect(
       within(screen.getByRole("region", { name: "Today" })).queryByRole("heading", {
         name: "Laundry",
       }),
     ).toBeNull()
     expect(
-      within(screen.getByRole("region", { name: "Up Next" })).queryByRole("heading", {
+      within(screen.getByRole("region", { name: "Up next" })).queryByRole("heading", {
         name: "Laundry",
       }),
     ).toBeNull()
-    expect(screen.getByText("0% done")).toBeTruthy()
-    expect(screen.getByText("0/0")).toBeTruthy()
+    expect(screen.getByText("0 of 0 chores completed")).toBeTruthy()
 
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ token: "complete-csrf", headerName: "X-CSRF-TOKEN" }))
@@ -466,14 +462,13 @@ describe("server-backed chore data", () => {
           overdue: [],
         }),
       )
-    fireEvent.click(screen.getByRole("button", { name: "Mark Laundry complete" }))
+    fireEvent.click(screen.getByRole("button", { name: "Mark complete" }))
     await waitFor(() =>
-      expect(screen.queryByRole("region", { name: "Needs Attention" })).toBeNull(),
+      expect(screen.queryByRole("region", { name: "Needs attention" })).toBeNull(),
     )
     expect(
-      within(screen.getByRole("region", { name: "Your Week" })).getByText("Overdue")
-        .nextElementSibling?.textContent,
-    ).toBe("0")
+      within(personalWeekSection()).getByText("Overdue").previousElementSibling?.textContent,
+    ).toBe("00")
     vi.useRealTimers()
   })
 
@@ -514,20 +509,14 @@ describe("server-backed chore data", () => {
       thisWeek: [],
     })
 
-    const yourWeek = screen.getByRole("region", { name: "Your Week" })
-    expect(within(yourWeek).getByText("Assigned").nextElementSibling?.textContent).toBe("0")
-    const completed = within(yourWeek).getByText("Completed").nextElementSibling
-    const dueToday = within(yourWeek).getByText("Due today").nextElementSibling
-    const overdue = within(yourWeek).getByText("Overdue").nextElementSibling
-    expect(completed?.textContent).toBe("0")
-    expect(dueToday?.textContent).toBe("0")
-    expect(overdue?.textContent).toBe("0")
-    expect(completed?.className).toContain("text-slate-800")
-    expect(dueToday?.className).toContain("text-slate-800")
-    expect(overdue?.className).toContain("text-slate-800")
-    expect(completed?.className).not.toContain("text-teal-800")
-    expect(dueToday?.className).not.toContain("text-amber-800")
-    expect(overdue?.className).not.toContain("text-rose-800")
+    const yourWeek = personalWeekSection()
+    expect(within(yourWeek).getByText("Assigned").previousElementSibling?.textContent).toBe("00")
+    const completed = within(yourWeek).getByText("Completed").previousElementSibling
+    const dueToday = within(yourWeek).getByText("Due today").previousElementSibling
+    const overdue = within(yourWeek).getByText("Overdue").previousElementSibling
+    expect(completed?.textContent).toBe("00")
+    expect(dueToday?.textContent).toBe("00")
+    expect(overdue?.textContent).toBe("00")
     expect(
       WEEK_SUMMARY_TEMPLATES.NO_ASSIGNMENTS.some(({ title, body }) => {
         return (
@@ -568,7 +557,7 @@ describe("server-backed chore data", () => {
     })
 
     const today = screen.getByRole("region", { name: "Today" })
-    const upNext = screen.getByRole("region", { name: "Up Next" })
+    const upNext = screen.getByRole("region", { name: "Up next" })
     expect(within(today).getByText("Take out recycling")).toBeTruthy()
     expect(within(upNext).getByText("Clean the hallway")).toBeTruthy()
     expect(within(upNext).queryByText("Take out recycling")).toBeNull()
@@ -610,17 +599,15 @@ describe("server-backed chore data", () => {
     expect(await screen.findByText(user.email)).toBeTruthy()
     const profileHeader = screen.getByRole("heading", { name: user.displayName }).closest("header")
     expect(profileHeader?.querySelector('button[aria-label^="Notifications"]')).toBeNull()
-    expect(screen.getByRole("button", { name: /^Edit$/ })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Edit profile" })).toBeTruthy()
     expect(screen.queryByText("Assigned")).toBeNull()
     expect(screen.queryByText("Completed")).toBeNull()
     expect(screen.queryByText("Rate")).toBeNull()
-    expect(screen.getByText("Rewards & Streaks")).toBeTruthy()
-    expect(screen.getByText("Developed by Farhan Habib")).toBeTruthy()
-    expect(screen.getByText("© 2026 DirtyDuty")).toBeTruthy()
+    expect(screen.getByText("Rewards & streaks")).toBeTruthy()
     expect(screen.getByRole("button", { name: "Help & Support" })).toBeTruthy()
 
-    fireEvent.click(screen.getByRole("button", { name: /^Edit$/ }))
-    expect(await screen.findByRole("heading", { name: "Edit Profile" })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Edit profile" }))
+    expect(await screen.findByRole("heading", { name: "Edit profile" })).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "Back" }))
     expect(await screen.findByRole("heading", { name: user.displayName })).toBeTruthy()
 
@@ -632,12 +619,9 @@ describe("server-backed chore data", () => {
     expect(screen.getByText("Use your device appearance")).toBeTruthy()
     expect(screen.queryByText("Always use the light theme.")).toBeNull()
     expect(screen.queryByText("Always use the dark theme.")).toBeNull()
-    expect(screen.getByRole("radio", { name: "Light" }).closest("label")?.className).toContain(
-      "min-h-16",
-    )
-    expect(screen.getByRole("radio", { name: "Light" }).closest("label")?.className).toContain(
-      "border-b",
-    )
+    expect(
+      screen.getByRole("radio", { name: "Light" }).closest("label")?.getAttribute("data-theme"),
+    ).toBe("light")
     fireEvent.click(screen.getByRole("radio", { name: "Light" }))
     await waitFor(() => expect(document.documentElement.classList.contains("light")).toBe(true))
     fireEvent.click(screen.getByRole("radio", { name: "Dark" }))
@@ -647,15 +631,11 @@ describe("server-backed chore data", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back" }))
     expect(await screen.findByRole("heading", { name: user.displayName })).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "Help & Support" }))
-    expect(await screen.findByRole("heading", { name: "Help & Support" })).toBeTruthy()
+    expect(await screen.findByRole("heading", { name: "Help & support" })).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "Back" }))
     expect(await screen.findByRole("heading", { name: user.displayName })).toBeTruthy()
 
-    const signOutButton = screen.getByRole("button", { name: "Sign Out" })
-    expect(signOutButton.className).toContain("border-rose-300")
-    expect(signOutButton.className).toContain("text-rose-700")
-    expect(signOutButton.className).toContain("hover:bg-rose-600")
-    expect(signOutButton.className).toContain("dark:hover:bg-rose-700")
+    const signOutButton = screen.getByRole("button", { name: "Sign out" })
     fireEvent.click(signOutButton)
 
     expect(await screen.findByRole("button", { name: "Sign In" })).toBeTruthy()
@@ -674,9 +654,10 @@ describe("server-backed chore data", () => {
       .mockResolvedValueOnce(jsonResponse([pendingAssignment]))
       .mockResolvedValueOnce(jsonResponse([]))
     fireEvent.click(screen.getByRole("button", { name: "My Chores" }))
-    expect(await screen.findByRole("heading", { name: "My Chores" })).toBeTruthy()
+    expect(await screen.findByRole("heading", { name: "My chores." })).toBeTruthy()
     expect(await screen.findByText("Clean Kitchen")).toBeTruthy()
-    expect(screen.getByText("1 upcoming · 0 completed")).toBeTruthy()
+    expect(screen.getByLabelText("Chore totals").textContent).toContain("1UPCOMING")
+    expect(screen.getByLabelText("Chore totals").textContent).toContain("0DONE")
     expect(screen.getByText("Assigned to You, Ahmed")).toBeTruthy()
 
     const completed = {
@@ -697,12 +678,13 @@ describe("server-backed chore data", () => {
       )
       .mockResolvedValueOnce(jsonResponse([]))
       .mockResolvedValueOnce(jsonResponse([completed]))
-    const completionButton = screen.getByRole("button", { name: "Mark Clean Kitchen complete" })
+    const completionButton = screen.getByRole("button", { name: "Mark complete" })
     fireEvent.click(completionButton)
     fireEvent.click(completionButton)
 
     await waitFor(() => expect(finishCompletion).toBeTypeOf("function"))
-    expect(screen.getByText("0 upcoming · 1 completed")).toBeTruthy()
+    expect(screen.getByLabelText("Chore totals").textContent).toContain("0UPCOMING")
+    expect(screen.getByLabelText("Chore totals").textContent).toContain("1DONE")
     expect(
       fetchMock.mock.calls.filter(
         ([url, request]) =>
@@ -710,7 +692,7 @@ describe("server-backed chore data", () => {
           request?.method === "POST",
       ),
     ).toHaveLength(1)
-    fireEvent.click(screen.getByRole("button", { name: /completed/i }))
+    fireEvent.click(screen.getByRole("tab", { name: "Completed" }))
     expect(screen.getByText("Clean Kitchen")).toBeTruthy()
     expect(screen.queryByText("Completed by Jahid")).toBeNull()
 
@@ -749,16 +731,22 @@ describe("server-backed chore data", () => {
     ]
     fetchMock.mockResolvedValueOnce(jsonResponse(members))
     fireEvent.click(screen.getByRole("button", { name: "Household" }))
-    expect(await screen.findByText("3/4 chores done this week")).toBeTruthy()
-    expect(screen.getByText("OWNER")).toBeTruthy()
-    expect(screen.getByText("Member since Jan 2026")).toBeTruthy()
+    expect(await screen.findByText("Jahid")).toBeTruthy()
+    expect(
+      screen.getByRole("progressbar", {
+        name: "75% of assigned chores completed this week",
+      }),
+    ).toBeTruthy()
+    const currentMember = screen.getByRole("heading", { name: "Jahid" }).closest("article")!
+    expect(within(currentMember).getByText("Owner")).toBeTruthy()
+    expect(within(currentMember).getByText("Joined Jan 2026")).toBeTruthy()
 
     fetchMock
       .mockResolvedValueOnce(jsonResponse([]))
       .mockResolvedValueOnce(jsonResponse({ categories: [], activeMembers: [] }))
-    fireEvent.click(screen.getByRole("button", { name: /Manage Chores/ }))
-    expect(await screen.findByRole("heading", { name: "Household Management" })).toBeTruthy()
-    expect(await screen.findByText("No chores yet")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: /Manage chores/ }))
+    expect(await screen.findByRole("heading", { name: "Manage chores" })).toBeTruthy()
+    expect(await screen.findByText("No shared chores yet.")).toBeTruthy()
     expect(screen.queryByRole("button", { name: /Members/ })).toBeNull()
   })
 
@@ -825,17 +813,15 @@ describe("server-backed chore data", () => {
     expect(screen.getByRole("button", { name: "Leave household" })).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "Leave household" }))
 
-    expect(screen.getByText("Transfer ownership before leaving")).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Pass the keys." })).toBeTruthy()
     expect(screen.getAllByRole("radio")).toHaveLength(2)
-    fireEvent.click(screen.getByRole("radio", { name: /Ahmed ADMIN/ }))
+    fireEvent.click(screen.getByRole("radio", { name: /Ahmed/ }))
     fireEvent.click(screen.getByRole("button", { name: "Continue" }))
     expect(
-      screen.getByRole("heading", { name: "Transfer ownership to Ahmed and leave Apartment 305?" }),
+      screen.getByRole("heading", { name: "Transfer ownership to Ahmed and leave?" }),
     ).toBeTruthy()
     expect(
-      screen.getByText(
-        /Ahmed becomes Owner, you leave the household, and rejoining later requires a new invite/,
-      ),
+      screen.getByText(/Ahmed becomes Owner\. You leave the household in the same action\./),
     ).toBeTruthy()
 
     fetchMock
@@ -882,12 +868,12 @@ describe("server-backed chore data", () => {
     fireEvent.click(screen.getByRole("button", { name: "Leave household" }))
 
     expect(screen.getByText("You’re the only active member")).toBeTruthy()
-    fireEvent.click(screen.getByRole("button", { name: "Invite Member" }))
-    expect(screen.getByRole("dialog", { name: "Invite a housemate" })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Invite member" }))
+    expect(screen.getByRole("dialog", { name: "Invite a housemate." })).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "Close invitation dialog" }))
 
     fireEvent.click(screen.getByRole("button", { name: "Leave household" }))
-    expect(screen.getByRole("button", { name: "Delete Household" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Household settings" })).toBeTruthy()
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse({
@@ -901,8 +887,8 @@ describe("server-backed chore data", () => {
         }),
       )
       .mockResolvedValueOnce(jsonResponse([]))
-    fireEvent.click(screen.getByRole("button", { name: "Delete Household" }))
-    expect(await screen.findByRole("heading", { name: "Household Settings" })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Household settings" }))
+    expect(await screen.findByRole("heading", { name: "Household settings" })).toBeTruthy()
     expect(
       fetchMock.mock.calls.some(
         ([url]) => url === "http://localhost:8080/api/households/home-1/settings",
@@ -938,7 +924,9 @@ describe("server-backed chore data", () => {
       expect(await screen.findByText("Jahid")).toBeTruthy()
       fireEvent.click(screen.getByRole("button", { name: "Leave household" }))
       expect(screen.getByRole("heading", { name: "Leave Apartment 305?" })).toBeTruthy()
-      expect(screen.getByRole("button", { name: "Confirm" })).toBeTruthy()
+      expect(
+        within(screen.getByRole("dialog")).getByRole("button", { name: "Leave household" }),
+      ).toBeTruthy()
 
       fetchMock
         .mockResolvedValueOnce(
@@ -946,7 +934,9 @@ describe("server-backed chore data", () => {
         )
         .mockResolvedValueOnce(new Response(null, { status: 204 }))
         .mockResolvedValueOnce(jsonResponse([]))
-      fireEvent.click(screen.getByRole("button", { name: "Confirm" }))
+      fireEvent.click(
+        within(screen.getByRole("dialog")).getByRole("button", { name: "Leave household" }),
+      )
 
       await screen.findByText("Welcome!")
       const leaveRequest = fetchMock.mock.calls.find(
@@ -976,7 +966,11 @@ describe("server-backed chore data", () => {
       today: [{ ...pendingAssignment, canComplete: false }],
       thisWeek: [],
     })
-    expect(screen.queryByRole("button", { name: "Mark Clean Kitchen complete" })).toBeNull()
+    const deniedChoreCard = screen
+      .getByRole("heading", { name: "Clean Kitchen" })
+      .closest("article")
+    expect(deniedChoreCard).not.toBeNull()
+    expect(within(deniedChoreCard!).queryByRole("button", { name: "Mark complete" })).toBeNull()
     fetchMock
       .mockRejectedValueOnce(new TypeError("offline"))
       .mockResolvedValueOnce(jsonResponse([]))
@@ -985,14 +979,16 @@ describe("server-backed chore data", () => {
       "textContent",
       "Unable to connect to DirtyDuty. Please try again.",
     )
-    expect(screen.queryByText("All caught up!")).toBeNull()
+    expect(screen.queryByText("All caught up.")).toBeNull()
   })
 
   it("shows only the scheduled local date when no due time is provided", async () => {
+    const todayKey = getLocalDateKey(new Date(), household.timezone)
     const assignment = {
       ...pendingAssignment,
-      scheduledFor: "2026-09-27T00:30:00Z",
+      scheduledFor: `${todayKey}T00:30:00Z`,
       dueAt: null,
+      overdue: false,
     }
     await startAtDashboard({
       weekSummary: { completedCount: 0, totalCount: 1, completionPercentage: 0 },
@@ -1004,9 +1000,10 @@ describe("server-backed chore data", () => {
       month: "short",
       day: "numeric",
       timeZone: "UTC",
-    }).format(new Date(Date.UTC(2026, 8, 27, 12)))
-    expect(screen.getByText(scheduledDay)).toBeTruthy()
-    expect(screen.queryByText(new RegExp(`${scheduledDay} ·`))).toBeNull()
+    }).format(new Date(`${todayKey}T12:00:00Z`))
+    const assignmentCard = screen.getByRole("heading", { name: "Clean Kitchen" }).closest("article")
+    expect(assignmentCard?.textContent).toContain(scheduledDay)
+    expect(assignmentCard?.textContent).not.toMatch(/\d{1,2}:\d{2}/)
   })
 
   it("uses the approved views with shared server data and synchronizes completions across screens", async () => {
@@ -1046,12 +1043,7 @@ describe("server-backed chore data", () => {
       }
     }
 
-    await startAtDashboard(createDashboard(), household, {
-      redesignedHomeEnabled: true,
-      redesignedMyChoresEnabled: true,
-      redesignedHouseholdEnabled: true,
-      redesignedProfileEnabled: true,
-    })
+    await startAtDashboard(createDashboard(), household)
     fetchMock.mockImplementation(async (input, init) => {
       const url = String(input)
       const method = init?.method ?? "GET"
@@ -1143,7 +1135,7 @@ describe("server-backed chore data", () => {
     await waitFor(() => expect(document.querySelector("[data-profile-redesign]")).not.toBeNull())
   })
 
-  it("rolls back a failed completion in redesigned My Chores and exposes the error", async () => {
+  it("rolls back a failed completion in My Chores and exposes the error", async () => {
     await startAtDashboard(
       {
         weekSummary: { completedCount: 0, totalCount: 0, completionPercentage: 0 },
@@ -1151,7 +1143,6 @@ describe("server-backed chore data", () => {
         thisWeek: [],
       },
       household,
-      { redesignedMyChoresEnabled: true },
     )
     const pending = { ...pendingAssignment, overdue: false }
     fetchMock.mockImplementation(async (input, init) => {

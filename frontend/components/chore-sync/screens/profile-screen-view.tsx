@@ -13,21 +13,17 @@ type ProfileRoute =
 export function ProfileDestinationView({
   destination,
   theme,
-  redesigned,
-  legacyClassName,
   children,
 }: {
   destination: Exclude<ProfileRoute, "profile">
   theme: Exclude<Theme, "system">
-  redesigned: boolean
-  legacyClassName: string
   children: ReactNode
 }) {
   return (
     <div
-      className={redesigned ? `${styles.route} ${styles[theme]}` : legacyClassName}
-      data-destination={redesigned ? destination : undefined}
-      data-profile-redesign={redesigned ? "" : undefined}
+      className={`${styles.route} ${styles[theme]}`}
+      data-destination={destination}
+      data-profile-redesign=""
     >
       {children}
     </div>
