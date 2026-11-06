@@ -50,6 +50,18 @@ function renderHouseholdView(
 afterEach(() => cleanup())
 
 describe("Household screen presentation", () => {
+  it("uses shared primary navigation and maps Home to the dashboard destination", () => {
+    const onNavigate = vi.fn()
+    renderHouseholdView("admin-3", { onNavigate })
+
+    expect(screen.getByRole("navigation", { name: "Primary navigation" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Household" }).getAttribute("aria-current")).toBe(
+      "page",
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Home" }))
+    expect(onNavigate).toHaveBeenCalledWith("dashboard")
+  })
+
   it("shows owner controls only for other eligible members", () => {
     const ownerFixture = createHouseholdPreviewFixture("owner-menu")
     const { onMemberAction } = renderHouseholdView("owner-3", {

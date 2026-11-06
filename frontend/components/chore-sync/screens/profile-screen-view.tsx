@@ -294,7 +294,7 @@ export function ProfileScreenView({
           <p>© 2026 DirtyDuty</p>
         </footer>
       </main>
-      <BottomNav active="profile" navigate={onPrimaryNavigate} />
+      <BottomNav active="profile" navigate={onPrimaryNavigate} theme={theme} />
     </div>
   )
 }

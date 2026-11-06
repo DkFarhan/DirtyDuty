@@ -248,7 +248,7 @@ export function ProfileScreen({
           <p>© 2026 DirtyDuty</p>
         </footer>
       </main>
-      <BottomNav active="profile" navigate={navigate} />
+      <BottomNav active="profile" navigate={navigate} theme={theme} />
     </div>
   )
 }

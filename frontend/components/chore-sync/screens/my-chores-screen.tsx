@@ -380,7 +380,7 @@ export function MyChoresScreen({
           ))}
       </main>
 
-      <BottomNav active="my-chores" navigate={navigate} />
+      <BottomNav active="my-chores" navigate={navigate} theme={theme} />
     </div>
   )
 }

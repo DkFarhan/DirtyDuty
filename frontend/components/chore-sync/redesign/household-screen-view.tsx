@@ -5,7 +5,7 @@ import { X } from "lucide-react"
 import type { HouseholdMemberDTO } from "@/lib/household/api"
 import { useDialogFocus } from "../use-dialog-focus"
 import { getMemberActionCopy, getMemberActionOptions, type MemberAction } from "../member-card"
-import glassStyles from "../bottom-nav.module.css"
+import { BottomNav } from "../bottom-nav"
 import styles from "./household-screen-view.module.css"
 
 export type HouseholdVisualTheme = "dark" | "light"
@@ -69,16 +69,6 @@ export interface HouseholdScreenViewProps {
   onGeneratePreviewInvite?: () => void
   onClosePreviewInvite?: () => void
 }
-
-const navigationItems: Array<{
-  id: HouseholdNavigationDestination
-  label: string
-}> = [
-  { id: "dashboard", label: "Home" },
-  { id: "my-chores", label: "My Chores" },
-  { id: "household", label: "Household" },
-  { id: "profile", label: "Profile" },
-]
 
 const avatarSlotFor = (index: number) => (index % 3) + 1
 
@@ -237,47 +227,6 @@ function MemberRow({
         <span className={styles.progressFill} style={{ width: `${member.progressPercent}%` }} />
       </div>
     </article>
-  )
-}
-
-function Navigation({
-  activeDestination,
-  theme,
-  onNavigate,
-}: Pick<HouseholdScreenViewProps, "activeDestination" | "theme" | "onNavigate">) {
-  return (
-    <nav aria-label="Primary navigation" className={styles.navigation}>
-      <div className={`${styles.navigationCapsule} ${glassStyles.capsule}`}>
-        <span
-          aria-hidden="true"
-          className={styles.activeIsland}
-          data-active-destination={activeDestination}
-        />
-        <div className={styles.navigationItems}>
-          {navigationItems.map((item) => {
-            const active = activeDestination === item.id
-            return (
-              <button
-                aria-current={active ? "page" : undefined}
-                aria-label={item.label}
-                className={`${styles.navigationItem} ${active ? styles.activeNavigationItem : ""}`}
-                key={item.id}
-                onClick={() => onNavigate(item.id)}
-                type="button"
-              >
-                <span
-                  aria-hidden="true"
-                  className={styles.navigationIcon}
-                  data-destination={item.id}
-                  data-theme={theme}
-                />
-                <span className={styles.navigationLabel}>{item.label}</span>
-              </button>
-            )
-          })}
-        </div>
-      </div>
-    </nav>
   )
 }
 
@@ -866,9 +815,10 @@ export function HouseholdScreenView(props: HouseholdScreenViewProps) {
         </section>
         <div aria-hidden="true" className={styles.scrollEndPadding} />
       </main>
-      <Navigation
-        activeDestination={props.activeDestination}
-        onNavigate={props.onNavigate}
+      <BottomNav
+        active={props.activeDestination}
+        ariaLabel="Primary navigation"
+        navigate={props.onNavigate}
         theme={theme}
       />
       {props.pendingMemberAction && (

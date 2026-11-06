@@ -781,7 +781,7 @@ export function DashboardScreen({
         )}
       </main>
 
-      <BottomNav active="dashboard" navigate={navigate} />
+      <BottomNav active="dashboard" navigate={navigate} theme={theme} />
     </div>
   )
 }

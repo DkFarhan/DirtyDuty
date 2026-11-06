@@ -1,7 +1,7 @@
 "use client"
 
 import type { HomeNavigationDestination, HomeVisualTheme } from "./home-screen-view"
-import glassStyles from "../bottom-nav.module.css"
+import { BottomNav } from "../bottom-nav"
 import styles from "./my-chores-screen-view.module.css"
 
 export type MyChoresTab = "upcoming" | "completed"
@@ -55,57 +55,6 @@ export interface MyChoresScreenViewProps {
   onCompleteChore: (choreId: string) => void
   onRetry: () => void
   onNavigate: (destination: HomeNavigationDestination) => void
-}
-
-const navigationItems: Array<{
-  id: HomeNavigationDestination
-  label: string
-  iconClass: string
-}> = [
-  { id: "home", label: "Home", iconClass: styles.homeIcon },
-  { id: "my-chores", label: "My Chores", iconClass: styles.choresIcon },
-  { id: "household", label: "Household", iconClass: styles.householdIcon },
-  { id: "profile", label: "Profile", iconClass: styles.profileIcon },
-]
-
-function Navigation({
-  activeDestination,
-  theme,
-  onNavigate,
-}: Pick<MyChoresScreenViewProps, "activeDestination" | "theme" | "onNavigate">) {
-  return (
-    <nav aria-label="Preview navigation" className={styles.navigation}>
-      <div className={`${styles.navigationCapsule} ${glassStyles.capsule}`}>
-        <div
-          aria-hidden="true"
-          className={styles.activeIsland}
-          data-active-destination={activeDestination}
-        />
-        <div className={styles.navigationItems}>
-          {navigationItems.map((item) => {
-            const active = activeDestination === item.id
-            return (
-              <button
-                aria-current={active ? "page" : undefined}
-                aria-label={item.label}
-                className={`${styles.navigationItem} ${active ? styles.activeNavigationItem : ""}`}
-                key={item.id}
-                onClick={() => onNavigate(item.id)}
-                type="button"
-              >
-                <span
-                  aria-hidden="true"
-                  className={`${styles.navigationIcon} ${item.iconClass}`}
-                  data-theme={theme}
-                />
-                <span className={styles.navigationLabel}>{item.label}</span>
-              </button>
-            )
-          })}
-        </div>
-      </div>
-    </nav>
-  )
 }
 
 function UpcomingCard({
@@ -492,7 +441,12 @@ export function MyChoresScreenView({
           </div>
         </div>
       </main>
-      <Navigation activeDestination={activeDestination} onNavigate={onNavigate} theme={theme} />
+      <BottomNav
+        active={activeDestination === "home" ? "dashboard" : activeDestination}
+        ariaLabel="Preview navigation"
+        navigate={(destination) => onNavigate(destination === "dashboard" ? "home" : destination)}
+        theme={theme}
+      />
     </div>
   )
 }
