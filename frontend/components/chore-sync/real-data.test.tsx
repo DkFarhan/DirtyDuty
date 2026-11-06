@@ -966,7 +966,11 @@ describe("server-backed chore data", () => {
       today: [{ ...pendingAssignment, canComplete: false }],
       thisWeek: [],
     })
-    expect(screen.queryByRole("button", { name: "Complete Clean Kitchen" })).toBeNull()
+    const deniedChoreCard = screen
+      .getByRole("heading", { name: "Clean Kitchen" })
+      .closest("article")
+    expect(deniedChoreCard).not.toBeNull()
+    expect(within(deniedChoreCard!).queryByRole("button", { name: "Mark complete" })).toBeNull()
     fetchMock
       .mockRejectedValueOnce(new TypeError("offline"))
       .mockResolvedValueOnce(jsonResponse([]))

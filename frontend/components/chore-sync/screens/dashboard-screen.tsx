@@ -301,6 +301,7 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
           household={inviteHousehold ?? household}
           onOpenChange={setInviteOpen}
           open={inviteHousehold !== null}
+          theme={theme}
         />
       )}
     </>

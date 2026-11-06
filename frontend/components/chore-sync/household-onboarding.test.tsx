@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { AppShell } from "./app-shell"
 import { clearCsrfToken } from "../../lib/auth/api"
 import { stubAuthFeatures } from "../../test/stub-auth-features"
+import { themeStorageKey } from "@/components/theme/theme-provider"
+import householdStyles from "./redesign/household-screen-view.module.css"
 
 vi.mock("@/lib/notifications/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/notifications/api")>()
@@ -123,42 +125,54 @@ describe("household onboarding", () => {
     expect(await screen.findByText("Welcome!")).toBeTruthy()
   })
 
-  it("creates a household with browser timezone and trimmed description, then refreshes into the dashboard", async () => {
-    await openWelcome()
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse({ token: "household-csrf", headerName: "X-CSRF-TOKEN" }))
-      .mockResolvedValueOnce(jsonResponse(household, 201))
-      .mockResolvedValueOnce(jsonResponse([household]))
-      .mockResolvedValueOnce(jsonResponse(dashboard))
+  it.each(["light", "dark"] as const)(
+    "creates a household and opens the invitation dialog in the %s theme",
+    async (theme) => {
+      localStorage.setItem(themeStorageKey, theme)
+      await openWelcome()
+      fetchMock
+        .mockResolvedValueOnce(
+          jsonResponse({ token: "household-csrf", headerName: "X-CSRF-TOKEN" }),
+        )
+        .mockResolvedValueOnce(jsonResponse(household, 201))
+        .mockResolvedValueOnce(jsonResponse([household]))
+        .mockResolvedValueOnce(jsonResponse(dashboard))
 
-    fireEvent.click(screen.getByRole("button", { name: /Create a Household/ }))
-    fireEvent.change(screen.getByLabelText(/Household Name/), {
-      target: { value: "  Our Place  " },
-    })
-    fireEvent.change(screen.getByLabelText(/Description/), {
-      target: { value: "  A welcoming home  " },
-    })
-    fireEvent.click(screen.getByRole("button", { name: "Create Household" }))
+      fireEvent.click(screen.getByRole("button", { name: /Create a Household/ }))
+      fireEvent.change(screen.getByLabelText(/Household Name/), {
+        target: { value: "  Our Place  " },
+      })
+      fireEvent.change(screen.getByLabelText(/Description/), {
+        target: { value: "  A welcoming home  " },
+      })
+      fireEvent.click(screen.getByRole("button", { name: "Create Household" }))
 
-    expect(await screen.findByText("Today")).toBeTruthy()
-    const createRequest = fetchMock.mock.calls.find(
-      ([url, options]) =>
-        url === "http://localhost:8080/api/households" && options?.method === "POST",
-    )
-    expect(createRequest?.[1]?.body).toBe(
-      JSON.stringify({
-        name: "Our Place",
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        description: "A welcoming home",
-      }),
-    )
-    expect(new Headers(createRequest?.[1]?.headers).get("X-CSRF-TOKEN")).toBe("household-csrf")
-    const inviteDialog = await screen.findByRole("dialog", { name: "Invite a housemate." })
-    expect(inviteDialog.textContent).toContain("Apartment 305")
-    expect(screen.getByRole("button", { name: "Generate code" })).toBeTruthy()
-    expect(localStorage.length).toBe(0)
-    expect(sessionStorage.length).toBe(0)
-  })
+      expect(await screen.findByText("Today")).toBeTruthy()
+      const createRequest = fetchMock.mock.calls.find(
+        ([url, options]) =>
+          url === "http://localhost:8080/api/households" && options?.method === "POST",
+      )
+      expect(createRequest?.[1]?.body).toBe(
+        JSON.stringify({
+          name: "Our Place",
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          description: "A welcoming home",
+        }),
+      )
+      expect(new Headers(createRequest?.[1]?.headers).get("X-CSRF-TOKEN")).toBe("household-csrf")
+      const inviteDialog = await screen.findByRole("dialog", { name: "Invite a housemate." })
+      expect(inviteDialog.textContent).toContain("Apartment 305")
+      expect(
+        inviteDialog.classList.contains(
+          theme === "dark" ? householdStyles.darkTheme : householdStyles.lightTheme,
+        ),
+      ).toBe(true)
+      expect(screen.getByRole("button", { name: "Generate code" })).toBeTruthy()
+      expect(localStorage.length).toBe(1)
+      expect(localStorage.key(0)).toBe(themeStorageKey)
+      expect(sessionStorage.length).toBe(0)
+    },
+  )
 
   it("sends a null description for whitespace-only input", async () => {
     await openWelcome()
