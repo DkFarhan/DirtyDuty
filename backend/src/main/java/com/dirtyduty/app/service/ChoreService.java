@@ -33,7 +33,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
@@ -232,19 +231,27 @@ public class ChoreService {
         choreScheduleRepository
             .findByChore_IdAndHousehold_IdForUpdate(chore.getId(), householdId)
             .orElseGet(() -> createSchedule(chore, household));
-    String recurrenceRule =
-        request.recurrenceRule() == null ? null : request.recurrenceRule().strip();
-    if (recurrenceRule == null
-        || recurrenceRule.isBlank()
-        || !isSupportedRecurrenceRule(recurrenceRule)
+    if (request.recurrenceRule() == null
+        || request.recurrenceRule().isBlank()
         || household.getTimezone() == null
         || !ZoneId.getAvailableZoneIds().contains(household.getTimezone())
         || request.startsOn() == null) {
       throw new InvalidHouseholdException(
           "A schedule requires a supported recurrence rule, household timezone, and start date.");
     }
+    // Parsing validates the rule with a specific message; the canonical form is what we store.
+    RecurrenceRule parsedRule = RecurrenceRule.parse(request.recurrenceRule());
+    String recurrenceRule = parsedRule.toString();
     if (request.endsOn() != null && request.endsOn().isBefore(request.startsOn())) {
       throw new InvalidHouseholdException("Schedule end date cannot be before its start date.");
+    }
+    if (parsedRule.count().isPresent() && request.endsOn() != null) {
+      throw new InvalidHouseholdException(
+          "Choose either an end date or a number of times, not both.");
+    }
+    if (!parsedRule.isOneTime() && parsedRule.firstDate(request.startsOn()).isEmpty()) {
+      throw new InvalidHouseholdException(
+          "This schedule never produces a date. Check its start date and active months.");
     }
     AssignmentStrategy strategy =
         request.assignmentStrategy() == null
@@ -307,43 +314,6 @@ public class ChoreService {
     schedule.setActive(chore.isActive());
     choreScheduleRepository.saveAndFlush(schedule);
     occurrenceService.synchronizeSchedule(schedule, assignmentConfigChanged, true);
-  }
-
-  private boolean isSupportedRecurrenceRule(String recurrenceRule) {
-    if (recurrenceRule.equals("FREQ=ONCE") || recurrenceRule.equals("FREQ=DAILY")) {
-      return true;
-    }
-
-    String[] fields = recurrenceRule.split(";", -1);
-    if (fields.length < 2 || fields.length > 3 || !fields[0].equals("FREQ=WEEKLY")) {
-      return false;
-    }
-
-    int byDayIndex = fields.length - 1;
-    if (fields.length == 3) {
-      if (!fields[1].startsWith("INTERVAL=")) {
-        return false;
-      }
-      try {
-        int interval = Integer.parseInt(fields[1].substring("INTERVAL=".length()));
-        if (interval < 2 || interval > 52) {
-          return false;
-        }
-      } catch (NumberFormatException exception) {
-        return false;
-      }
-    }
-
-    String dayField = fields[byDayIndex];
-    if (!dayField.startsWith("BYDAY=")) {
-      return false;
-    }
-    String[] days = dayField.substring("BYDAY=".length()).split(",", -1);
-    Set<String> validDays = Set.of("MO", "TU", "WE", "TH", "FR", "SA", "SU");
-    Set<String> submittedDays = new java.util.HashSet<>(List.of(days));
-    return days.length > 0
-        && submittedDays.size() == days.length
-        && submittedDays.stream().allMatch(validDays::contains);
   }
 
   private ChoreSchedule createSchedule(Chore chore, Household household) {
