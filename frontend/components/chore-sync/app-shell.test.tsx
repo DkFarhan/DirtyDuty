@@ -799,3 +799,151 @@ describe("authentication screens", () => {
     window.history.replaceState({}, "", "/")
   })
 })
+
+describe("app shell full-page states", () => {
+  const callsTo = (path: string) =>
+    fetchMock.mock.calls.filter(([input]) => String(input).endsWith(path)).length
+
+  async function waitForSplashToFinish() {
+    await waitFor(
+      () => expect(screen.queryByRole("status", { name: "Starting DirtyDuty" })).toBeNull(),
+      { timeout: 3_000 },
+    )
+  }
+
+  beforeEach(() => {
+    fetchMock.mockReset()
+    stubAuthFeatures(fetchMock)
+    clearCsrfToken()
+    localStorage.setItem("dirtyduty-theme", "dark")
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+    clearCsrfToken()
+    localStorage.clear()
+    window.history.replaceState({}, "", "/")
+  })
+
+  it("shows a themed, announced loading state while the session is restored", async () => {
+    let resolveMe!: (response: Response) => void
+    fetchMock.mockImplementation((input) => {
+      if (String(input).endsWith("/api/auth/me"))
+        return new Promise((resolve) => (resolveMe = resolve))
+      if (String(input).endsWith("/api/households")) return Promise.resolve(jsonResponse([]))
+      return Promise.resolve(jsonResponse({}, 404))
+    })
+
+    render(<AppShell />)
+
+    const loading = screen.getByText("Loading...").closest('[role="status"]')
+    expect(loading).toBeTruthy()
+    expect(loading?.className).not.toContain("bg-white")
+    // Entry routes start on an authentication screen, so session restoration keeps the light
+    // presentation even though the saved preference is dark.
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe("light"))
+    expect(document.documentElement.classList.contains("dark")).toBe(false)
+    expect(localStorage.getItem("dirtyduty-theme")).toBe("dark")
+    expect(callsTo("/api/households")).toBe(0)
+
+    resolveMe(jsonResponse(user))
+    expect(
+      await screen.findByRole("heading", { name: "Welcome!" }, { timeout: 3_000 }),
+    ).toBeTruthy()
+  })
+
+  it("shows the session error in the light signed-out presentation and retries with refreshUser", async () => {
+    let meAttempts = 0
+    fetchMock.mockImplementation(async (input) => {
+      if (String(input).endsWith("/api/auth/me")) {
+        meAttempts += 1
+        if (meAttempts === 1) throw new TypeError("offline")
+        return jsonResponse(user)
+      }
+      if (String(input).endsWith("/api/households")) return jsonResponse([])
+      return jsonResponse({}, 404)
+    })
+
+    render(<AppShell />)
+    await waitForSplashToFinish()
+
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Unable to verify your session. Please try again.",
+    )
+    // Signed-out states keep the intentional light presentation without changing the saved theme.
+    expect(document.documentElement.classList.contains("dark")).toBe(false)
+    expect(localStorage.getItem("dirtyduty-theme")).toBe("dark")
+
+    const retry = screen.getByRole("button", { name: "Try Again" })
+    expect(retry.getAttribute("type")).toBe("button")
+    retry.focus()
+    expect(document.activeElement).toBe(retry)
+    expect(callsTo("/api/households")).toBe(0)
+
+    fireEvent.click(retry)
+
+    expect(
+      await screen.findByRole("heading", { name: "Welcome!" }, { timeout: 3_000 }),
+    ).toBeTruthy()
+    expect(callsTo("/api/auth/me")).toBe(2)
+    expect(callsTo("/api/households")).toBe(1)
+  })
+
+  it("shows a themed loading state while households load for an authenticated user", async () => {
+    let resolveHouseholds!: (response: Response) => void
+    fetchMock.mockImplementation((input) => {
+      if (String(input).endsWith("/api/auth/me")) return Promise.resolve(jsonResponse(user))
+      if (String(input).endsWith("/api/households"))
+        return new Promise((resolve) => (resolveHouseholds = resolve))
+      return Promise.resolve(jsonResponse({}, 404))
+    })
+
+    render(<AppShell />)
+
+    await waitFor(() => expect(callsTo("/api/households")).toBe(1))
+    const loading = screen.getByText("Loading...").closest('[role="status"]')
+    expect(loading).toBeTruthy()
+    expect(loading?.className).not.toContain("bg-white")
+    expect(document.documentElement.classList.contains("dark")).toBe(true)
+
+    resolveHouseholds(jsonResponse([]))
+    expect(
+      await screen.findByRole("heading", { name: "Welcome!" }, { timeout: 3_000 }),
+    ).toBeTruthy()
+  })
+
+  it("shows the household error in the saved theme and retries with refreshHouseholds", async () => {
+    let householdAttempts = 0
+    fetchMock.mockImplementation(async (input) => {
+      if (String(input).endsWith("/api/auth/me")) return jsonResponse(user)
+      if (String(input).endsWith("/api/households")) {
+        householdAttempts += 1
+        if (householdAttempts === 1) throw new TypeError("offline")
+        return jsonResponse([])
+      }
+      return jsonResponse({}, 404)
+    })
+
+    render(<AppShell />)
+    await waitForSplashToFinish()
+
+    const alert = screen.getByRole("alert")
+    expect(alert.textContent).toContain("Unable to connect to DirtyDuty")
+    expect(document.documentElement.classList.contains("dark")).toBe(true)
+
+    const retry = screen.getByRole("button", { name: "Try Again" })
+    expect(retry.getAttribute("type")).toBe("button")
+    retry.focus()
+    expect(document.activeElement).toBe(retry)
+
+    fireEvent.click(retry)
+
+    expect(
+      await screen.findByRole("heading", { name: "Welcome!" }, { timeout: 3_000 }),
+    ).toBeTruthy()
+    expect(callsTo("/api/auth/me")).toBe(1)
+    expect(callsTo("/api/households")).toBe(2)
+  })
+})
