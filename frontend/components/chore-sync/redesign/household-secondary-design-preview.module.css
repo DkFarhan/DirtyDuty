@@ -1833,6 +1833,96 @@
   color: var(--button-text) !important;
 }
 
+/* Household settings: chore categories. */
+.categoryList {
+  display: flex;
+  flex-direction: column;
+}
+
+.categoryRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.categoryRow:last-child {
+  border-bottom: 0;
+}
+
+.categoryMark {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 13%, var(--surface-strong));
+  font-size: 19px;
+}
+
+.categoryDetails {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.categoryDetails strong {
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.categoryDetails small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.categoryActions {
+  display: flex;
+  gap: 4px;
+}
+
+.iconAction {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface-soft);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.iconAction:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.iconActionDanger {
+  color: var(--danger);
+}
+
+.categoryManager .secondaryButton {
+  min-height: 44px;
+}
+
+@media (max-width: 480px) {
+  .categoryActions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+}
+
+.categoryDialog :global(button:focus-visible),
+.categoryManager :global(button:focus-visible),
 .choreForm :global(button:focus-visible) {
   outline: 2px solid var(--accent);
   outline-offset: 2px;

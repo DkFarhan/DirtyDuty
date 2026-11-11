@@ -230,6 +230,46 @@ describe("auth API client", () => {
     })
   })
 
+  it("shows the known chore-category messages and hides anything else", async () => {
+    const csrf = () =>
+      new Response(JSON.stringify({ token: "csrf-token", headerName: "X-CSRF-TOKEN" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })
+    const failure = (status: number, message: string) =>
+      new Response(JSON.stringify({ message }), {
+        status,
+        headers: { "content-type": "application/json" },
+      })
+    fetchMock
+      .mockResolvedValueOnce(csrf())
+      .mockResolvedValueOnce(failure(409, "A category with this name already exists."))
+      .mockResolvedValueOnce(failure(400, "A household can have at most 40 categories."))
+      .mockResolvedValueOnce(
+        failure(400, "The new order must list every category in this household exactly once."),
+      )
+      .mockResolvedValueOnce(failure(404, "Category was not found in this household."))
+      .mockResolvedValueOnce(failure(400, "Internal validation detail"))
+
+    await expect(
+      api.post("/api/households/home-1/chore-categories", { name: "Kitchen" }),
+    ).rejects.toMatchObject({ status: 409, message: "A category with this name already exists." })
+    await expect(
+      api.post("/api/households/home-1/chore-categories", { name: "One more" }),
+    ).rejects.toMatchObject({ message: "A household can have at most 40 categories." })
+    await expect(
+      api.put("/api/households/home-1/chore-categories/order", { categoryIds: [] }),
+    ).rejects.toMatchObject({
+      message: "The new order must list every category in this household exactly once.",
+    })
+    await expect(api.delete("/api/households/home-1/chore-categories/cat-1")).rejects.toMatchObject(
+      { status: 404, message: "Category was not found in this household." },
+    )
+    await expect(
+      api.put("/api/households/home-1/chore-categories/cat-1", { name: "x" }),
+    ).rejects.toMatchObject({ message: "Please check your information and try again." })
+  })
+
   it("does not expose other chore-update validation messages", async () => {
     fetchMock
       .mockResolvedValueOnce(

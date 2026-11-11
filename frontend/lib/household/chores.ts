@@ -9,7 +9,11 @@ export type ChoreCategory = {
   iconKey: string
   sortOrder: number
   createdAt: string
+  /** Non-archived chores that use this category. */
+  choreCount: number
 }
+
+export type ChoreCategoryRequest = { name: string; iconKey: string }
 
 export type ChoreMemberOption = {
   userId: string
@@ -93,35 +97,7 @@ export type HouseholdDashboard = {
   overdue: AssignmentDTO[]
 }
 
-export function categoryIcon(iconKey: string | null | undefined) {
-  if (!iconKey) return "🧹"
-  const icons = new Set([
-    "🧹",
-    "🗑️",
-    "🛁",
-    "🧺",
-    "🍽️",
-    "🌀",
-    "🫧",
-    "♻️",
-    "🪴",
-    "🛒",
-    "🧽",
-    "🪣",
-    "🏠",
-  ])
-  if (icons.has(iconKey)) return iconKey
-  const normalized = iconKey.toLowerCase()
-  if (normalized.includes("bath")) return "🛁"
-  if (normalized.includes("laundry") || normalized.includes("wash")) return "🧺"
-  if (normalized.includes("trash") || normalized.includes("garbage")) return "🗑️"
-  if (normalized.includes("kitchen") || normalized.includes("dish")) return "🍽️"
-  if (normalized.includes("plant") || normalized.includes("garden")) return "🪴"
-  if (normalized.includes("shop")) return "🛒"
-  if (normalized.includes("recycle")) return "♻️"
-  if (normalized.includes("home") || normalized.includes("general")) return "🏠"
-  return "🧹"
-}
+export { categoryIcon } from "./category-icons"
 
 function householdPath(householdId: string) {
   return `/api/households/${encodeURIComponent(householdId)}`
@@ -150,5 +126,25 @@ export const choreApi = {
   complete: (householdId: string, assignmentId: string) =>
     api.post<AssignmentDTO>(
       `${householdPath(householdId)}/assignments/${encodeURIComponent(assignmentId)}/complete`,
+    ),
+}
+
+export const categoryApi = {
+  list: (householdId: string) =>
+    api.get<ChoreCategory[]>(`${householdPath(householdId)}/chore-categories`),
+  create: (householdId: string, request: ChoreCategoryRequest) =>
+    api.post<ChoreCategory>(`${householdPath(householdId)}/chore-categories`, request),
+  update: (householdId: string, categoryId: string, request: ChoreCategoryRequest) =>
+    api.put<ChoreCategory>(
+      `${householdPath(householdId)}/chore-categories/${encodeURIComponent(categoryId)}`,
+      request,
+    ),
+  reorder: (householdId: string, categoryIds: string[]) =>
+    api.put<ChoreCategory[]>(`${householdPath(householdId)}/chore-categories/order`, {
+      categoryIds,
+    }),
+  remove: (householdId: string, categoryId: string) =>
+    api.delete<void>(
+      `${householdPath(householdId)}/chore-categories/${encodeURIComponent(categoryId)}`,
     ),
 }

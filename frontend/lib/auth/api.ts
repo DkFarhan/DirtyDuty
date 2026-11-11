@@ -45,6 +45,17 @@ function errorKind(status: number): ApiErrorKind {
   return "server"
 }
 
+/** Chore category messages from the server that are safe and useful to show as written. */
+const CATEGORY_MESSAGES = new Set([
+  "Enter a category name.",
+  "Category names can be at most 40 characters.",
+  "Choose an icon for this category.",
+  "A category with this name already exists.",
+  "A household can have at most 40 categories.",
+  "The new order must list every category in this household exactly once.",
+  "Category was not found in this household.",
+])
+
 function messageFor(
   status: number,
   path: string,
@@ -62,6 +73,17 @@ function messageFor(
       "A recurring chore with existing assignment history cannot be converted to one-time. Create a separate one-time chore to preserve its history."
   ) {
     return "This chore has recurring assignment history and can't be changed to a one-time chore. Keep its recurring schedule or create a new one-time chore."
+  }
+  if (
+    (status === 400 || status === 404 || status === 409) &&
+    /^\/api\/households\/[^/]+\/chore-categories(\/[^/]+)?$/.test(path) &&
+    payload !== null &&
+    typeof payload === "object" &&
+    "message" in payload &&
+    typeof payload.message === "string" &&
+    CATEGORY_MESSAGES.has(payload.message)
+  ) {
+    return payload.message
   }
   if (status === 429 && (path === "/api/auth/login" || path === "/api/auth/google/link")) {
     return "Too many sign-in attempts. Please wait and try again, or reset your password."

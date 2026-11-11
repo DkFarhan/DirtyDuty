@@ -1,5 +1,7 @@
 package com.dirtyduty.app.service;
 
+import com.dirtyduty.app.dto.chore.ChoreCategoryOrderRequest;
+import com.dirtyduty.app.dto.chore.ChoreCategoryRequest;
 import com.dirtyduty.app.dto.chore.ChoreCategoryResponse;
 import com.dirtyduty.app.dto.chore.ChoreManagementOptionsResponse;
 import com.dirtyduty.app.dto.chore.ChoreMemberOptionResponse;
@@ -18,6 +20,7 @@ import com.dirtyduty.app.entity.enums.AssignmentStrategy;
 import com.dirtyduty.app.entity.enums.ChorePriority;
 import com.dirtyduty.app.entity.enums.HouseholdRole;
 import com.dirtyduty.app.entity.enums.MembershipStatus;
+import com.dirtyduty.app.exception.DuplicateResourceException;
 import com.dirtyduty.app.exception.HouseholdAccessDeniedException;
 import com.dirtyduty.app.exception.InvalidHouseholdException;
 import com.dirtyduty.app.exception.ResourceNotFoundException;
@@ -34,6 +37,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
@@ -41,6 +45,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ChoreService {
+
+  static final int MAX_CATEGORIES = 40;
+  static final int MAX_CATEGORY_NAME_LENGTH = 40;
+  static final String DUPLICATE_CATEGORY_NAME = "A category with this name already exists.";
 
   private final ChoreRepository choreRepository;
   private final ChoreCategoryRepository choreCategoryRepository;
@@ -67,19 +75,102 @@ public class ChoreService {
     this.jdbc = jdbc;
   }
 
-  @Transactional
+  // Defaults are seeded only when a household is created (HouseholdService), never on read, so a
+  // household that deletes every category keeps an empty list.
+  @Transactional(readOnly = true)
   public List<ChoreCategoryResponse> listCategories(
       UUID householdId, Authentication authentication) {
-    Household household = authorize(householdId, authentication).getHousehold();
-    ChoreCategoryDefaults.ensureFor(household, choreCategoryRepository);
+    authorize(householdId, authentication);
     return categoriesFor(householdId);
+  }
+
+  @Transactional
+  public ChoreCategoryResponse createCategory(
+      UUID householdId, ChoreCategoryRequest request, Authentication authentication) {
+    lockHousehold(householdId);
+    Household household = authorize(householdId, authentication).getHousehold();
+    String name = validCategoryName(request);
+    String iconKey = validCategoryIcon(request);
+    List<ChoreCategory> existing =
+        choreCategoryRepository.findByHousehold_IdOrderBySortOrderAscNameAsc(householdId);
+    if (existing.size() >= MAX_CATEGORIES) {
+      throw new InvalidHouseholdException(
+          "A household can have at most %d categories.".formatted(MAX_CATEGORIES));
+    }
+    rejectDuplicateCategoryName(householdId, name, null);
+    ChoreCategory category = new ChoreCategory();
+    category.setHousehold(household);
+    category.setName(name);
+    category.setIconKey(iconKey);
+    category.setSortOrder(
+        existing.stream().mapToInt(ChoreCategory::getSortOrder).max().orElse(-1) + 1);
+    saveCategory(category);
+    return categoryResponse(category, choreCounts(householdId));
+  }
+
+  @Transactional
+  public ChoreCategoryResponse updateCategory(
+      UUID householdId,
+      UUID categoryId,
+      ChoreCategoryRequest request,
+      Authentication authentication) {
+    lockHousehold(householdId);
+    authorize(householdId, authentication);
+    ChoreCategory category = findCategory(householdId, categoryId);
+    String name = validCategoryName(request);
+    String iconKey = validCategoryIcon(request);
+    rejectDuplicateCategoryName(householdId, name, categoryId);
+    category.setName(name);
+    category.setIconKey(iconKey);
+    saveCategory(category);
+    return categoryResponse(category, choreCounts(householdId));
+  }
+
+  @Transactional
+  public List<ChoreCategoryResponse> reorderCategories(
+      UUID householdId, ChoreCategoryOrderRequest request, Authentication authentication) {
+    lockHousehold(householdId);
+    authorize(householdId, authentication);
+    List<ChoreCategory> categories =
+        choreCategoryRepository.findByHousehold_IdOrderBySortOrderAscNameAsc(householdId);
+    List<UUID> order = request == null ? null : request.categoryIds();
+    Map<UUID, ChoreCategory> byId = new HashMap<>();
+    categories.forEach(category -> byId.put(category.getId(), category));
+    if (order == null
+        || order.size() != categories.size()
+        || order.stream().distinct().count() != order.size()
+        || !byId.keySet().containsAll(order)) {
+      throw new InvalidHouseholdException(
+          "The new order must list every category in this household exactly once.");
+    }
+    for (int index = 0; index < order.size(); index++) {
+      byId.get(order.get(index)).setSortOrder(index);
+    }
+    choreCategoryRepository.saveAll(categories);
+    return categoriesFor(householdId);
+  }
+
+  @Transactional
+  public void deleteCategory(UUID householdId, UUID categoryId, Authentication authentication) {
+    lockHousehold(householdId);
+    authorize(householdId, authentication);
+    ChoreCategory category = findCategory(householdId, categoryId);
+    // Every chore keeps working without a category, whatever its state (active, paused or
+    // archived). Assignments join categories live, so past occurrences simply show none.
+    jdbc.update(
+        "UPDATE chores SET category_id=NULL WHERE household_id=? AND category_id=?",
+        householdId,
+        categoryId);
+    jdbc.update(
+        "DELETE FROM chore_categories WHERE id=? AND household_id=?",
+        category.getId(),
+        householdId);
   }
 
   @Transactional
   public ChoreManagementOptionsResponse managementOptions(
       UUID householdId, Authentication authentication) {
-    Household household = authorize(householdId, authentication).getHousehold();
-    ChoreCategoryDefaults.ensureFor(household, choreCategoryRepository);
+    authorize(householdId, authentication);
     List<ChoreMemberOptionResponse> activeMembers =
         membershipRepository
             .findByHousehold_IdAndStatus(householdId, MembershipStatus.ACTIVE)
@@ -473,18 +564,99 @@ public class ChoreService {
   }
 
   private List<ChoreCategoryResponse> categoriesFor(UUID householdId) {
+    Map<UUID, Long> counts = choreCounts(householdId);
     return choreCategoryRepository
         .findByHousehold_IdOrderBySortOrderAscNameAsc(householdId)
         .stream()
-        .map(
-            category ->
-                new ChoreCategoryResponse(
-                    category.getId(),
-                    category.getName(),
-                    category.getIconKey(),
-                    category.getSortOrder(),
-                    category.getCreatedAt()))
+        .map(category -> categoryResponse(category, counts))
         .toList();
+  }
+
+  private static ChoreCategoryResponse categoryResponse(
+      ChoreCategory category, Map<UUID, Long> counts) {
+    return new ChoreCategoryResponse(
+        category.getId(),
+        category.getName(),
+        category.getIconKey(),
+        category.getSortOrder(),
+        category.getCreatedAt(),
+        counts.getOrDefault(category.getId(), 0L));
+  }
+
+  /** Non-archived (active or paused) chores per category. */
+  private Map<UUID, Long> choreCounts(UUID householdId) {
+    Map<UUID, Long> counts = new HashMap<>();
+    jdbc.query(
+        """
+            SELECT category_id, COUNT(*) AS chores FROM chores
+            WHERE household_id=? AND category_id IS NOT NULL AND archived_at IS NULL
+            GROUP BY category_id
+            """,
+        rs -> {
+          counts.put(rs.getObject("category_id", UUID.class), rs.getLong("chores"));
+        },
+        householdId);
+    return counts;
+  }
+
+  private ChoreCategory findCategory(UUID householdId, UUID categoryId) {
+    return choreCategoryRepository
+        .findById(categoryId)
+        .filter(category -> category.getHousehold().getId().equals(householdId))
+        .orElseThrow(
+            () -> new ResourceNotFoundException("Category was not found in this household."));
+  }
+
+  private static String validCategoryName(ChoreCategoryRequest request) {
+    String name = request == null || request.name() == null ? "" : request.name().strip();
+    if (name.isEmpty()) {
+      throw new InvalidHouseholdException("Enter a category name.");
+    }
+    if (name.length() > MAX_CATEGORY_NAME_LENGTH) {
+      throw new InvalidHouseholdException(
+          "Category names can be at most %d characters.".formatted(MAX_CATEGORY_NAME_LENGTH));
+    }
+    return name;
+  }
+
+  private static String validCategoryIcon(ChoreCategoryRequest request) {
+    String iconKey = request == null ? null : request.iconKey();
+    if (!ChoreCategoryIcons.isAllowed(iconKey)) {
+      throw new InvalidHouseholdException("Choose an icon for this category.");
+    }
+    return iconKey;
+  }
+
+  private void rejectDuplicateCategoryName(UUID householdId, String name, UUID exceptCategoryId) {
+    // LOWER() on both sides matches ux_category_name_per_household exactly.
+    Boolean taken =
+        jdbc.queryForObject(
+            """
+                SELECT EXISTS (
+                  SELECT 1 FROM chore_categories
+                  WHERE household_id=? AND LOWER(name)=LOWER(?) AND id IS DISTINCT FROM ?
+                )
+                """,
+            Boolean.class,
+            householdId,
+            name,
+            exceptCategoryId);
+    if (Boolean.TRUE.equals(taken)) {
+      throw new DuplicateResourceException(DUPLICATE_CATEGORY_NAME);
+    }
+  }
+
+  private void saveCategory(ChoreCategory category) {
+    try {
+      choreCategoryRepository.saveAndFlush(category);
+    } catch (DataIntegrityViolationException exception) {
+      // A concurrent writer that bypassed the household lock can still win the unique index.
+      if (String.valueOf(exception.getMostSpecificCause().getMessage())
+          .contains("ux_category_name_per_household")) {
+        throw new DuplicateResourceException(DUPLICATE_CATEGORY_NAME);
+      }
+      throw exception;
+    }
   }
 
   private List<UUID> participantIds(Map<String, Object> config) {
