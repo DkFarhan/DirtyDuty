@@ -33,7 +33,7 @@ function applyTheme(theme: Theme) {
   root.dataset.theme = dark ? "dark" : "light"
   root.style.colorScheme = dark ? "dark" : "light"
   document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]').forEach((meta) => {
-    meta.content = dark ? "#181a20" : "#0d9488"
+    meta.content = dark ? "#061923" : "#edf8f4"
   })
 }
 

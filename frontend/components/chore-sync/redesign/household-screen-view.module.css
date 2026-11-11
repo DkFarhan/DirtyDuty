@@ -104,16 +104,18 @@
   display: none;
 }
 
+/* On phones the header itself extends under the status bar (see .householdHeader), so its
+   gradient fills that strip. On wide layouts this is the 24px gap above the header. */
 .safeAreaSpacer {
-  height: env(safe-area-inset-top);
+  height: 0;
 }
 
 .householdHeader {
   position: relative;
   box-sizing: border-box;
-  height: 125px;
+  height: calc(125px + var(--app-safe-top));
   overflow: hidden;
-  padding: 24px 24px 12px;
+  padding: calc(24px + var(--app-safe-top)) 24px 12px;
   border-bottom: 1px solid var(--rule);
   background: linear-gradient(
     151.6deg,
@@ -1392,10 +1394,11 @@
 
 @media (min-width: 900px) {
   .safeAreaSpacer {
-    height: 24px;
+    height: calc(24px + var(--app-safe-top));
   }
 
   .householdHeader {
+    height: 125px;
     padding-top: 18px;
     padding-right: max(24px, calc((100% - 920px) / 2));
     padding-left: max(24px, calc((100% - 920px) / 2));

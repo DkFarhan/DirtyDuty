@@ -20,7 +20,7 @@
   width: 100%;
   min-height: 100vh;
   min-height: 100dvh;
-  padding: calc(24px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom));
+  padding: calc(24px + var(--app-safe-top)) 16px calc(24px + env(safe-area-inset-bottom));
   background-color: var(--status-bg);
   background-image: linear-gradient(99.65deg, #edf8f4 7.563%, #e2f1ed 63.025%, #f5faf6 91.597%);
   color: var(--status-text);

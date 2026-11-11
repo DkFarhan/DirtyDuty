@@ -81,7 +81,7 @@
 }
 
 .backgroundAtmosphereCyan {
-  top: 68px;
+  top: calc(68px + var(--app-safe-top));
   left: 118px;
   width: 414px;
   height: 444px;
@@ -89,7 +89,7 @@
 }
 
 .backgroundAtmosphereTwilight {
-  top: 305px;
+  top: calc(305px + var(--app-safe-top));
   left: -215px;
   width: 440px;
   height: 510px;
@@ -116,8 +116,8 @@
 
 .header {
   box-sizing: border-box;
-  height: 218px;
-  padding: 57px 25px 0;
+  height: calc(218px + var(--app-safe-top));
+  padding: calc(57px + var(--app-safe-top)) 25px 0;
 }
 
 .topBar {
