@@ -24,6 +24,7 @@ function categoryIconFor(icon: string | null): MyChoreUpcomingViewModel["categor
   switch (categoryEmoji(icon)) {
     case "🗑️":
     case "♻️":
+    case "🚮":
       return 2
     case "🧺":
     case "🌀":
@@ -36,7 +37,12 @@ function categoryIconFor(icon: string | null): MyChoreUpcomingViewModel["categor
     case "🫧":
       return 6
     case "🪴":
+    case "🌳":
     case "🛒":
+    case "🥕":
+    case "🐶":
+    case "🧸":
+    case "🚗":
     case "🏠":
       return 5
     default:

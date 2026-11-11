@@ -33,6 +33,7 @@ import {
 } from "@/lib/household/recurrence"
 import { householdChoreResource, useDataSync } from "@/lib/data-sync/data-sync-context"
 import { cn } from "@/lib/utils"
+import { CategoryDialog } from "../category-dialog"
 import { useDialogFocus } from "../use-dialog-focus"
 import {
   HouseholdLiveDesignHeader,
@@ -41,6 +42,7 @@ import {
 } from "../redesign/household-secondary-design-preview"
 import designStyles from "../redesign/household-secondary-design-preview.module.css"
 
+const NEW_CATEGORY = "__new-category__"
 const efforts = ["Quick", "Light", "Moderate", "Heavy", "Big job"]
 const priorities: { value: ChorePriority; label: string; style: string }[] = [
   { value: "LOW", label: "Low", style: "emerald" },
@@ -149,6 +151,9 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
+  const [categoryDialogOpen, setCategoryDialogOpen] = useState(false)
+  const canManageCategories =
+    household?.currentUserRole === "OWNER" || household?.currentUserRole === "ADMIN"
   const discardDialogRef = useRef<HTMLElement | null>(null)
   const [savedValues, setSavedValues] = useState("")
   const householdId = household?.id
@@ -511,15 +516,25 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
                   <span className="relative block">
                     <select
                       className={cn(fieldClass, "appearance-none pr-10")}
-                      onChange={(event) => update("categoryId", event.target.value)}
+                      id="chore-category"
+                      onChange={(event) => {
+                        // "+ New category" opens the dialog; the controlled value stays put.
+                        if (event.target.value === NEW_CATEGORY) setCategoryDialogOpen(true)
+                        else update("categoryId", event.target.value)
+                      }}
                       value={values.categoryId}
                     >
-                      <option value="">Choose a category</option>
+                      <option value="">
+                        {options.categories.length === 0
+                          ? "No categories yet"
+                          : "Choose a category"}
+                      </option>
                       {options.categories.map((category) => (
                         <option key={category.id} value={category.id}>
                           {categoryIcon(category.iconKey)} {category.name}
                         </option>
                       ))}
+                      {canManageCategories && <option value={NEW_CATEGORY}>+ New category</option>}
                     </select>
                     <ChevronDown
                       aria-hidden="true"
@@ -527,33 +542,6 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
                     />
                   </span>
                 </label>
-                <div>
-                  <p className="mb-2 text-sm font-semibold text-slate-700">Category icon</p>
-                  <div aria-label="Category icons" className="flex flex-wrap gap-2">
-                    {options.categories.map((category) => (
-                      <button
-                        aria-label={`Choose ${category.name} icon`}
-                        aria-pressed={values.categoryId === category.id}
-                        className={cn(
-                          "flex h-11 w-11 items-center justify-center rounded-2xl text-xl transition",
-                          values.categoryId === category.id
-                            ? "bg-teal-50 ring-2 ring-teal-500"
-                            : "bg-slate-100 hover:bg-slate-200",
-                        )}
-                        key={category.id}
-                        onClick={() => update("categoryId", category.id)}
-                        type="button"
-                      >
-                        {categoryIcon(category.iconKey)}
-                      </button>
-                    ))}
-                    {options.categories.length === 0 && (
-                      <p className="text-xs text-slate-400">
-                        Household categories aren’t set up yet.
-                      </p>
-                    )}
-                  </div>
-                </div>
                 <label className="block">
                   <span className="mb-1.5 block text-sm font-semibold text-slate-700">
                     Chore name
@@ -1246,6 +1234,23 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
             </Button>
           </div>
         </>
+      )}
+
+      {categoryDialogOpen && householdId && (
+        <CategoryDialog
+          getFallbackFocus={() => document.getElementById("chore-category")}
+          householdId={householdId}
+          onCancel={() => setCategoryDialogOpen(false)}
+          onSaved={(category) => {
+            setOptions((current) =>
+              current ? { ...current, categories: [...current.categories, category] } : current,
+            )
+            update("categoryId", category.id)
+            setCategoryDialogOpen(false)
+            // Home, My Chores and the admin list read categories; let them refresh.
+            invalidateChores()
+          }}
+        />
       )}
 
       {confirmDiscard && (

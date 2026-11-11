@@ -14,6 +14,7 @@ import {
 import { useHouseholds } from "@/lib/household/household-context"
 import { notificationApi, type NotificationStyle } from "@/lib/notifications/api"
 import { PasswordInput } from "@/components/ui/password-input"
+import { CategoryManager } from "../category-manager"
 import { useDialogFocus } from "../use-dialog-focus"
 import {
   HouseholdLiveDesignHeader,
@@ -136,6 +137,8 @@ export function HouseholdSettingsScreen({ theme = "light" }: { theme?: PreviewTh
   const canEditNotificationStyle =
     settings?.currentUserRole === "OWNER" || settings?.currentUserRole === "ADMIN"
   const canManageInvitations =
+    settings?.currentUserRole === "OWNER" || settings?.currentUserRole === "ADMIN"
+  const canManageCategories =
     settings?.currentUserRole === "OWNER" || settings?.currentUserRole === "ADMIN"
 
   const loadSettings = useCallback(async () => {
@@ -576,6 +579,8 @@ export function HouseholdSettingsScreen({ theme = "light" }: { theme?: PreviewTh
                 </p>
               )}
             </section>
+
+            {canManageCategories && householdId && <CategoryManager householdId={householdId} />}
 
             {canManageInvitations && (
               <section className={designStyles.settingsCard}>

@@ -21,6 +21,11 @@ const mocks = vi.hoisted(() => ({
   removeHousehold: vi.fn(),
   pendingAccountDeletionUserId: null as string | null,
   clearAccountDeletion: vi.fn(),
+  listCategories: vi.fn(),
+  createCategory: vi.fn(),
+  updateCategory: vi.fn(),
+  reorderCategories: vi.fn(),
+  removeCategory: vi.fn(),
 }))
 
 vi.mock("@/lib/chore-sync/store", () => ({
@@ -61,6 +66,16 @@ vi.mock("@/lib/household/api", () => ({
 vi.mock("@/lib/notifications/api", () => ({
   notificationApi: {
     setHouseholdStyle: mocks.setHouseholdStyle,
+  },
+}))
+
+vi.mock("@/lib/household/chores", () => ({
+  categoryApi: {
+    list: mocks.listCategories,
+    create: mocks.createCategory,
+    update: mocks.updateCategory,
+    reorder: mocks.reorderCategories,
+    remove: mocks.removeCategory,
   },
 }))
 
@@ -112,6 +127,11 @@ describe("household settings screen", () => {
     mocks.removeHousehold.mockReset().mockReturnValue([])
     mocks.pendingAccountDeletionUserId = null
     mocks.clearAccountDeletion.mockReset()
+    mocks.listCategories.mockReset().mockResolvedValue([])
+    mocks.createCategory.mockReset()
+    mocks.updateCategory.mockReset()
+    mocks.reorderCategories.mockReset()
+    mocks.removeCategory.mockReset()
   })
 
   afterEach(() => cleanup())
@@ -274,6 +294,172 @@ describe("household settings screen", () => {
       expect(mocks.navigate).toHaveBeenCalledWith("privacy-security")
     })
     expect(mocks.clearAccountDeletion).not.toHaveBeenCalled()
+  })
+  describe("categories", () => {
+    const kitchen = {
+      id: "cat-kitchen",
+      name: "Kitchen",
+      iconKey: "kitchen",
+      sortOrder: 0,
+      createdAt: "2026-10-01T00:00:00Z",
+      choreCount: 2,
+    }
+    const laundry = {
+      ...kitchen,
+      id: "cat-laundry",
+      name: "Laundry",
+      iconKey: "laundry",
+      sortOrder: 1,
+      choreCount: 3,
+    }
+    const pets = {
+      ...kitchen,
+      id: "cat-pets",
+      name: "Pets",
+      iconKey: "pets",
+      sortOrder: 2,
+      choreCount: 1,
+    }
+
+    // The section reloads from the server after every change, so keep a server-side list.
+    let server: (typeof kitchen)[] = []
+    const serve = (categories: (typeof kitchen)[]) => {
+      server = categories
+      mocks.listCategories.mockImplementation(async () => server)
+    }
+
+    const rowNames = () =>
+      within(screen.getByRole("list", { name: "Categories" }))
+        .getAllByRole("listitem")
+        .map((row) => row.querySelector("strong")?.textContent)
+
+    it("lists each category with its icon, name and chore count", async () => {
+      serve([kitchen, laundry, pets])
+      render(<HouseholdSettingsScreen />)
+
+      expect(await screen.findByRole("heading", { name: "Categories" })).toBeTruthy()
+      await waitFor(() => expect(rowNames()).toEqual(["Kitchen", "Laundry", "Pets"]))
+      const kitchenRow = screen.getAllByRole("listitem")[0]
+      expect(kitchenRow.textContent).toContain("🍽️")
+      expect(kitchenRow.textContent).toContain("2 chores")
+      expect(screen.getAllByRole("listitem")[2].textContent).toContain("1 chore")
+      expect(mocks.listCategories).toHaveBeenCalledWith("home-a")
+      expect(
+        (screen.getByRole("button", { name: "Move Kitchen up" }) as HTMLButtonElement).disabled,
+      ).toBe(true)
+      expect(
+        (screen.getByRole("button", { name: "Move Pets down" }) as HTMLButtonElement).disabled,
+      ).toBe(true)
+    })
+
+    it("reorders with the move buttons and sends the full ordered list", async () => {
+      serve([kitchen, laundry, pets])
+      mocks.reorderCategories.mockImplementation(async (_id: string, ids: string[]) => {
+        server = ids.map((id) => server.find((category) => category.id === id)!)
+        return server.map((category, index) => ({ ...category, sortOrder: index }))
+      })
+      render(<HouseholdSettingsScreen />)
+
+      fireEvent.click(await screen.findByRole("button", { name: "Move Kitchen down" }))
+
+      await waitFor(() =>
+        expect(mocks.reorderCategories).toHaveBeenCalledWith("home-a", [
+          "cat-laundry",
+          "cat-kitchen",
+          "cat-pets",
+        ]),
+      )
+      await waitFor(() => expect(rowNames()).toEqual(["Laundry", "Kitchen", "Pets"]))
+    })
+
+    it("renames and changes the icon in the edit dialog", async () => {
+      serve([kitchen, laundry])
+      mocks.updateCategory.mockImplementation(async () => {
+        const updated = { ...kitchen, name: "Cooking", iconKey: "dishes" }
+        server = server.map((category) => (category.id === updated.id ? updated : category))
+        return updated
+      })
+      render(<HouseholdSettingsScreen />)
+
+      fireEvent.click(await screen.findByRole("button", { name: "Edit Kitchen" }))
+      const dialog = screen.getByRole("dialog", { name: "Edit category" })
+      const name = within(dialog).getByLabelText("Name") as HTMLInputElement
+      expect(name.value).toBe("Kitchen")
+      expect(
+        within(dialog).getByRole("button", { name: "Kitchen" }).getAttribute("aria-pressed"),
+      ).toBe("true")
+      fireEvent.change(name, { target: { value: "  Cooking " } })
+      fireEvent.click(within(dialog).getByRole("button", { name: "Dishes" }))
+      fireEvent.click(within(dialog).getByRole("button", { name: "Save category" }))
+
+      await waitFor(() =>
+        expect(mocks.updateCategory).toHaveBeenCalledWith("home-a", "cat-kitchen", {
+          name: "Cooking",
+          iconKey: "dishes",
+        }),
+      )
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+      expect(rowNames()).toEqual(["Cooking", "Laundry"])
+    })
+
+    it("asks before deleting and explains what happens to the chores", async () => {
+      serve([kitchen, laundry])
+      mocks.removeCategory.mockImplementation(async (_home: string, id: string) => {
+        server = server.filter((category) => category.id !== id)
+      })
+      render(<HouseholdSettingsScreen />)
+
+      fireEvent.click(await screen.findByRole("button", { name: "Delete Laundry" }))
+      const dialog = screen.getByRole("dialog", { name: "Delete Laundry?" })
+      expect(dialog.textContent).toContain(
+        "3 chores use Laundry. They'll keep working without a category.",
+      )
+      fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }))
+      expect(screen.queryByRole("dialog")).toBeNull()
+      expect(mocks.removeCategory).not.toHaveBeenCalled()
+
+      fireEvent.click(screen.getByRole("button", { name: "Delete Laundry" }))
+      fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }))
+      await waitFor(() =>
+        expect(mocks.removeCategory).toHaveBeenCalledWith("home-a", "cat-laundry"),
+      )
+      await waitFor(() => expect(rowNames()).toEqual(["Kitchen"]))
+    })
+
+    it("adds a category from the Add category button", async () => {
+      serve([kitchen])
+      mocks.createCategory.mockImplementation(async () => {
+        server = [...server, pets]
+        return pets
+      })
+      render(<HouseholdSettingsScreen />)
+
+      await waitFor(() => expect(rowNames()).toEqual(["Kitchen"]))
+      fireEvent.click(screen.getByRole("button", { name: "Add category" }))
+      const dialog = screen.getByRole("dialog", { name: "New category" })
+      fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Pets" } })
+      fireEvent.click(within(dialog).getByRole("button", { name: "Pets" }))
+      fireEvent.click(within(dialog).getByRole("button", { name: "Add category" }))
+
+      await waitFor(() =>
+        expect(mocks.createCategory).toHaveBeenCalledWith("home-a", {
+          name: "Pets",
+          iconKey: "pets",
+        }),
+      )
+      await waitFor(() => expect(rowNames()).toEqual(["Kitchen", "Pets"]))
+    })
+
+    it("hides the section from members", async () => {
+      mocks.activeHousehold = { ...mocks.activeHousehold, currentUserRole: "MEMBER" }
+      mocks.settings.mockResolvedValue({ ...homeASettings, currentUserRole: "MEMBER" })
+      render(<HouseholdSettingsScreen />)
+
+      expect(await screen.findByRole("heading", { name: "Notifications" })).toBeTruthy()
+      expect(screen.queryByRole("heading", { name: "Categories" })).toBeNull()
+      expect(screen.queryByRole("button", { name: "Add category" })).toBeNull()
+      expect(mocks.listCategories).not.toHaveBeenCalled()
+    })
   })
 })
 
