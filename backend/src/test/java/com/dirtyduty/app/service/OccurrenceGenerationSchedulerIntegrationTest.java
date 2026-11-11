@@ -275,11 +275,14 @@ class OccurrenceGenerationSchedulerIntegrationTest {
     notificationScheduler.run();
 
     assertLiveOccurrence(scheduleId, occurrenceId, near);
-    assertThat(pendingReminderIds(occurrenceId)).doesNotContainAnyElementsOf(farReminders);
-    // Reminders for a deadline the occurrence already had are not re-planned after a move back:
-    // NotificationScheduler deduplicates on (type, assignment, recipient, scheduled time) including
-    // cancelled rows. That predates this change and also affects moves inside the horizon, so it
-    // is not asserted here.
+    // Returning to an earlier deadline re-plans its reminders as fresh rows; the cancelled ones
+    // from the first plan stay cancelled as history.
+    List<UUID> restoredReminders = pendingReminderIds(occurrenceId);
+    assertThat(restoredReminders)
+        .hasSameSizeAs(nearReminders)
+        .doesNotContainAnyElementsOf(farReminders)
+        .doesNotContainAnyElementsOf(nearReminders);
+    assertRemindersBefore(occurrenceId, dueAtNoon(near));
     assertThat(choreAssignedEvents(home.householdId())).isEqualTo(1);
   }
 
