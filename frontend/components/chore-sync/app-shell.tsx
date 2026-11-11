@@ -32,6 +32,7 @@ import { AppearanceScreen } from "./screens/appearance-screen"
 import { EmailVerificationScreen } from "./screens/email-verification-screen"
 import { DisplayNamePersonalizationScreen } from "./screens/display-name-personalization-screen"
 import { AppLaunchGate } from "./launch-experience"
+import { AppShellError, AppShellLoading } from "./app-shell-status"
 import { PushSubscriptionHealthProvider } from "@/lib/notifications/push-health"
 
 const authenticationScreens = new Set<Screen>([
@@ -163,13 +164,7 @@ function ScreenRouter() {
     }
   }, [isAuthenticated, navigate, screen, user?.legalAcceptanceRequired])
 
-  if (isLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-white text-sm text-slate-400">
-        Loading...
-      </div>
-    )
-  }
+  if (isLoading) return <AppShellLoading />
 
   if (isAuthenticated && user?.legalAcceptanceRequired) {
     if (!emailVerified) return <EmailVerificationScreen />
@@ -180,39 +175,21 @@ function ScreenRouter() {
 
   if (authError) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-white px-6 text-center">
-        <p className="text-sm text-slate-600">{authError}</p>
-        <button
-          onClick={() => refreshUser().catch(() => undefined)}
-          className="rounded-xl bg-teal-600 px-5 py-3 text-sm font-bold text-white"
-        >
-          Try Again
-        </button>
-      </div>
+      <AppShellError
+        message={authError}
+        onRetry={() => void refreshUser().catch(() => undefined)}
+      />
     )
   }
 
-  if (isAuthenticated && householdStatus === "loading") {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-white text-sm text-slate-400">
-        Loading...
-      </div>
-    )
-  }
+  if (isAuthenticated && householdStatus === "loading") return <AppShellLoading />
 
   if (isAuthenticated && householdStatus === "error") {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-white px-6 text-center">
-        <p role="alert" className="text-sm text-slate-600">
-          {householdError}
-        </p>
-        <button
-          onClick={() => refreshHouseholds().catch(() => undefined)}
-          className="rounded-xl bg-teal-600 px-5 py-3 text-sm font-bold text-white"
-        >
-          Try Again
-        </button>
-      </div>
+      <AppShellError
+        message={householdError ?? "Unable to load your households. Please try again."}
+        onRetry={() => void refreshHouseholds().catch(() => undefined)}
+      />
     )
   }
 

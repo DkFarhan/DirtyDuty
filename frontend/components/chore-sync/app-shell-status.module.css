@@ -1,0 +1,101 @@
+/*
+ * Full-page loading and error states rendered by the app shell. Colors follow the theme that is
+ * actually applied to <html> (the `.dark` class set by ThemeProvider), not the saved preference,
+ * so the forced light presentation for signed-out flows is respected. The palette matches the
+ * redesigned Home screen.
+ */
+.screen {
+  --status-bg: #edf8f4;
+  --status-text: #17383d;
+  --status-secondary: #4a6569;
+  --status-accent: #0d706c;
+  --status-accent-text: #ffffff;
+  --status-track: #c6dad8;
+  display: flex;
+  box-sizing: border-box;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: calc(24px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom));
+  background-color: var(--status-bg);
+  background-image: linear-gradient(99.65deg, #edf8f4 7.563%, #e2f1ed 63.025%, #f5faf6 91.597%);
+  color: var(--status-text);
+  font-family: var(--font-inter), Inter, ui-sans-serif, system-ui, sans-serif;
+  text-align: center;
+}
+
+:global(.dark) .screen {
+  --status-bg: #061923;
+  --status-text: #f7f7f0;
+  --status-secondary: #98b3b9;
+  --status-accent: #76e9de;
+  --status-accent-text: #061923;
+  --status-track: #28505b;
+  background-image: none;
+}
+
+.message {
+  max-width: 22rem;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 22px;
+  overflow-wrap: anywhere;
+}
+
+.loadingMessage {
+  margin: 0;
+  color: var(--status-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--status-track);
+  border-top-color: var(--status-accent);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+.retry {
+  min-width: 132px;
+  min-height: 44px;
+  padding: 10px 20px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--status-accent);
+  color: var(--status-accent-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 20px;
+}
+
+.retry:hover {
+  filter: brightness(1.08);
+}
+
+.retry:focus-visible {
+  outline: 2px solid var(--status-text);
+  outline-offset: 3px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+}
