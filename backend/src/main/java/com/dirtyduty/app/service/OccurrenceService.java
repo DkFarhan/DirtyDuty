@@ -118,12 +118,15 @@ public class OccurrenceService {
     }
 
     if (enabled && "FREQ=ONCE".equals(schedule.getRecurrenceRule())) {
+      // A one-time chore has a single occurrence, so it is not capped by the rolling horizon:
+      // it is created (and announced) in the request that creates or activates the schedule,
+      // never later by background generation when its date enters the horizon.
+      LocalDate onceDate = schedule.getStartsOn();
+      boolean onceDateEligible =
+          !onceDate.isBefore(today)
+              && (schedule.getEndsOn() == null || !onceDate.isAfter(schedule.getEndsOn()));
       synchronizeOneTimeSchedule(
-          schedule,
-          household,
-          dates.contains(schedule.getStartsOn()),
-          updatePendingAssignees,
-          userInitiatedEdit);
+          schedule, household, onceDateEligible, updatePendingAssignees, userInitiatedEdit);
       return;
     }
 

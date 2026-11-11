@@ -60,6 +60,18 @@ app:
     origins: ${FRONTEND_ORIGINS:http://localhost:3000}
   households:
     invitation-expiration: ${HOUSEHOLD_INVITATION_EXPIRATION:7d}
+  chores:
+    # Days of recurring chore occurrences kept generated ahead of today (1 to 90). One-time
+    # chores are not capped by this horizon; their single occurrence is created immediately.
+    occurrence-horizon-days: ${CHORE_OCCURRENCE_HORIZON_DAYS:30}
+    generation:
+      # Background job that keeps every household's horizon filled without user activity.
+      enabled: ${CHORE_GENERATION_ENABLED:true}
+      # Spring cron (second minute hour day month weekday), server time. Hourly so each
+      # household's local "today" rolls forward soon after its midnight.
+      cron: ${CHORE_GENERATION_CRON:0 7 * * * *}
+      # Delay in milliseconds before the one-off run after startup.
+      startup-delay: ${CHORE_GENERATION_STARTUP_DELAY:60000}
   security:
     session-cookie-secure: ${SESSION_COOKIE_SECURE:true}
   notifications:
