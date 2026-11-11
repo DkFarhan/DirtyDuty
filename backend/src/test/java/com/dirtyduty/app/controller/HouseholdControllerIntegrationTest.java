@@ -426,7 +426,7 @@ class HouseholdControllerIntegrationTest {
   void householdSettingsAreOwnerEditableAndMemberReadable() throws Exception {
     WebSession owner = login("settingsowner");
     WebSession member = login("settingsmember");
-    UUID householdId = createHousehold(owner, "Settings Home", "UTC");
+    UUID householdId = createHousehold(owner, "Settings Home", "America/Halifax");
     join(member, createInvitation(owner, householdId)).andExpect(status().isOk());
     String settingsPath = "/api/households/" + householdId + "/settings";
 
@@ -438,7 +438,7 @@ class HouseholdControllerIntegrationTest {
                 .contentType(APPLICATION_JSON)
                 .content(
                     """
-                        {"name":"Updated Home","description":"A cozy place","timezone":"America/Halifax"}
+                        {"name":"Updated Home","description":"A cozy place","timezone":" America/Halifax "}
                         """))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.name").value("Updated Home"))
@@ -464,6 +464,157 @@ class HouseholdControllerIntegrationTest {
                         {"name":"Unauthorized Change","description":null,"timezone":"UTC"}
                         """))
         .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void householdTimezoneCannotChangeAfterCreationAndRejectionIsAtomic() throws Exception {
+    WebSession owner = login("tzlockowner");
+    WebSession member = login("tzlockmember");
+    UUID householdId = createHousehold(owner, "Halifax Home", "America/Halifax");
+    join(member, createInvitation(owner, householdId)).andExpect(status().isOk());
+    String base = "/api/households/" + householdId;
+    String settingsPath = base + "/settings";
+    UUID categoryId =
+        jdbcTemplate.queryForObject(
+            "SELECT id FROM chore_categories WHERE household_id=? ORDER BY sort_order LIMIT 1",
+            UUID.class,
+            householdId);
+
+    LocalDate scheduledFor = LocalDate.now(java.time.ZoneId.of("America/Halifax")).plusDays(2);
+    MvcResult created =
+        mockMvc
+            .perform(
+                post(base + "/chores")
+                    .cookie(owner.cookie())
+                    .header(owner.csrfHeader(), owner.csrfToken())
+                    .contentType(APPLICATION_JSON)
+                    .content(
+                        """
+                            {
+                              "title": "Take out recycling",
+                              "categoryId": "%s",
+                              "difficulty": 1,
+                              "schedule": {
+                                "recurrenceRule": "FREQ=ONCE",
+                                "startsOn": "%s",
+                                "dueTime": "12:00",
+                                "assignmentStrategy": "FIXED",
+                                "fixedAssigneeUserId": "%s"
+                              }
+                            }
+                            """
+                            .formatted(categoryId, scheduledFor, owner.userId())))
+            .andExpect(status().isCreated())
+            .andReturn();
+    UUID choreId =
+        UUID.fromString(
+            objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asText());
+    mockMvc.perform(get(base + "/dashboard").cookie(owner.cookie())).andExpect(status().isOk());
+    notificationScheduler.run();
+
+    String scheduleTimezone =
+        jdbcTemplate.queryForObject(
+            "SELECT timezone FROM chore_schedules WHERE chore_id=?", String.class, choreId);
+    UUID assignmentId =
+        jdbcTemplate.queryForObject(
+            "SELECT id FROM chore_assignments WHERE chore_id=?", UUID.class, choreId);
+    OffsetDateTime dueAt =
+        jdbcTemplate.queryForObject(
+            "SELECT due_at FROM chore_assignments WHERE id=?", OffsetDateTime.class, assignmentId);
+    String reminderQuery =
+        """
+            SELECT id, type, status, scheduled_at FROM notifications
+            WHERE reference_type='CHORE_ASSIGNMENT' AND reference_id=?
+            ORDER BY scheduled_at, id
+            """;
+    List<Map<String, Object>> remindersBefore =
+        jdbcTemplate.queryForList(reminderQuery, assignmentId);
+    assertThat(scheduleTimezone).isEqualTo("America/Halifax");
+    assertThat(dueAt.toInstant())
+        .isEqualTo(
+            scheduledFor.atTime(12, 0).atZone(java.time.ZoneId.of("America/Halifax")).toInstant());
+    assertThat(remindersBefore).isNotEmpty();
+
+    // A different valid timezone is rejected, and the name/description edits in the same
+    // request are not saved.
+    mockMvc
+        .perform(
+            put(settingsPath)
+                .cookie(owner.cookie())
+                .header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content(
+                    """
+                        {"name":"Vancouver Home","description":"Moved west","timezone":"America/Vancouver"}
+                        """))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.status").value(400))
+        .andExpect(jsonPath("$.error").value("Bad Request"))
+        .andExpect(
+            jsonPath("$.message").value("Household timezone cannot be changed after creation."))
+        .andExpect(jsonPath("$.path").value(settingsPath));
+
+    mockMvc
+        .perform(get(settingsPath).cookie(owner.cookie()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.name").value("Halifax Home"))
+        .andExpect(jsonPath("$.description").doesNotExist())
+        .andExpect(jsonPath("$.timezone").value("America/Halifax"));
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT timezone FROM chore_schedules WHERE chore_id=?", String.class, choreId))
+        .isEqualTo("America/Halifax");
+    assertThat(
+            jdbcTemplate
+                .queryForObject(
+                    "SELECT due_at FROM chore_assignments WHERE id=?",
+                    OffsetDateTime.class,
+                    assignmentId)
+                .toInstant())
+        .isEqualTo(dueAt.toInstant());
+    assertThat(jdbcTemplate.queryForList(reminderQuery, assignmentId))
+        .containsExactlyElementsOf(remindersBefore);
+
+    // The owner can still edit name and description while echoing the current timezone.
+    mockMvc
+        .perform(
+            put(settingsPath)
+                .cookie(owner.cookie())
+                .header(owner.csrfHeader(), owner.csrfToken())
+                .contentType(APPLICATION_JSON)
+                .content(
+                    """
+                        {"name":"Renamed Home","description":"Still in Halifax","timezone":"America/Halifax"}
+                        """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.name").value("Renamed Home"))
+        .andExpect(jsonPath("$.description").value("Still in Halifax"))
+        .andExpect(jsonPath("$.timezone").value("America/Halifax"));
+
+    // A non-owner is still denied, whatever timezone they send.
+    for (String timezone : List.of("America/Halifax", "America/Vancouver")) {
+      mockMvc
+          .perform(
+              put(settingsPath)
+                  .cookie(member.cookie())
+                  .header(member.csrfHeader(), member.csrfToken())
+                  .contentType(APPLICATION_JSON)
+                  .content(
+                      """
+                          {"name":"Member Change","description":null,"timezone":"%s"}
+                          """
+                          .formatted(timezone)))
+          .andExpect(status().isForbidden());
+    }
+    mockMvc
+        .perform(get(settingsPath).cookie(member.cookie()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.name").value("Renamed Home"))
+        .andExpect(jsonPath("$.timezone").value("America/Halifax"));
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT timezone FROM chore_schedules WHERE chore_id=?", String.class, choreId))
+        .isEqualTo("America/Halifax");
   }
 
   @Test
