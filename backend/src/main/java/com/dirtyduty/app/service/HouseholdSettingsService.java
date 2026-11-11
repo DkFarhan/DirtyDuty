@@ -89,14 +89,22 @@ public class HouseholdSettingsService {
     } catch (DateTimeException exception) {
       throw new InvalidHouseholdException("A valid IANA timezone is required.");
     }
+    // Existing chore schedules keep the timezone they were created with, so changing the
+    // household timezone afterwards would desynchronize them. The settings form echoes the
+    // stored value; accept only that value and never write the column here.
+    String storedTimezone =
+        jdbc.queryForObject(
+            "SELECT timezone FROM households WHERE id=?", String.class, householdId);
+    if (!timezone.equals(storedTimezone)) {
+      throw new InvalidHouseholdException("Household timezone cannot be changed after creation.");
+    }
     jdbc.update(
         """
-                UPDATE households SET name=?, description=?, timezone=?, updated_at=?
+                UPDATE households SET name=?, description=?, updated_at=?
                 WHERE id=?
                 """,
         name,
         description,
-        timezone,
         OffsetDateTime.now(ZoneOffset.UTC),
         householdId);
     return get(householdId, authentication);
