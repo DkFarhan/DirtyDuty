@@ -171,6 +171,7 @@ public class ChoreService {
                   participantIds(schedule.getStrategyConfig()),
                   peopleNeeded(schedule.getStrategyConfig()),
                   schedule.getFixedAssignee() == null ? null : schedule.getFixedAssignee().getId());
+              occurrenceService.validateOneTimeActivation(schedule);
               chore.setActive(true);
               schedule.setActive(true);
               occurrenceService.synchronizeSchedule(schedule, true, true);

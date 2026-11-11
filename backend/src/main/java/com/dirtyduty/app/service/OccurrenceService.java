@@ -50,6 +50,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class OccurrenceService {
   private static final SecureRandom RANDOM = new SecureRandom();
+  static final String PAST_DUE_DATE_MESSAGE =
+      "This chore's due date has passed. Choose a new due date.";
   private final JdbcTemplate jdbc;
   private final EntityManager entityManager;
   private final ChoreScheduleRepository scheduleRepository;
@@ -127,6 +129,12 @@ public class OccurrenceService {
               && (schedule.getEndsOn() == null || !onceDate.isAfter(schedule.getEndsOn()));
       synchronizeOneTimeSchedule(
           schedule, household, onceDateEligible, updatePendingAssignees, userInitiatedEdit);
+      return;
+    }
+    if ("FREQ=ONCE".equals(schedule.getRecurrenceRule())) {
+      // Paused, inactive or archived one-time chore: same cancellation the recurring branch
+      // applies (pending occurrences from today on), plus their pending reminders right away.
+      pauseOneTimeSchedule(schedule, household, today);
       return;
     }
 
@@ -228,6 +236,18 @@ public class OccurrenceService {
                     occurrenceId));
         if (exitCancelled && !userInitiatedEdit) {
           continue;
+        }
+        OffsetDateTime previousDueAt =
+            jdbc.queryForObject(
+                "SELECT due_at FROM chore_assignments WHERE id=?",
+                OffsetDateTime.class,
+                occurrenceId);
+        if (previousDueAt == null
+            ? dueAt != null
+            : dueAt == null || !previousDueAt.isEqual(dueAt)) {
+          // Same rule as one-time chores: reminders for the old deadline must not fire. The
+          // notification scheduler plans replacements for the new deadline.
+          cancelPendingOccurrenceReminders(occurrenceId);
         }
         jdbc.update(
             """
@@ -333,6 +353,34 @@ public class OccurrenceService {
       return;
     }
 
+    // Reactivation: the schedule has no live or finished occurrence, and its own occurrence on its
+    // due date was cancelled (by a pause, or by a member exit). That row is the chore's single
+    // occurrence, not unrelated history, so a user-initiated activation or edit resumes it in
+    // place. The #35 guard below still protects a cancelled row on the target date whenever a
+    // live occurrence exists elsewhere. Background generation never revives anything.
+    OneTimeOccurrence cancelledOnDueDate =
+        existing.stream()
+            .filter(
+                occurrence ->
+                    occurrence.scheduledFor().equals(schedule.getStartsOn())
+                        && "CANCELLED".equals(occurrence.status()))
+            .findFirst()
+            .orElse(null);
+    boolean liveOrFinished =
+        existing.stream()
+            .anyMatch(
+                occurrence ->
+                    "PENDING".equals(occurrence.status())
+                        || "COMPLETED".equals(occurrence.status())
+                        || "SKIPPED".equals(occurrence.status()));
+    if (cancelledOnDueDate != null && !liveOrFinished && userInitiatedEdit) {
+      if (!createOccurrence) {
+        throw new InvalidHouseholdException(PAST_DUE_DATE_MESSAGE);
+      }
+      reviveOneTimeOccurrence(schedule, household, cancelledOnDueDate.id(), updatePendingAssignees);
+      return;
+    }
+
     if (existing.stream()
             .anyMatch(
                 occurrence ->
@@ -422,6 +470,7 @@ public class OccurrenceService {
       ChoreSchedule schedule, Household household, LocalDate scheduledFor) {
     Chore chore = schedule.getChore();
     List<UUID> assignees = selectedAssignees(schedule, scheduledFor);
+    Set<UUID> alreadyAssigned = previouslyAssignedUsers(schedule.getId());
     OffsetDateTime dueAt =
         schedule.getDueTime() == null
             ? null
@@ -452,6 +501,20 @@ public class OccurrenceService {
       return;
     }
     insertAssignees(occurrenceId, household.getId(), assignees);
+    // A schedule that already had an occurrence (for example one cancelled by a pause and then
+    // moved to a new date) announced its assignees then. Only people new to it are told now.
+    announceOneTimeAssignment(
+        household,
+        chore,
+        occurrenceId,
+        assignees.stream().filter(userId -> !alreadyAssigned.contains(userId)).toList());
+  }
+
+  private void announceOneTimeAssignment(
+      Household household, Chore chore, UUID occurrenceId, List<UUID> recipients) {
+    if (recipients.isEmpty()) {
+      return;
+    }
     notificationEventService.publish(
         new NotificationEvent(
             "CHORE_ASSIGNED",
@@ -461,7 +524,165 @@ public class OccurrenceService {
             occurrenceId,
             "CHORE_REMINDER",
             java.util.Map.of("chore_name", chore.getTitle()),
-            assignees));
+            recipients));
+  }
+
+  /**
+   * Resumes a one-time chore's own cancelled occurrence in place (same row, same date). Assignees
+   * are recomputed from the current schedule when requested or when a member exit removed them, and
+   * only active members are ever assigned. Earlier reminders stay cancelled as history; the
+   * notification scheduler plans fresh ones for the current deadline.
+   */
+  private void reviveOneTimeOccurrence(
+      ChoreSchedule schedule,
+      Household household,
+      UUID occurrenceId,
+      boolean updatePendingAssignees) {
+    boolean exitCancelled =
+        Boolean.TRUE.equals(
+            jdbc.queryForObject(
+                "SELECT cancelled_by_membership_exit FROM chore_assignments WHERE id=?",
+                Boolean.class,
+                occurrenceId));
+    Set<UUID> alreadyAssigned = previouslyAssignedUsers(schedule.getId());
+    List<UUID> currentAssignees =
+        jdbc.queryForList(
+            "SELECT user_id FROM chore_assignment_assignees WHERE assignment_id=? ORDER BY user_id",
+            UUID.class,
+            occurrenceId);
+    List<UUID> assignees =
+        activeMembersOnly(
+            household.getId(),
+            updatePendingAssignees || exitCancelled || currentAssignees.isEmpty()
+                ? selectedAssignees(schedule, schedule.getStartsOn())
+                : currentAssignees);
+    if (assignees.isEmpty()) {
+      throw new InvalidHouseholdException(
+          "Assign this chore to a current household member before activating it.");
+    }
+
+    Chore chore = schedule.getChore();
+    OffsetDateTime dueAt =
+        schedule.getDueTime() == null
+            ? null
+            : dueAt(
+                schedule.getStartsOn(), schedule.getDueTime(), ZoneId.of(schedule.getTimezone()));
+    jdbc.update(
+        """
+            UPDATE chore_assignments
+            SET status='PENDING', cancelled_by_membership_exit=FALSE, due_at=?, title_snapshot=?,
+                priority_snapshot=?, difficulty_snapshot=?, estimated_minutes_snapshot=?,
+                updated_at=NOW()
+            WHERE id=? AND status='CANCELLED'
+            """,
+        dueAt,
+        chore.getTitle(),
+        chore.getDefaultPriority().name(),
+        chore.getDifficulty(),
+        chore.getEstimatedMinutes(),
+        occurrenceId);
+    jdbc.update("DELETE FROM chore_assignment_assignees WHERE assignment_id=?", occurrenceId);
+    jdbc.update(
+        "UPDATE chore_assignments SET assigned_to_user_id=? WHERE id=?",
+        assignees.getFirst(),
+        occurrenceId);
+    insertAssignees(occurrenceId, household.getId(), assignees);
+    announceOneTimeAssignment(
+        household,
+        chore,
+        occurrenceId,
+        assignees.stream().filter(userId -> !alreadyAssigned.contains(userId)).toList());
+  }
+
+  private void pauseOneTimeSchedule(ChoreSchedule schedule, Household household, LocalDate today) {
+    List<UUID> pending =
+        jdbc.queryForList(
+            """
+                SELECT id FROM chore_assignments
+                WHERE schedule_id=? AND household_id=? AND scheduled_for>=? AND status='PENDING'
+                """,
+            UUID.class,
+            schedule.getId(),
+            household.getId(),
+            today);
+    for (UUID occurrenceId : pending) {
+      jdbc.update(
+          "UPDATE chore_assignments SET status='CANCELLED', updated_at=NOW() "
+              + "WHERE id=? AND status='PENDING'",
+          occurrenceId);
+      cancelPendingOccurrenceReminders(occurrenceId);
+    }
+  }
+
+  /**
+   * Rejects activating a one-time chore whose single occurrence would land in the past. Applies
+   * only when the chore has no live or finished occurrence; otherwise activation keeps its existing
+   * behaviour.
+   */
+  @Transactional(readOnly = true)
+  public void validateOneTimeActivation(ChoreSchedule schedule) {
+    if (!"FREQ=ONCE".equals(schedule.getRecurrenceRule())) {
+      return;
+    }
+    LocalDate today = LocalDate.now(ZoneId.of(schedule.getTimezone()));
+    if (!schedule.getStartsOn().isBefore(today)) {
+      return;
+    }
+    Boolean liveOrFinished =
+        jdbc.queryForObject(
+            """
+                SELECT EXISTS (
+                    SELECT 1 FROM chore_assignments
+                    WHERE schedule_id=? AND status IN ('PENDING','SUBMITTED','COMPLETED','SKIPPED')
+                )
+                """,
+            Boolean.class,
+            schedule.getId());
+    if (!Boolean.TRUE.equals(liveOrFinished)) {
+      throw new InvalidHouseholdException(PAST_DUE_DATE_MESSAGE);
+    }
+  }
+
+  /** Everyone who was assigned to, or announced for, any occurrence of this schedule. */
+  private Set<UUID> previouslyAssignedUsers(UUID scheduleId) {
+    if (scheduleId == null) {
+      return Set.of();
+    }
+    return Set.copyOf(
+        jdbc.queryForList(
+            """
+                SELECT aa.user_id FROM chore_assignment_assignees aa
+                JOIN chore_assignments a ON a.id=aa.assignment_id
+                WHERE a.schedule_id=?
+                UNION
+                SELECT a.assigned_to_user_id FROM chore_assignments a
+                WHERE a.schedule_id=? AND a.assigned_to_user_id IS NOT NULL
+                UNION
+                SELECT n.recipient_user_id FROM notifications n
+                JOIN chore_assignments a
+                  ON n.reference_type='CHORE_ASSIGNMENT' AND n.reference_id=a.id
+                WHERE a.schedule_id=? AND n.type='CHORE_ASSIGNED'
+                """,
+            UUID.class,
+            scheduleId,
+            scheduleId,
+            scheduleId));
+  }
+
+  private List<UUID> activeMembersOnly(UUID householdId, List<UUID> userIds) {
+    if (userIds.isEmpty()) {
+      return List.of();
+    }
+    Set<UUID> active =
+        Set.copyOf(
+            jdbc.queryForList(
+                """
+                    SELECT user_id FROM household_memberships
+                    WHERE household_id=? AND status='ACTIVE'
+                    """,
+                UUID.class,
+                householdId));
+    return userIds.stream().filter(active::contains).distinct().toList();
   }
 
   private void updateOneTimeAssignees(
