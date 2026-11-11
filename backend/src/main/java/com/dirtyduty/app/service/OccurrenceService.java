@@ -32,15 +32,15 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
@@ -49,6 +49,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class OccurrenceService {
+  private static final Logger log = LoggerFactory.getLogger(OccurrenceService.class);
   private static final SecureRandom RANDOM = new SecureRandom();
   static final String PAST_DUE_DATE_MESSAGE =
       "This chore's due date has passed. Choose a new due date.";
@@ -110,13 +111,11 @@ public class OccurrenceService {
             && schedule.getChore().getArchivedAt() == null;
     List<LocalDate> dates = new ArrayList<>();
     if (enabled) {
-      for (LocalDate date = schedule.getStartsOn().isAfter(today) ? schedule.getStartsOn() : today;
-          date.isBefore(limit);
-          date = date.plusDays(1)) {
-        if (occurs(schedule.getRecurrenceRule(), schedule.getStartsOn(), date)) {
-          dates.add(date);
-        }
-      }
+      // Dates are evaluated in the schedule's local calendar; COUNT is counted from starts_on.
+      LocalDate from = schedule.getStartsOn().isAfter(today) ? schedule.getStartsOn() : today;
+      dates.addAll(
+          RecurrenceRule.parse(schedule.getRecurrenceRule())
+              .datesBetween(schedule.getStartsOn(), from, limit));
     }
 
     if (enabled && "FREQ=ONCE".equals(schedule.getRecurrenceRule())) {
@@ -151,10 +150,16 @@ public class OccurrenceService {
             today);
     for (FutureOccurrence occurrence : existingFuture) {
       if (!dates.contains(occurrence.scheduledFor())) {
-        jdbc.update(
-            "UPDATE chore_assignments SET status='CANCELLED', updated_at=NOW() "
-                + "WHERE id=? AND status='PENDING'",
-            occurrence.id());
+        int cancelled =
+            jdbc.update(
+                "UPDATE chore_assignments SET status='CANCELLED', updated_at=NOW() "
+                    + "WHERE id=? AND status='PENDING'",
+                occurrence.id());
+        if (cancelled == 1) {
+          // The date no longer belongs to the schedule (rule, end or pause change): its pending
+          // reminders go now rather than on the notification scheduler's next pass.
+          cancelPendingOccurrenceReminders(occurrence.id());
+        }
       }
     }
 
@@ -844,11 +849,11 @@ public class OccurrenceService {
   }
 
   private String fixedRecurringAnnouncementTitle(ChoreSchedule schedule) {
-    String recurrenceRule = schedule.getRecurrenceRule();
-    if ("FREQ=DAILY".equals(recurrenceRule)) {
+    RecurrenceRule rule = RecurrenceRule.parse(schedule.getRecurrenceRule());
+    if (rule.interval() == 1 && rule.frequency() == RecurrenceRule.Frequency.DAILY) {
       return "New daily chore assigned";
     }
-    if (recurrenceRule.startsWith("FREQ=WEEKLY") && !recurrenceRule.contains("INTERVAL=")) {
+    if (rule.interval() == 1 && rule.frequency() == RecurrenceRule.Frequency.WEEKLY) {
       return "New weekly chore assigned";
     }
     return "New recurring chore assigned";
@@ -1061,9 +1066,28 @@ public class OccurrenceService {
       entityManager.refresh(schedule, LockModeType.PESSIMISTIC_WRITE);
       entityManager.refresh(schedule.getChore());
       entityManager.refresh(schedule.getHousehold());
-      if (schedule.isActive()) {
-        synchronizeLockedSchedule(schedule, false, false);
+      if (!schedule.isActive()) {
+        continue;
       }
+      if (!hasSupportedRule(schedule)) {
+        // A stored rule the parser rejects (e.g. legacy data) must not fail generation for the
+        // rest of the household. Skip it: nothing new is generated and its existing occurrences
+        // are left untouched. Saving still rejects such rules. Only the id is logged.
+        log.warn(
+            "Skipping occurrence generation for schedule {}: unsupported recurrence rule",
+            scheduleId);
+        continue;
+      }
+      synchronizeLockedSchedule(schedule, false, false);
+    }
+  }
+
+  private static boolean hasSupportedRule(ChoreSchedule schedule) {
+    try {
+      RecurrenceRule.parse(schedule.getRecurrenceRule());
+      return true;
+    } catch (InvalidHouseholdException exception) {
+      return false;
     }
   }
 
@@ -1338,51 +1362,14 @@ public class OccurrenceService {
     return date.atTime(time).atZone(zone).toOffsetDateTime();
   }
 
+  /** Number of dates the schedule produced before {@code target}, for ROUND_ROBIN turns. */
   private int occurrenceIndex(ChoreSchedule schedule, LocalDate target) {
-    int index = 0;
-    for (LocalDate day = schedule.getStartsOn(); day.isBefore(target); day = day.plusDays(1)) {
-      if (occurs(schedule.getRecurrenceRule(), schedule.getStartsOn(), day)) {
-        index++;
-      }
-    }
-    return index;
+    return RecurrenceRule.parse(schedule.getRecurrenceRule())
+        .countBefore(schedule.getStartsOn(), target);
   }
 
   static boolean occurs(String rule, LocalDate startsOn, LocalDate date) {
-    if (date.isBefore(startsOn)) {
-      return false;
-    }
-    if ("FREQ=ONCE".equals(rule)) {
-      return date.equals(startsOn);
-    }
-    if ("FREQ=DAILY".equals(rule)) {
-      return true;
-    }
-    String[] fields = rule.split(";");
-    int interval = 1;
-    Set<DayOfWeek> days = new HashSet<>();
-    for (String field : fields) {
-      if (field.startsWith("INTERVAL=")) {
-        interval = Integer.parseInt(field.substring("INTERVAL=".length()));
-      } else if (field.startsWith("BYDAY=")) {
-        for (String value : field.substring("BYDAY=".length()).split(",")) {
-          days.add(
-              switch (value) {
-                case "MO" -> DayOfWeek.MONDAY;
-                case "TU" -> DayOfWeek.TUESDAY;
-                case "WE" -> DayOfWeek.WEDNESDAY;
-                case "TH" -> DayOfWeek.THURSDAY;
-                case "FR" -> DayOfWeek.FRIDAY;
-                case "SA" -> DayOfWeek.SATURDAY;
-                case "SU" -> DayOfWeek.SUNDAY;
-                default -> throw new IllegalArgumentException("Unsupported recurrence day.");
-              });
-        }
-      }
-    }
-    long weeks =
-        ChronoUnit.WEEKS.between(startsOn.with(DayOfWeek.MONDAY), date.with(DayOfWeek.MONDAY));
-    return weeks % interval == 0 && days.contains(date.getDayOfWeek());
+    return RecurrenceRule.parse(rule).occursOn(startsOn, date);
   }
 
   private List<UUID> participantIds(ChoreSchedule schedule) {
