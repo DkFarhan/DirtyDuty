@@ -1412,3 +1412,35 @@
     transition: none;
   }
 }
+
+/* Single-occurrence actions. */
+.upcomingMoreButton {
+  position: absolute;
+  top: 89px;
+  right: 125px;
+}
+
+.upcomingMoreButtonSolo {
+  position: absolute;
+  top: 89px;
+  right: 15px;
+}
+
+.upcomingCardWithActions .upcomingAssignees {
+  max-width: calc(100% - 186px);
+}
+
+.attentionMoreButton {
+  position: absolute;
+  top: 168px;
+  right: 16px;
+}
+
+.attentionCardWithActions .attentionCompleteButton {
+  right: 68px;
+}
+
+.movedHint {
+  color: var(--accent);
+  font-weight: 600;
+}

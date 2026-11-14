@@ -500,7 +500,9 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
         </div>
       ) : !options ? null : (
         <>
-          <main className={`flex-1 space-y-4 px-4 pb-28 pt-4 ${designStyles.liveContent}`}>
+          <main
+            className={`flex-1 space-y-4 px-4 pt-4 ${isEditing ? "pb-36" : "pb-28"} ${designStyles.liveContent}`}
+          >
             <section className={cn(groupClass, designStyles.liveCard)}>
               {
                 <HouseholdLiveDesignSectionHeading
@@ -1224,6 +1226,11 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
           <div
             className={`fixed bottom-0 z-40 w-full border-t border-slate-100 bg-white/95 p-3 pb-[max(.75rem,env(safe-area-inset-bottom))] backdrop-blur ${`left-0 max-w-none ${designStyles.liveFormFooter}`}`}
           >
+            {isEditing && (
+              <p className="mb-2 text-center text-xs text-slate-500">
+                Changes apply to upcoming chores. Completed ones stay as they are.
+              </p>
+            )}
             <Button
               className="h-12 w-full rounded-xl bg-teal-600 font-bold text-white hover:bg-teal-700"
               disabled={saving}

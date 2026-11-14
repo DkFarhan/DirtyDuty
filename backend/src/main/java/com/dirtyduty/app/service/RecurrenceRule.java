@@ -254,6 +254,22 @@ public final class RecurrenceRule {
     return activeMonths;
   }
 
+  /** The same rule without its COUNT limit, for counting a re-anchored series' remainder. */
+  public RecurrenceRule withoutCount() {
+    return count == null
+        ? this
+        : new RecurrenceRule(
+            frequency,
+            interval,
+            weekdays,
+            monthDay,
+            ordinal,
+            ordinalWeekday,
+            yearMonth,
+            activeMonths,
+            null);
+  }
+
   /** The canonical string stored for this rule. Existing stored rules keep their meaning. */
   @Override
   public String toString() {

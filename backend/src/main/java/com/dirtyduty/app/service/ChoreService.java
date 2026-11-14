@@ -384,6 +384,7 @@ public class ChoreService {
     fixedAssignee = configuration.fixedAssignee();
     List<UUID> validatedParticipants = configuration.participantIds();
     String previousRecurrenceRule = schedule.getRecurrenceRule();
+    java.time.LocalDate previousStartsOn = schedule.getStartsOn();
     occurrenceService.validateScheduleFrequencyChange(
         schedule, previousRecurrenceRule, recurrenceRule);
     boolean assignmentConfigChanged =
@@ -403,6 +404,16 @@ public class ChoreService {
     config.put("peopleNeeded", peopleNeeded);
     schedule.setStrategyConfig(config);
     schedule.setActive(chore.isActive());
+    // A COUNT series keeps its total across rule edits (see anchorCountRemainder); an edit that
+    // leaves the rule and start date alone keeps the existing anchor.
+    if (parsedRule.count().isEmpty()) {
+      schedule.setCountRebasedOn(null);
+      schedule.setCountProducedBefore(null);
+    } else if (schedule.getId() != null
+        && (!recurrenceRule.equals(previousRecurrenceRule)
+            || !request.startsOn().equals(previousStartsOn))) {
+      occurrenceService.anchorCountRemainder(schedule);
+    }
     choreScheduleRepository.saveAndFlush(schedule);
     occurrenceService.synchronizeSchedule(schedule, assignmentConfigChanged, true);
   }

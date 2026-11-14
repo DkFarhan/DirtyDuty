@@ -7,6 +7,12 @@ import { choreApi, type AssignmentDTO } from "@/lib/household/chores"
 import { useHouseholds } from "@/lib/household/household-context"
 import { householdChoreResource, useDataSync } from "@/lib/data-sync/data-sync-context"
 import { optimisticAssignmentCompletion } from "@/lib/household/assignment-state"
+import {
+  optimisticOccurrence,
+  runOccurrenceAction,
+  type OccurrenceAction,
+} from "@/lib/household/occurrence-actions"
+import { OccurrenceActionSheet } from "../occurrence-action-sheet"
 import { MyChoresScreenView, type MyChoresTab } from "../redesign/my-chores-screen-view"
 import { createMyChoresApplicationViewModel } from "../redesign/my-chores-application-adapter"
 import type { HomeNavigationDestination, HomeVisualTheme } from "../redesign/home-screen-view"
@@ -23,6 +29,7 @@ export function MyChoresScreen({ theme = "dark" }: { theme?: HomeVisualTheme } =
   const [actionError, setActionError] = useState<string | null>(null)
   const [completingIds, setCompletingIds] = useState<Set<string>>(() => new Set())
   const [targetAssignmentId, setTargetAssignmentId] = useState<string | null>(null)
+  const [actionTargetId, setActionTargetId] = useState<string | null>(null)
   const requestSequence = useRef(0)
   const loadedHouseholdId = useRef<string | null>(null)
   const upcomingRef = useRef<AssignmentDTO[]>([])
@@ -219,6 +226,58 @@ export function MyChoresScreen({ theme = "dark" }: { theme?: HomeVisualTheme } =
     }
   }
 
+  /**
+   * Moves, skips or reassigns one occurrence optimistically. A skipped day, or one given to
+   * someone else, leaves this to-do list; a failure puts it back where it was with an error.
+   */
+  const performOccurrenceAction = async (assignmentId: string, action: OccurrenceAction) => {
+    if (!household || loadedHouseholdId.current !== household.id) return
+    const operation = `occurrence:${assignmentId}`
+    const index = upcomingRef.current.findIndex((assignment) => assignment.id === assignmentId)
+    const previous = upcomingRef.current[index]
+    if (!previous || !claim(operation)) return
+    const viewerId = state.currentUser.id
+    const stillListed = (assignment: AssignmentDTO) =>
+      assignment.status !== "SKIPPED" &&
+      assignment.assignees.some((assignee) => assignee.userId === viewerId)
+    const apply = (next: AssignmentDTO, fallbackIndex: number) => {
+      if (loadedHouseholdId.current !== household.id) return
+      const without = upcomingRef.current.filter((assignment) => assignment.id !== assignmentId)
+      const list = stillListed(next)
+        ? [
+            ...without.slice(0, Math.min(fallbackIndex, without.length)),
+            next,
+            ...without.slice(Math.min(fallbackIndex, without.length)),
+          ]
+        : without
+      upcomingRef.current = list
+      setUpcoming(list)
+    }
+    requestSequence.current += 1
+    apply(optimisticOccurrence(previous, action, household.timezone, viewerId), index)
+    setActionError(null)
+    try {
+      const confirmed = await runOccurrenceAction(household.id, assignmentId, action)
+      requestSequence.current += 1
+      apply(confirmed, index)
+      invalidate()
+    } catch (cause) {
+      requestSequence.current += 1
+      apply(previous, index)
+      if (loadedHouseholdId.current === household.id) {
+        setActionError(
+          cause instanceof ApiError
+            ? cause.message
+            : "Unable to update this chore. Please try again.",
+        )
+      }
+      invalidate()
+    } finally {
+      release(operation)
+    }
+  }
+  const actionTarget = upcoming.find((assignment) => assignment.id === actionTargetId) ?? null
+
   const displayed = tab === "upcoming" ? upcoming : completed
 
   useEffect(() => {
@@ -244,15 +303,33 @@ export function MyChoresScreen({ theme = "dark" }: { theme?: HomeVisualTheme } =
   const onNavigate = (destination: HomeNavigationDestination) =>
     navigate(destination === "home" ? "dashboard" : destination)
   return (
-    <MyChoresScreenView
-      activeDestination="my-chores"
-      onCompleteChore={(id) => void completeAssignment(id)}
-      onNavigate={onNavigate}
-      onRetry={() => void loadChores()}
-      onSelectTab={setTab}
-      tab={tab}
-      theme={theme}
-      viewModel={viewModel}
-    />
+    <>
+      <MyChoresScreenView
+        activeDestination="my-chores"
+        onCompleteChore={(id) => void completeAssignment(id)}
+        onOpenChoreActions={setActionTargetId}
+        onNavigate={onNavigate}
+        onRetry={() => void loadChores()}
+        onSelectTab={setTab}
+        tab={tab}
+        theme={theme}
+        viewModel={viewModel}
+      />
+      {household && actionTarget && (
+        <OccurrenceActionSheet
+          assignment={actionTarget}
+          householdId={household.id}
+          householdTimezone={household.timezone}
+          viewerId={state.currentUser.id}
+          onClose={() => setActionTargetId(null)}
+          onSubmit={(action) => {
+            const target = actionTarget.id
+            setActionTargetId(null)
+            void performOccurrenceAction(target, action)
+          }}
+          theme={theme}
+        />
+      )}
+    </>
   )
 }

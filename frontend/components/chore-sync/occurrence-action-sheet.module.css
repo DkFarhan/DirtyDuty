@@ -1,0 +1,313 @@
+/* Action sheet for one chore occurrence. Mirrors the household sheet dialog. */
+
+.darkTheme {
+  --sheet-bg: #0b222c;
+  --main-text: #f6f8f2;
+  --secondary-text: #9ebbc0;
+  --accent: #7ae8da;
+  --accent-text: #061923;
+  --rule: #2b4d56;
+  --surface: rgb(16 47 57 / 70%);
+  --selected: rgb(122 232 218 / 16%);
+  --border: rgb(137 212 208 / 23%);
+  --danger: #f8b9ba;
+  --danger-surface: #3a2228;
+  --field-bg: #102f39;
+}
+
+.lightTheme {
+  --sheet-bg: #f4fbf8;
+  --main-text: #17383d;
+  --secondary-text: #4a6569;
+  --accent: #0d706c;
+  --accent-text: #ffffff;
+  --rule: #c7dfd8;
+  --surface: rgb(250 255 252 / 90%);
+  --selected: rgb(13 112 108 / 10%);
+  --border: rgb(184 221 213 / 93%);
+  --danger: #8e2733;
+  --danger-surface: #fff0ee;
+  --field-bg: #ffffff;
+}
+
+.backdrop {
+  position: fixed;
+  z-index: 70;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0 9px;
+  background: rgb(2 12 18 / 54%);
+  backdrop-filter: blur(5px);
+}
+
+@media (min-width: 640px) {
+  .backdrop {
+    align-items: center;
+  }
+}
+
+.sheet {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 430px);
+  max-height: min(88dvh, 760px);
+  overflow-y: auto;
+  padding: 11px 18px max(23px, env(safe-area-inset-bottom));
+  border: 1px solid var(--border);
+  border-radius: 27px;
+  background: var(--sheet-bg);
+  box-shadow: 0 20px 70px rgb(0 10 16 / 32%);
+  color: var(--main-text);
+}
+
+.handle {
+  display: block;
+  width: 48px;
+  height: 4px;
+  margin: 0 auto 18px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 45%, var(--rule));
+}
+
+.close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 0;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--accent) 13%, var(--sheet-bg));
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.eyebrow {
+  margin: 0 56px 8px 0;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 14px;
+  text-transform: uppercase;
+}
+
+.title {
+  overflow-wrap: anywhere;
+  margin: 0 56px 4px 0;
+  color: var(--main-text);
+  font-family: var(--font-household-serif), "Libre Baskerville", Georgia, serif;
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 1.3;
+}
+
+.subtitle {
+  margin: 0 0 16px;
+  color: var(--secondary-text);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.menu {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.menuItem {
+  display: flex;
+  width: 100%;
+  min-height: 52px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  border: 1px solid var(--rule);
+  border-radius: 15px;
+  background: var(--surface);
+  color: var(--main-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.menuItem svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.dangerItem {
+  color: var(--danger);
+}
+
+.dangerItem svg {
+  color: var(--danger);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.field input {
+  min-height: 48px;
+  box-sizing: border-box;
+  padding: 0 12px;
+  border: 1px solid var(--rule);
+  border-radius: 13px;
+  background: var(--field-bg);
+  color: var(--main-text);
+  color-scheme: inherit;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.darkTheme .field input {
+  color-scheme: dark;
+}
+
+.hint {
+  margin: -6px 0 14px;
+  color: var(--secondary-text);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.members {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.member {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--main-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+}
+
+.member[aria-pressed="true"],
+.member[aria-checked="true"] {
+  border-color: var(--accent);
+  background: var(--selected);
+}
+
+.memberMark {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1.5px solid var(--secondary-text);
+  border-radius: 6px;
+}
+
+.member[aria-pressed="true"] .memberMark,
+.member[aria-checked="true"] .memberMark {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.secondary,
+.primary,
+.danger {
+  flex: 1;
+  min-height: 48px;
+  border-radius: 15px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.secondary {
+  border: 1px solid var(--rule);
+  background: var(--surface);
+  color: var(--main-text);
+}
+
+.primary {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.danger {
+  border: 1px solid var(--danger);
+  background: var(--danger-surface);
+  color: var(--danger);
+}
+
+.primary:disabled,
+.danger:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.error {
+  margin: 0 0 12px;
+  color: var(--danger);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.sheet :is(button, input):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The "More" trigger shown on chore cards. */
+.moreButton {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--more-border, rgb(137 212 208 / 30%));
+  border-radius: 14px;
+  background: var(--more-surface, rgb(16 47 57 / 55%));
+  color: var(--more-text, currentColor);
+  cursor: pointer;
+}
+
+.moreButton:focus-visible {
+  outline: 2px solid var(--more-ring, #7ae8da);
+  outline-offset: 2px;
+}
+
+.radioMark {
+  border-radius: 50%;
+}
