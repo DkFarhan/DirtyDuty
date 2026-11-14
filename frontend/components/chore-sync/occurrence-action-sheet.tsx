@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useId, useRef, useState, type CSSProperties } from "react"
+import { useEffect, useId, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { CalendarClock, Check, Ellipsis, RotateCcw, SkipForward, UsersRound, X } from "lucide-react"
 import { ApiError } from "@/lib/auth/api"
@@ -17,30 +17,16 @@ import styles from "./occurrence-action-sheet.module.css"
 type Theme = "dark" | "light"
 type Panel = "menu" | "move" | "skip" | "reassign"
 
-const MORE_COLORS: Record<Theme, CSSProperties> = {
-  dark: {
-    "--more-border": "rgb(137 212 208 / 30%)",
-    "--more-surface": "rgb(16 47 57 / 55%)",
-    "--more-text": "#cfe9e6",
-    "--more-ring": "#7ae8da",
-  } as CSSProperties,
-  light: {
-    "--more-border": "#c0dbd5",
-    "--more-surface": "rgb(255 255 255 / 80%)",
-    "--more-text": "#17383d",
-    "--more-ring": "#0d706c",
-  } as CSSProperties,
-}
-
-/** The "More" button on a chore card; opens the occurrence action sheet. */
+/**
+ * The quiet "More" icon button in a chore card's top-right corner; opens the occurrence action
+ * sheet. Its colours come from the card's screen: --more-text and --more-accent.
+ */
 export function OccurrenceMoreButton({
   title,
-  theme,
   className,
   onClick,
 }: {
   title: string
-  theme: Theme
   className?: string
   onClick: () => void
 }) {
@@ -51,7 +37,6 @@ export function OccurrenceMoreButton({
       className={`${styles.moreButton} ${className ?? ""}`}
       data-occurrence-more
       onClick={onClick}
-      style={MORE_COLORS[theme]}
       type="button"
     >
       <Ellipsis aria-hidden="true" size={20} />

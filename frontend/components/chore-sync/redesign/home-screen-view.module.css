@@ -19,6 +19,9 @@
   --orbit-center: #0d303a;
   --progress-fill: var(--accent);
   --danger-surface: color-mix(in srgb, var(--danger) 23%, transparent);
+  /* Quiet "More" icon button on occurrence cards. */
+  --more-text: var(--secondary-text);
+  --more-accent: var(--accent);
   position: relative;
   width: 100%;
   height: 100vh;
@@ -1160,18 +1163,27 @@
 }
 
 /* Single-occurrence actions. */
+/* Top-right corner, centred on the first line of the title (17px card padding + 8px title
+   margin + 15px half line = 40px; the 44px hit area starts 22px above that). */
 .cardMoreButton {
   position: absolute;
-  top: 12px;
-  right: 12px;
+  top: 18px;
+  right: 5px;
 }
 
+/* The OVERDUE badge sits above the title and pushes it down by its 24px height. */
+.cardWithActionsBadge .cardMoreButton {
+  top: 42px;
+}
+
+/* Wrap the title before the button's hit area (5px inset + 44px, less the 17px card padding). */
 .cardWithActions .choreTitle {
-  padding-right: 52px;
+  padding-right: 36px;
 }
 
+/* Centred on the 23px title line; the visual's right edge meets the row divider. */
 .upcomingMoreButton {
-  margin-top: -4px;
+  margin: -10px -4px 0 0;
 }
 
 .movedHint {

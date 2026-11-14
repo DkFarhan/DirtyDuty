@@ -501,7 +501,7 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
       ) : !options ? null : (
         <>
           <main
-            className={`flex-1 space-y-4 px-4 pt-4 ${isEditing ? "pb-36" : "pb-28"} ${designStyles.liveContent}`}
+            className={`flex-1 space-y-4 pt-4 ${isEditing ? "pb-36" : "pb-28"} ${designStyles.liveContent}`}
           >
             <section className={cn(groupClass, designStyles.liveCard)}>
               {

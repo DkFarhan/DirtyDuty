@@ -101,14 +101,15 @@ export function CategoryDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4"
+      className={`fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 ${designStyles.safeDialogBackdrop}`}
       role="presentation"
     >
       <section
         aria-labelledby={titleId}
         aria-modal="true"
         className={cn(
-          "max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-5 shadow-xl",
+          "w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl",
+          designStyles.safeDialog,
           designStyles.categoryDialog,
         )}
         ref={dialogRef}

@@ -31,6 +31,10 @@
   --upcoming-surface-alt: linear-gradient(145.794543deg, #102f39 10.569%, #0c2630 91.87%);
   --category-glass: rgb(25 67 76 / 92%);
   --upcoming-title: #f7f8f1;
+  /* Quiet "More" icon button on occurrence cards. */
+  --more-text: var(--body-text);
+  --more-accent: var(--accent);
+  --attention-accent: var(--accent);
   --upcoming-button: rgb(23 79 84 / 88%);
   --upcoming-button-text: #c2fcf4;
   --completed-border: rgb(62 119 109 / 30%);
@@ -81,6 +85,8 @@
   --attention-icon-glass: rgb(41 104 114 / 95%);
   --attention-body: #c0ddda;
   --attention-heading: #f9fffa;
+  /* The light-theme attention card is dark, so its accent is the hero's light accent. */
+  --attention-accent: #9efbe9;
   --attention-button: #10756f;
   --attention-button-text: #fff;
   --upcoming-border: rgb(192 218 213 / 85%);
@@ -464,6 +470,12 @@
   box-shadow: var(--attention-shadow);
 }
 
+/* The attention card has its own surface; the More button follows its text colours. */
+.attentionCard {
+  --more-text: var(--attention-body);
+  --more-accent: var(--attention-accent);
+}
+
 .attentionAccent {
   position: absolute;
   top: 23px;
@@ -747,12 +759,24 @@
   background-image: url("./assets/my-chores/light-category-6.svg");
 }
 
-.upcomingTitle {
+/* Title row: title, then the status badge or priority dot at the right end. */
+.upcomingHeading {
   position: absolute;
   top: 13px;
+  right: 15px;
   left: 63px;
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.upcomingTitle {
   overflow: hidden;
-  max-width: calc(100% - 112px);
+  min-width: 0;
+  /* Ends 49px from the card edge, as before, when nothing sits beside it. */
+  max-width: calc(100% - 34px);
+  flex: 0 1 auto;
   margin: 0;
   color: var(--upcoming-title);
   font-size: 17px;
@@ -763,20 +787,18 @@
 }
 
 .priorityIndicator {
-  position: absolute;
-  top: 26px;
-  right: 22px;
   display: block;
   width: 7px;
   height: 7px;
+  flex: 0 0 auto;
+  margin: 13px 7px 0 auto;
   background: url("./assets/my-chores/dark-priority.svg") no-repeat;
 }
 
 .upcomingStatus {
-  position: absolute;
-  top: 14px;
-  right: 15px;
   max-width: 100px;
+  flex: 0 0 auto;
+  margin: 1px 0 0 auto;
   overflow: hidden;
   padding: 3px 8px;
   border-radius: 10px;
@@ -1413,31 +1435,39 @@
   }
 }
 
-/* Single-occurrence actions. */
+/* Single-occurrence actions: a quiet icon button in the card's top-right corner. */
 .upcomingMoreButton {
   position: absolute;
-  top: 89px;
-  right: 125px;
+  top: 2px;
+  right: 3px;
 }
 
-.upcomingMoreButtonSolo {
-  position: absolute;
-  top: 89px;
-  right: 15px;
+/* The heading row stops 4px short of the button's 44px hit area. */
+.upcomingCardWithActions .upcomingHeading {
+  right: 51px;
 }
 
-.upcomingCardWithActions .upcomingAssignees {
-  max-width: calc(100% - 186px);
+.upcomingCardWithActions .upcomingTitle {
+  max-width: none;
 }
 
+.upcomingCardWithActions .priorityIndicator {
+  margin-right: 0;
+}
+
+/* Corner of the OVERDUE row; the decorative icon moves left to make room. */
 .attentionMoreButton {
   position: absolute;
-  top: 168px;
-  right: 16px;
+  top: 17px;
+  right: 12px;
 }
 
-.attentionCardWithActions .attentionCompleteButton {
-  right: 68px;
+.attentionCardWithActions .attentionIconGlass {
+  right: 60px;
+}
+
+.attentionCardWithActions .attentionBath {
+  right: 72px;
 }
 
 .movedHint {
