@@ -1775,6 +1775,11 @@
   padding: 0 0 96px;
 }
 
+/* The live header sits at the top of the screen, so it extends under the iPhone status bar. */
+.liveRoot > .header {
+  padding-top: var(--app-safe-top);
+}
+
 .settingsPage {
   --font-libre-baskerville: var(--font-household-serif);
 }
@@ -1831,6 +1836,18 @@
 .choreForm.dark :global(.bg-teal-600[aria-pressed="true"]) {
   background-color: var(--accent) !important;
   color: var(--button-text) !important;
+}
+
+/* Centred dialogs (category create/edit and delete): keep their 16px margin clear of the iPhone
+   status bar, home indicator and landscape side insets, and scroll inside when taller. */
+.safeDialogBackdrop {
+  padding: calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right))
+    calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
+}
+
+.safeDialog {
+  max-height: calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow-y: auto;
 }
 
 /* Household settings: chore categories. */

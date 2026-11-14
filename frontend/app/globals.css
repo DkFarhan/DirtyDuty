@@ -445,6 +445,17 @@
   * {
     @apply border-border outline-ring/50;
   }
+  /* Canvas colour behind the iOS status bar, landscape side insets and rubber-band overscroll.
+     Matches the theme-color values in app/layout.tsx and the top of the app screens. */
+  html {
+    /* Top safe-area inset used by the app screens. The app shell sets it to 0px below the
+       household refresh banner, which already clears the status bar itself. */
+    --app-safe-top: env(safe-area-inset-top);
+    background-color: #edf8f4;
+  }
+  html.dark {
+    background-color: #061923;
+  }
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;

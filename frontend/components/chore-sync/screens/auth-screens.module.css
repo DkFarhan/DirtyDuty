@@ -17,7 +17,7 @@
   --auth-primary-foreground: #fff;
   min-height: 100vh;
   min-height: 100dvh;
-  padding: max(18px, env(safe-area-inset-top)) 20px max(30px, env(safe-area-inset-bottom));
+  padding: calc(18px + var(--app-safe-top)) 20px max(30px, env(safe-area-inset-bottom));
   background:
     radial-gradient(ellipse at 92% 8%, rgb(179 222 208 / 42%), transparent 31rem),
     radial-gradient(ellipse at -8% 72%, rgb(194 224 220 / 28%), transparent 34rem),
@@ -50,9 +50,7 @@
 
 .shell {
   width: min(100%, 620px);
-  min-height: calc(
-    100dvh - max(18px, env(safe-area-inset-top)) - max(30px, env(safe-area-inset-bottom))
-  );
+  min-height: calc(100dvh - (18px + var(--app-safe-top)) - max(30px, env(safe-area-inset-bottom)));
   margin: 0 auto;
   padding-bottom: 12px;
 }

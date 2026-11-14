@@ -42,18 +42,13 @@
   backdrop-filter: blur(5px);
 }
 
-@media (min-width: 640px) {
-  .backdrop {
-    align-items: center;
-  }
-}
-
 .sheet {
   position: relative;
   display: flex;
   flex-direction: column;
   width: min(100%, 430px);
-  max-height: min(88dvh, 760px);
+  /* Bottom sheet on phones: never taller than the space below the status bar. */
+  max-height: min(88dvh, 760px, calc(100dvh - 16px - env(safe-area-inset-top)));
   overflow-y: auto;
   padding: 11px 18px max(23px, env(safe-area-inset-bottom));
   border: 1px solid var(--border);
@@ -61,6 +56,23 @@
   background: var(--sheet-bg);
   box-shadow: 0 20px 70px rgb(0 10 16 / 32%);
   color: var(--main-text);
+}
+
+/* Centred on wide screens (and landscape phones): keep clear of every safe-area inset. */
+@media (min-width: 640px) {
+  .backdrop {
+    align-items: center;
+    padding: calc(16px + env(safe-area-inset-top)) max(9px, env(safe-area-inset-right))
+      calc(16px + env(safe-area-inset-bottom)) max(9px, env(safe-area-inset-left));
+  }
+
+  .sheet {
+    max-height: min(
+      88dvh,
+      760px,
+      calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom))
+    );
+  }
 }
 
 .handle {
@@ -289,23 +301,64 @@
 }
 
 /* The "More" trigger shown on chore cards. */
+/* Quiet icon button: a 44px hit area around a 36px visual (::before), no border, muted icon.
+   The screen sets --more-text and --more-accent for its card surfaces. */
 .moreButton {
+  position: relative;
   display: grid;
   width: 44px;
   height: 44px;
   flex: 0 0 auto;
   place-items: center;
   padding: 0;
-  border: 1px solid var(--more-border, rgb(137 212 208 / 30%));
-  border-radius: 14px;
-  background: var(--more-surface, rgb(16 47 57 / 55%));
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
   color: var(--more-text, currentColor);
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 120ms ease;
+}
+
+.moreButton::before {
+  position: absolute;
+  inset: 4px;
+  border-radius: 11px;
+  background: transparent;
+  content: "";
+  transition: background-color 120ms ease;
+}
+
+.moreButton > svg {
+  position: relative;
 }
 
 .moreButton:focus-visible {
-  outline: 2px solid var(--more-ring, #7ae8da);
-  outline-offset: 2px;
+  outline: none;
+  color: var(--more-accent, currentColor);
+}
+
+.moreButton:focus-visible::before {
+  background: color-mix(in srgb, var(--more-accent, currentColor) 12%, transparent);
+  outline: 2px solid var(--more-accent, currentColor);
+  outline-offset: 0;
+}
+
+@media (hover: hover) {
+  .moreButton:hover {
+    color: var(--more-accent, currentColor);
+  }
+
+  .moreButton:hover::before {
+    background: color-mix(in srgb, var(--more-accent, currentColor) 12%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .moreButton,
+  .moreButton::before {
+    transition: none;
+  }
 }
 
 .radioMark {

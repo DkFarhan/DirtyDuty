@@ -13,7 +13,7 @@
   --page-primary-foreground: #fff;
   min-height: 100vh;
   min-height: 100dvh;
-  padding: max(20px, env(safe-area-inset-top)) 24px max(32px, env(safe-area-inset-bottom));
+  padding: calc(20px + var(--app-safe-top)) 24px max(32px, env(safe-area-inset-bottom));
   background:
     radial-gradient(ellipse at 91% 8%, rgb(179 222 208 / 43%), transparent 29rem),
     linear-gradient(126deg, #edf8f4 8%, #e2f1ed 54%, #f5faf6 96%);
@@ -42,9 +42,7 @@
 .shell {
   display: flex;
   width: min(100%, 840px);
-  min-height: calc(
-    100dvh - max(20px, env(safe-area-inset-top)) - max(32px, env(safe-area-inset-bottom))
-  );
+  min-height: calc(100dvh - (20px + var(--app-safe-top)) - max(32px, env(safe-area-inset-bottom)));
   flex-direction: column;
   margin-inline: auto;
 }
@@ -569,7 +567,7 @@
 .emailPage {
   display: flex;
   flex-direction: column;
-  padding: max(24px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
+  padding: calc(24px + var(--app-safe-top)) 20px max(24px, env(safe-area-inset-bottom));
 }
 
 .emailShell {

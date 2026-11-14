@@ -27,11 +27,13 @@ export { metadata }
 export const viewport: Viewport = {
   colorScheme: "light dark",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#0d9488" },
-    { media: "(prefers-color-scheme: dark)", color: "#181a20" },
+    { media: "(prefers-color-scheme: light)", color: "#edf8f4" },
+    { media: "(prefers-color-scheme: dark)", color: "#061923" },
   ],
   width: "device-width",
   initialScale: 1,
+  // Draw under the iPhone status bar and home indicator; screens add env(safe-area-inset-*).
+  viewportFit: "cover",
 }
 
 export default function RootLayout({
@@ -48,7 +50,7 @@ export default function RootLayout({
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){var t;try{t=localStorage.getItem("dirtyduty-theme")}catch{}var d=t==="dark"||(t!=="light"&&window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches);var r=document.documentElement;r.classList.toggle("dark",d);r.classList.toggle("light",!d);r.dataset.theme=d?"dark":"light";r.style.colorScheme=d?"dark":"light";var c=d?"#181a20":"#0d9488";document.querySelectorAll('meta[name="theme-color"]').forEach(function(m){m.content=c})})()`,
+            __html: `(function(){var t;try{t=localStorage.getItem("dirtyduty-theme")}catch{}var d=t==="dark"||(t!=="light"&&window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches);var r=document.documentElement;r.classList.toggle("dark",d);r.classList.toggle("light",!d);r.dataset.theme=d?"dark":"light";r.style.colorScheme=d?"dark":"light";var c=d?"#061923":"#edf8f4";document.querySelectorAll('meta[name="theme-color"]').forEach(function(m){m.content=c})})()`,
           }}
         />
       </head>

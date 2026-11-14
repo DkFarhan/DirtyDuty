@@ -260,14 +260,14 @@ export function CategoryManager({ householdId }: { householdId: string }) {
 
       {deleteTarget && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4"
+          className={`fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 ${designStyles.safeDialogBackdrop}`}
           role="presentation"
         >
           <section
             aria-describedby="delete-category-message"
             aria-labelledby="delete-category-title"
             aria-modal="true"
-            className={`w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl ${designStyles.categoryDialog}`}
+            className={`w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl ${designStyles.safeDialog} ${designStyles.categoryDialog}`}
             ref={deleteDialogRef}
             role="dialog"
             tabIndex={-1}

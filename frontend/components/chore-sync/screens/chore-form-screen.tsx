@@ -501,7 +501,7 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
       ) : !options ? null : (
         <>
           <main
-            className={`flex-1 space-y-4 px-4 pt-4 ${isEditing ? "pb-36" : "pb-28"} ${designStyles.liveContent}`}
+            className={`flex-1 space-y-4 pt-4 ${isEditing ? "pb-36" : "pb-28"} ${designStyles.liveContent}`}
           >
             <section className={cn(groupClass, designStyles.liveCard)}>
               {
@@ -1224,7 +1224,7 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
             )}
           </main>
           <div
-            className={`fixed bottom-0 z-40 w-full border-t border-slate-100 bg-white/95 p-3 pb-[max(.75rem,env(safe-area-inset-bottom))] backdrop-blur ${`left-0 max-w-none ${designStyles.liveFormFooter}`}`}
+            className={`fixed bottom-0 z-40 w-full border-t border-slate-100 bg-white/95 p-3 pr-[max(.75rem,env(safe-area-inset-right))] pb-[max(.75rem,env(safe-area-inset-bottom))] pl-[max(.75rem,env(safe-area-inset-left))] backdrop-blur ${`left-0 max-w-none ${designStyles.liveFormFooter}`}`}
           >
             {isEditing && (
               <p className="mb-2 text-center text-xs text-slate-500">

@@ -107,14 +107,12 @@ function ChoreCard({
   chore,
   onComplete,
   onOpenActions,
-  theme,
   attention = false,
   today = false,
 }: {
   chore: HomeChoreViewModel
   onComplete: (choreId: string) => void
   onOpenActions?: (choreId: string) => void
-  theme: HomeVisualTheme
   attention?: boolean
   today?: boolean
 }) {
@@ -124,28 +122,20 @@ function ChoreCard({
     chore.status !== "CANCELLED" &&
     chore.status !== "SKIPPED"
   const showActions = Boolean(chore.hasActions && onOpenActions)
+  const showBadge = Boolean(chore.overdue || (attention && chore.status === undefined))
   const cardClassName = [
     styles.attentionCard,
     today && styles.todayCard,
     today && chore.overdue && chore.status === "PENDING" && styles.todayOverdueCard,
     showActions && styles.cardWithActions,
+    showActions && showBadge && styles.cardWithActionsBadge,
     chore.status === "SKIPPED" && styles.skippedCard,
   ]
     .filter(Boolean)
     .join(" ")
   return (
     <article className={cardClassName} data-chore-id={chore.id} data-occurrence-card={chore.id}>
-      {showActions && (
-        <OccurrenceMoreButton
-          className={styles.cardMoreButton}
-          onClick={() => onOpenActions?.(chore.id)}
-          theme={theme}
-          title={chore.title}
-        />
-      )}
-      {(chore.overdue || (attention && chore.status === undefined)) && (
-        <span className={styles.overdueBadge}>OVERDUE</span>
-      )}
+      {showBadge && <span className={styles.overdueBadge}>OVERDUE</span>}
       <h3 className={styles.choreTitle}>{chore.title}</h3>
       <p className={styles.choreMeta}>
         {chore.category}
@@ -158,6 +148,13 @@ function ChoreCard({
           </>
         )}
       </p>
+      {showActions && (
+        <OccurrenceMoreButton
+          className={styles.cardMoreButton}
+          onClick={() => onOpenActions?.(chore.id)}
+          title={chore.title}
+        />
+      )}
       {chore.durationLabel && (
         <p className={styles.duration}>
           <span aria-hidden="true" className={styles.durationClock} />
@@ -452,7 +449,6 @@ export function HomeScreenView({
                       key={chore.id}
                       onComplete={onCompleteChore}
                       onOpenActions={onOpenChoreActions}
-                      theme={theme}
                     />
                   ))}
                 </div>
@@ -482,7 +478,6 @@ export function HomeScreenView({
                       key={chore.id}
                       onComplete={onCompleteChore}
                       onOpenActions={onOpenChoreActions}
-                      theme={theme}
                       today
                     />
                   ))}
@@ -536,7 +531,6 @@ export function HomeScreenView({
                             <OccurrenceMoreButton
                               className={styles.upcomingMoreButton}
                               onClick={() => onOpenChoreActions(chore.id)}
-                              theme={theme}
                               title={chore.title}
                             />
                           )}

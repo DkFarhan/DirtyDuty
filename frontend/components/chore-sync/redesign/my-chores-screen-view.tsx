@@ -95,20 +95,23 @@ function UpcomingCard({
         className={`${styles.categoryGlyph} ${styles[`category${chore.categoryIcon}`]}`}
         data-theme={theme}
       />
-      <h3 className={styles.upcomingTitle}>{chore.title}</h3>
-      {chore.overdue && <span className={styles.upcomingStatus}>Overdue</span>}
-      {chore.status === "CANCELLED" && (
-        <span className={`${styles.upcomingStatus} ${styles.cancelledStatus}`}>Cancelled</span>
-      )}
-      {chore.status === "COMPLETED" && (
-        <span className={`${styles.upcomingStatus} ${styles.cancelledStatus}`}>Completed</span>
-      )}
-      {chore.priority &&
-        !chore.overdue &&
-        chore.status !== "CANCELLED" &&
-        chore.status !== "COMPLETED" && (
-          <span aria-hidden="true" className={styles.priorityIndicator} />
+      {/* The title shrinks first, so it truncates before the status badge and the More button. */}
+      <div className={styles.upcomingHeading}>
+        <h3 className={styles.upcomingTitle}>{chore.title}</h3>
+        {chore.overdue && <span className={styles.upcomingStatus}>Overdue</span>}
+        {chore.status === "CANCELLED" && (
+          <span className={`${styles.upcomingStatus} ${styles.cancelledStatus}`}>Cancelled</span>
         )}
+        {chore.status === "COMPLETED" && (
+          <span className={`${styles.upcomingStatus} ${styles.cancelledStatus}`}>Completed</span>
+        )}
+        {chore.priority &&
+          !chore.overdue &&
+          chore.status !== "CANCELLED" &&
+          chore.status !== "COMPLETED" && (
+            <span aria-hidden="true" className={styles.priorityIndicator} />
+          )}
+      </div>
       <p className={styles.upcomingCategory}>{chore.category}</p>
       <p className={styles.upcomingDate}>
         {chore.dateLabel}
@@ -119,17 +122,16 @@ function UpcomingCard({
           </>
         )}
       </p>
-      <span aria-hidden="true" className={styles.upcomingDivider} />
-      <p className={styles.upcomingAssignees}>Assigned to {chore.assignedTo}</p>
-      {chore.durationLabel && <p className={styles.upcomingDuration}>{chore.durationLabel}</p>}
       {showActions && (
         <OccurrenceMoreButton
-          className={canComplete ? styles.upcomingMoreButton : styles.upcomingMoreButtonSolo}
+          className={styles.upcomingMoreButton}
           onClick={() => onOpenActions?.(chore.id)}
-          theme={theme}
           title={chore.title}
         />
       )}
+      <span aria-hidden="true" className={styles.upcomingDivider} />
+      <p className={styles.upcomingAssignees}>Assigned to {chore.assignedTo}</p>
+      {chore.durationLabel && <p className={styles.upcomingDuration}>{chore.durationLabel}</p>}
       {canComplete && (
         <button
           aria-busy={completing}
@@ -170,14 +172,6 @@ function AttentionCard({
       data-occurrence-card={chore.id}
       id={`assignment-${chore.id}`}
     >
-      {showActions && (
-        <OccurrenceMoreButton
-          className={styles.attentionMoreButton}
-          onClick={() => onOpenActions?.(chore.id)}
-          theme={theme}
-          title={chore.title}
-        />
-      )}
       <span className={styles.attentionAccent} />
       <span className={styles.overdueBadge}>OVERDUE</span>
       <span className={styles.attentionIconGlass} />
@@ -194,6 +188,13 @@ function AttentionCard({
           </>
         )}
       </p>
+      {showActions && (
+        <OccurrenceMoreButton
+          className={styles.attentionMoreButton}
+          onClick={() => onOpenActions?.(chore.id)}
+          title={chore.title}
+        />
+      )}
       <span aria-hidden="true" className={styles.attentionClock} data-theme={theme} />
       {chore.durationLabel && <p className={styles.attentionDuration}>{chore.durationLabel}</p>}
       <p className={styles.attentionAssignees}>Assigned to {chore.assignedTo}</p>

@@ -84,6 +84,8 @@ describe("ChoreFormScreen integration", () => {
     expect(await screen.findByRole("heading", { name: "Create a chore" })).toBeTruthy()
     expect(screen.getByText("Real household")).toBeTruthy()
     expect(await screen.findByRole("option", { name: /Kitchen/ })).toBeTruthy()
+    // The form cards use the same .liveContent gutters as the hero card, with no extra padding.
+    expect(screen.getByRole("main").className).not.toMatch(/(^|\s)px-/)
 
     fireEvent.change(screen.getByLabelText("Category"), {
       target: { value: "category-1" },

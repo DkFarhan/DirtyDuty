@@ -261,13 +261,18 @@ function ScreenRouter() {
   }
 }
 
-function HouseholdRefreshNotice() {
-  const { error, refresh, status } = useHouseholds()
-  if (!error || status === "loading" || status === "error") return null
+function useHouseholdRefreshNoticeVisible() {
+  const { error, status } = useHouseholds()
+  return Boolean(error) && status !== "loading" && status !== "error"
+}
+
+export function HouseholdRefreshNotice() {
+  const { error, refresh } = useHouseholds()
+  if (!useHouseholdRefreshNoticeVisible()) return null
 
   return (
     <div
-      className="flex items-center gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-900"
+      className="flex items-center gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2 pt-[calc(0.5rem+env(safe-area-inset-top))] text-xs text-amber-900"
       role="alert"
     >
       <p className="flex-1">{error}</p>
@@ -282,6 +287,27 @@ function HouseholdRefreshNotice() {
   )
 }
 
+/**
+ * The refresh banner already clears the status bar, so the screen below it must not add the top
+ * inset again. Always rendered (display: contents) so toggling the banner never remounts the screen.
+ */
+export function ScreenTopInset({ children }: { children: React.ReactNode }) {
+  const noticeVisible = useHouseholdRefreshNoticeVisible()
+  return (
+    <div
+      data-testid="screen-top-inset"
+      style={
+        {
+          display: "contents",
+          ...(noticeVisible ? { "--app-safe-top": "0px" } : {}),
+        } as React.CSSProperties
+      }
+    >
+      {children}
+    </div>
+  )
+}
+
 export function AppShell({ initialScreen = "login" }: { initialScreen?: Screen }) {
   return (
     <ThemeProvider>
@@ -290,11 +316,17 @@ export function AppShell({ initialScreen = "login" }: { initialScreen?: Screen }
           <HouseholdProvider>
             <ChoreSyncProvider initialScreen={initialScreen}>
               <PushSubscriptionHealthProvider>
-                <div className="min-h-screen bg-slate-200 flex items-start justify-center">
-                  <div className="w-full bg-white min-h-screen relative overflow-hidden max-w-none shadow-none">
+                {/* Each screen paints its own background. The wrapper uses the theme-color canvas
+                    so any edge it shows (landscape notch insets, overscroll) matches the screens,
+                    and its side padding keeps landscape content clear of the notch now that the
+                    viewport covers the whole display. */}
+                <div className="min-h-screen flex items-start justify-center bg-[#edf8f4] dark:bg-[#061923]">
+                  <div className="w-full min-h-screen relative overflow-hidden max-w-none shadow-none pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
                     <AppLaunchGate>
                       <HouseholdRefreshNotice />
-                      <ScreenRouter />
+                      <ScreenTopInset>
+                        <ScreenRouter />
+                      </ScreenTopInset>
                     </AppLaunchGate>
                   </div>
                 </div>

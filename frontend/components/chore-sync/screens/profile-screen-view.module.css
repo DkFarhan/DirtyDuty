@@ -169,8 +169,8 @@
 .profileHeader {
   position: relative;
   overflow: hidden;
-  flex: 0 0 173px;
-  padding: calc(18px + env(safe-area-inset-top)) 24px 0;
+  flex: 0 0 calc(173px + var(--app-safe-top));
+  padding: calc(18px + var(--app-safe-top)) 24px 0;
   background: linear-gradient(139.1056deg, #08202b 8.871%, #10434f 50.806%, #0a2834 89.516%);
 }
 
@@ -598,10 +598,10 @@
 .destinationHeader {
   position: relative;
   display: flex;
-  min-height: 92px;
+  min-height: calc(92px + var(--app-safe-top));
   align-items: center;
   gap: 14px;
-  padding: max(24px, env(safe-area-inset-top)) 20px 14px;
+  padding: calc(24px + var(--app-safe-top)) 20px 14px;
   border-bottom: 1px solid var(--border);
   background: linear-gradient(180deg, rgba(54, 105, 101, 0.1), transparent);
 }
@@ -659,7 +659,7 @@
 .route[data-destination="edit-profile"] .destinationHeader {
   min-height: 0;
   align-items: flex-start;
-  padding: 25px 19px 16px;
+  padding: calc(25px + var(--app-safe-top)) 19px 16px;
 }
 
 .route[data-destination="edit-profile"] .destinationHeadingGroup > .destinationEyebrow {
@@ -941,7 +941,7 @@
 }
 
 .route[data-destination="appearance"] .destinationHeader {
-  min-height: 144px;
+  min-height: calc(144px + var(--app-safe-top));
   align-items: flex-start;
   padding: 25px 20px 0;
   border-color: #365863;
@@ -1052,7 +1052,7 @@
 }
 
 .route[data-destination="privacy-security"] .destinationHeader {
-  min-height: 153px;
+  min-height: calc(153px + var(--app-safe-top));
   align-items: flex-start;
   padding: 20px 20px 0;
   border-color: #31535d;
@@ -1512,7 +1512,7 @@
 }
 
 .route[data-destination="notifications"] .destinationHeader {
-  min-height: 155px;
+  min-height: calc(155px + var(--app-safe-top));
   align-items: flex-start;
   padding: 24px 20px 0;
   border-color: #31535d;
@@ -1778,7 +1778,7 @@
 }
 
 .route[data-destination="help-support"] .destinationHeader {
-  min-height: 82px;
+  min-height: calc(82px + var(--app-safe-top));
   align-items: center;
   gap: 12px;
   padding: 0 18px;
@@ -3071,7 +3071,7 @@
 
 .route[data-destination="appearance"] .destinationHeader {
   align-items: flex-start;
-  padding: 25px 19px 0;
+  padding: calc(25px + var(--app-safe-top)) 19px 0;
 }
 
 .route[data-destination="appearance"] .destinationHeadingGroup .destinationEyebrow {
@@ -3080,7 +3080,7 @@
 
 .route[data-destination="privacy-security"] .destinationHeader {
   align-items: flex-start;
-  padding: 20px 18px 0;
+  padding: calc(20px + var(--app-safe-top)) 18px 0;
 }
 
 .route[data-destination="privacy-security"] .destinationHeadingGroup .destinationEyebrow {
@@ -3089,7 +3089,7 @@
 
 .route[data-destination="notifications"] .destinationHeader {
   align-items: flex-start;
-  padding: 24px 18px 0;
+  padding: calc(24px + var(--app-safe-top)) 18px 0;
 }
 
 .route[data-destination="notifications"] .destinationHeadingGroup .destinationEyebrow {
@@ -3121,7 +3121,7 @@
 
 .route[data-destination="help-support"] .destinationHeader {
   align-items: flex-start;
-  padding: 15px 18px 7px;
+  padding: calc(15px + var(--app-safe-top)) 18px 7px;
 }
 
 .route[data-destination="help-support"] .destinationHeadingGroup .destinationEyebrow {
@@ -3147,8 +3147,8 @@
 
   .profileHeader {
     box-sizing: border-box;
-    flex-basis: 212px;
-    padding: 30px max(24px, calc((100% - 820px) / 2)) 24px;
+    flex-basis: calc(212px + var(--app-safe-top));
+    padding: calc(30px + var(--app-safe-top)) max(24px, calc((100% - 820px) / 2)) 24px;
   }
 
   .profileHeader .accountEyebrow {
@@ -3305,7 +3305,7 @@
   .route[data-destination="privacy-security"] .destinationHeader {
     box-sizing: border-box;
     min-height: 0;
-    padding: calc(16px + env(safe-area-inset-top)) 19px 16px;
+    padding: calc(16px + var(--app-safe-top)) 19px 16px;
   }
 
   .route[data-destination="edit-profile"] .destinationHeadingGroup > .destinationEyebrow,

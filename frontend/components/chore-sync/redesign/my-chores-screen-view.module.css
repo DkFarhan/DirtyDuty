@@ -31,6 +31,10 @@
   --upcoming-surface-alt: linear-gradient(145.794543deg, #102f39 10.569%, #0c2630 91.87%);
   --category-glass: rgb(25 67 76 / 92%);
   --upcoming-title: #f7f8f1;
+  /* Quiet "More" icon button on occurrence cards. */
+  --more-text: var(--body-text);
+  --more-accent: var(--accent);
+  --attention-accent: var(--accent);
   --upcoming-button: rgb(23 79 84 / 88%);
   --upcoming-button-text: #c2fcf4;
   --completed-border: rgb(62 119 109 / 30%);
@@ -81,6 +85,8 @@
   --attention-icon-glass: rgb(41 104 114 / 95%);
   --attention-body: #c0ddda;
   --attention-heading: #f9fffa;
+  /* The light-theme attention card is dark, so its accent is the hero's light accent. */
+  --attention-accent: #9efbe9;
   --attention-button: #10756f;
   --attention-button-text: #fff;
   --upcoming-border: rgb(192 218 213 / 85%);
@@ -148,7 +154,7 @@
 }
 
 .headerPlane {
-  top: 93px;
+  top: calc(93px + var(--app-safe-top));
   left: 0;
   width: 100%;
   height: 218px;
@@ -162,7 +168,7 @@
 }
 
 .headerBloom {
-  top: 115px;
+  top: calc(115px + var(--app-safe-top));
   right: -26px;
   width: 178px;
   height: 166px;
@@ -185,7 +191,7 @@
 }
 
 .headerFade {
-  top: 217px;
+  top: calc(217px + var(--app-safe-top));
   left: 0;
   width: 100%;
   height: 95px;
@@ -201,7 +207,7 @@
 }
 
 .lightTheme .headerPlane {
-  top: 34px;
+  top: calc(34px + var(--app-safe-top));
   height: 337px;
   background: linear-gradient(
     180deg,
@@ -214,7 +220,7 @@
 }
 
 .lightTheme .headerBloom {
-  top: 96px;
+  top: calc(96px + var(--app-safe-top));
   right: -31px;
   width: clamp(205px, calc(17.5vw + 136.75px), 212px);
   height: 210px;
@@ -247,7 +253,7 @@
 }
 
 .header {
-  padding: 109px 25px 0;
+  padding: calc(109px + var(--app-safe-top)) 25px 0;
 }
 
 .eyebrow,
@@ -462,6 +468,12 @@
   border-radius: 24px;
   background: var(--attention-surface);
   box-shadow: var(--attention-shadow);
+}
+
+/* The attention card has its own surface; the More button follows its text colours. */
+.attentionCard {
+  --more-text: var(--attention-body);
+  --more-accent: var(--attention-accent);
 }
 
 .attentionAccent {
@@ -747,12 +759,24 @@
   background-image: url("./assets/my-chores/light-category-6.svg");
 }
 
-.upcomingTitle {
+/* Title row: title, then the status badge or priority dot at the right end. */
+.upcomingHeading {
   position: absolute;
   top: 13px;
+  right: 15px;
   left: 63px;
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.upcomingTitle {
   overflow: hidden;
-  max-width: calc(100% - 112px);
+  min-width: 0;
+  /* Ends 49px from the card edge, as before, when nothing sits beside it. */
+  max-width: calc(100% - 34px);
+  flex: 0 1 auto;
   margin: 0;
   color: var(--upcoming-title);
   font-size: 17px;
@@ -763,20 +787,18 @@
 }
 
 .priorityIndicator {
-  position: absolute;
-  top: 26px;
-  right: 22px;
   display: block;
   width: 7px;
   height: 7px;
+  flex: 0 0 auto;
+  margin: 13px 7px 0 auto;
   background: url("./assets/my-chores/dark-priority.svg") no-repeat;
 }
 
 .upcomingStatus {
-  position: absolute;
-  top: 14px;
-  right: 15px;
   max-width: 100px;
+  flex: 0 0 auto;
+  margin: 1px 0 0 auto;
   overflow: hidden;
   padding: 3px 8px;
   border-radius: 10px;
@@ -1355,28 +1377,28 @@
 
 @media (max-width: 699px) {
   .header {
-    padding-top: calc(24px + env(safe-area-inset-top));
+    padding-top: calc(24px + var(--app-safe-top));
   }
 
   .headerPlane {
-    top: calc(8px + env(safe-area-inset-top));
+    top: calc(8px + var(--app-safe-top));
   }
 
   .headerBloom {
-    top: calc(30px + env(safe-area-inset-top));
+    top: calc(30px + var(--app-safe-top));
   }
 
   .headerFade,
   .lightTheme .headerFade {
-    top: calc(132px + env(safe-area-inset-top));
+    top: calc(132px + var(--app-safe-top));
   }
 
   .lightTheme .headerPlane {
-    top: calc(-51px + env(safe-area-inset-top));
+    top: calc(-51px + var(--app-safe-top));
   }
 
   .lightTheme .headerBloom {
-    top: calc(11px + env(safe-area-inset-top));
+    top: calc(11px + var(--app-safe-top));
   }
 }
 
@@ -1413,31 +1435,39 @@
   }
 }
 
-/* Single-occurrence actions. */
+/* Single-occurrence actions: a quiet icon button in the card's top-right corner. */
 .upcomingMoreButton {
   position: absolute;
-  top: 89px;
-  right: 125px;
+  top: 2px;
+  right: 3px;
 }
 
-.upcomingMoreButtonSolo {
-  position: absolute;
-  top: 89px;
-  right: 15px;
+/* The heading row stops 4px short of the button's 44px hit area. */
+.upcomingCardWithActions .upcomingHeading {
+  right: 51px;
 }
 
-.upcomingCardWithActions .upcomingAssignees {
-  max-width: calc(100% - 186px);
+.upcomingCardWithActions .upcomingTitle {
+  max-width: none;
 }
 
+.upcomingCardWithActions .priorityIndicator {
+  margin-right: 0;
+}
+
+/* Corner of the OVERDUE row; the decorative icon moves left to make room. */
 .attentionMoreButton {
   position: absolute;
-  top: 168px;
-  right: 16px;
+  top: 17px;
+  right: 12px;
 }
 
-.attentionCardWithActions .attentionCompleteButton {
-  right: 68px;
+.attentionCardWithActions .attentionIconGlass {
+  right: 60px;
+}
+
+.attentionCardWithActions .attentionBath {
+  right: 72px;
 }
 
 .movedHint {

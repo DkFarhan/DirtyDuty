@@ -272,6 +272,35 @@ describe("single-occurrence actions on Home and My Chores", () => {
     ).toEqual(["Move to another day"])
   })
 
+  it("puts More after the title block and before Complete on Home and My Chores cards", async () => {
+    const pending = chore({ title: "Water plants" })
+    serve({ dashboard: dashboardWith([pending]), upcoming: [pending] })
+    await startAtHome()
+
+    const expectCornerOrder = async (completeName: string) => {
+      const more = await screen.findByRole("button", { name: "More actions for Water plants" })
+      const card = more.closest("[data-occurrence-card]") as HTMLElement
+      const title = within(card).getByRole("heading", { name: "Water plants" })
+      const complete = within(card).getByRole("button", { name: completeName })
+      const follows = Node.DOCUMENT_POSITION_FOLLOWING
+      // Reading and focus order: title, category and date, then More, then Complete.
+      expect(title.compareDocumentPosition(more) & follows).toBeTruthy()
+      expect(more.compareDocumentPosition(complete) & follows).toBeTruthy()
+      expect(more.getAttribute("aria-haspopup")).toBe("dialog")
+
+      fireEvent.click(more)
+      expect(screen.getByRole("dialog", { name: "Water plants" })).toBeTruthy()
+      fireEvent.keyDown(document, { key: "Escape" })
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+      await waitFor(() => expect(document.activeElement).toBe(more))
+    }
+
+    await expectCornerOrder("Mark complete")
+    fireEvent.click(screen.getByRole("button", { name: "My Chores" }))
+    expect(await screen.findByRole("heading", { name: "My chores." })).toBeTruthy()
+    await expectCornerOrder("Complete Water plants")
+  })
+
   it("removes a chore reassigned away from My Chores at once and refreshes Home", async () => {
     const pending = chore()
     const response = deferred()
