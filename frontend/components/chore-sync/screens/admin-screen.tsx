@@ -14,6 +14,7 @@ import { useHouseholds } from "@/lib/household/household-context"
 import { householdChoreResource, useDataSync } from "@/lib/data-sync/data-sync-context"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { describeRecurrenceRule } from "@/lib/household/recurrence"
 import { useDialogFocus } from "../use-dialog-focus"
 import {
   HouseholdLiveDesignHeader,
@@ -143,34 +144,6 @@ export function AdminScreen({
       busyChores.current.delete(operationKey)
       setBusyChoreId((current) => (current === operationKey ? null : current))
     }
-  }
-
-  const describeRecurrence = (rule: string | undefined) => {
-    if (!rule) return "No schedule"
-    if (rule === "FREQ=ONCE") return "One time"
-    const fields = Object.fromEntries(
-      rule.split(";").map((field) => {
-        const [key, value] = field.split("=")
-        return [key, value]
-      }),
-    )
-    const dayNames: Record<string, string> = {
-      MO: "Monday",
-      TU: "Tuesday",
-      WE: "Wednesday",
-      TH: "Thursday",
-      FR: "Friday",
-      SA: "Saturday",
-      SU: "Sunday",
-    }
-    if (fields.FREQ === "DAILY") return "Daily"
-    const days = fields.BYDAY?.split(",")
-      .map((day) => dayNames[day])
-      .filter(Boolean)
-      .join(", ")
-    const interval = Number(fields.INTERVAL) || 1
-    if (interval > 1) return days ? `Every ${interval} weeks · ${days}` : `Every ${interval} weeks`
-    return days ? `Every ${days}` : "Weekly"
   }
 
   const formatTime = (time: string | null | undefined) => {
@@ -353,7 +326,11 @@ export function AdminScreen({
               const scheduleDescription = chore.schedule
                 ? [
                     chore.schedule.recurrenceRule
-                      ? describeRecurrence(chore.schedule.recurrenceRule)
+                      ? describeRecurrenceRule(
+                          chore.schedule.recurrenceRule,
+                          chore.schedule.startsOn,
+                          chore.schedule.endsOn,
+                        )
                       : null,
                     formatTime(chore.schedule.dueTime),
                   ]

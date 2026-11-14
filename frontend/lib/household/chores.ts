@@ -9,7 +9,11 @@ export type ChoreCategory = {
   iconKey: string
   sortOrder: number
   createdAt: string
+  /** Non-archived chores that use this category. */
+  choreCount: number
 }
+
+export type ChoreCategoryRequest = { name: string; iconKey: string }
 
 export type ChoreMemberOption = {
   userId: string
@@ -71,7 +75,7 @@ export type AssignmentDTO = {
   title: string
   scheduledFor: string
   dueAt: string | null
-  status: "PENDING" | "COMPLETED" | "CANCELLED"
+  status: "PENDING" | "COMPLETED" | "CANCELLED" | "SKIPPED"
   priority: ChorePriority
   difficulty: number
   estimatedMinutes: number | null
@@ -80,6 +84,26 @@ export type AssignmentDTO = {
   completedAt: string | null
   completedByDisplayName: string | null
   overdue: boolean
+  /** The day it was originally due, when it has been moved to another day. */
+  originalDate?: string | null
+  /** Moved to another day or time. */
+  moved?: boolean
+  /** Given to other people for this day only. */
+  reassigned?: boolean
+  /** What the viewer may do with this occurrence, decided by the server. */
+  actions?: OccurrenceActions
+}
+
+export type OccurrenceActions = {
+  canMove: boolean
+  canSkip: boolean
+  canUnskip: boolean
+  canReassign: boolean
+  /** First day the viewer may move it to (YYYY-MM-DD). */
+  moveEarliest: string | null
+  /** Last day the viewer may move it to, or null for no limit. */
+  moveLatest: string | null
+  maxAssignees: number
 }
 
 export type HouseholdDashboard = {
@@ -93,35 +117,7 @@ export type HouseholdDashboard = {
   overdue: AssignmentDTO[]
 }
 
-export function categoryIcon(iconKey: string | null | undefined) {
-  if (!iconKey) return "🧹"
-  const icons = new Set([
-    "🧹",
-    "🗑️",
-    "🛁",
-    "🧺",
-    "🍽️",
-    "🌀",
-    "🫧",
-    "♻️",
-    "🪴",
-    "🛒",
-    "🧽",
-    "🪣",
-    "🏠",
-  ])
-  if (icons.has(iconKey)) return iconKey
-  const normalized = iconKey.toLowerCase()
-  if (normalized.includes("bath")) return "🛁"
-  if (normalized.includes("laundry") || normalized.includes("wash")) return "🧺"
-  if (normalized.includes("trash") || normalized.includes("garbage")) return "🗑️"
-  if (normalized.includes("kitchen") || normalized.includes("dish")) return "🍽️"
-  if (normalized.includes("plant") || normalized.includes("garden")) return "🪴"
-  if (normalized.includes("shop")) return "🛒"
-  if (normalized.includes("recycle")) return "♻️"
-  if (normalized.includes("home") || normalized.includes("general")) return "🏠"
-  return "🧹"
-}
+export { categoryIcon } from "./category-icons"
 
 function householdPath(householdId: string) {
   return `/api/households/${encodeURIComponent(householdId)}`
@@ -150,5 +146,43 @@ export const choreApi = {
   complete: (householdId: string, assignmentId: string) =>
     api.post<AssignmentDTO>(
       `${householdPath(householdId)}/assignments/${encodeURIComponent(assignmentId)}/complete`,
+    ),
+  move: (householdId: string, assignmentId: string, date: string, time: string | null) =>
+    api.post<AssignmentDTO>(
+      `${householdPath(householdId)}/assignments/${encodeURIComponent(assignmentId)}/move`,
+      { date, time },
+    ),
+  skip: (householdId: string, assignmentId: string) =>
+    api.post<AssignmentDTO>(
+      `${householdPath(householdId)}/assignments/${encodeURIComponent(assignmentId)}/skip`,
+    ),
+  unskip: (householdId: string, assignmentId: string) =>
+    api.post<AssignmentDTO>(
+      `${householdPath(householdId)}/assignments/${encodeURIComponent(assignmentId)}/unskip`,
+    ),
+  reassign: (householdId: string, assignmentId: string, userIds: string[]) =>
+    api.put<AssignmentDTO>(
+      `${householdPath(householdId)}/assignments/${encodeURIComponent(assignmentId)}/assignees`,
+      { userIds },
+    ),
+}
+
+export const categoryApi = {
+  list: (householdId: string) =>
+    api.get<ChoreCategory[]>(`${householdPath(householdId)}/chore-categories`),
+  create: (householdId: string, request: ChoreCategoryRequest) =>
+    api.post<ChoreCategory>(`${householdPath(householdId)}/chore-categories`, request),
+  update: (householdId: string, categoryId: string, request: ChoreCategoryRequest) =>
+    api.put<ChoreCategory>(
+      `${householdPath(householdId)}/chore-categories/${encodeURIComponent(categoryId)}`,
+      request,
+    ),
+  reorder: (householdId: string, categoryIds: string[]) =>
+    api.put<ChoreCategory[]>(`${householdPath(householdId)}/chore-categories/order`, {
+      categoryIds,
+    }),
+  remove: (householdId: string, categoryId: string) =>
+    api.delete<void>(
+      `${householdPath(householdId)}/chore-categories/${encodeURIComponent(categoryId)}`,
     ),
 }

@@ -1,4 +1,5 @@
 import { categoryIcon as categoryEmoji, type AssignmentDTO } from "@/lib/household/chores"
+import { hasOccurrenceActions, movedFromLabel } from "@/lib/household/occurrence-actions"
 import { assignmentAssigneeNames, assignmentDate } from "../chore-card"
 import type {
   MyChoreCompletedViewModel,
@@ -24,6 +25,7 @@ function categoryIconFor(icon: string | null): MyChoreUpcomingViewModel["categor
   switch (categoryEmoji(icon)) {
     case "🗑️":
     case "♻️":
+    case "🚮":
       return 2
     case "🧺":
     case "🌀":
@@ -36,7 +38,12 @@ function categoryIconFor(icon: string | null): MyChoreUpcomingViewModel["categor
     case "🫧":
       return 6
     case "🪴":
+    case "🌳":
     case "🛒":
+    case "🥕":
+    case "🐶":
+    case "🧸":
+    case "🚗":
     case "🏠":
       return 5
     default:
@@ -65,6 +72,8 @@ function mapUpcoming(
     priority: assignment.priority === "HIGH" || assignment.priority === "URGENT",
     overdue: assignment.status === "PENDING" && assignment.overdue,
     status: assignment.status,
+    movedFrom: movedFromLabel(assignment),
+    hasActions: hasOccurrenceActions(assignment),
     canComplete:
       assignment.status === "PENDING" &&
       assignment.canComplete &&
@@ -92,11 +101,11 @@ function mapCompleted(
 export function createMyChoresApplicationViewModel(
   input: MyChoresApplicationViewModelInput,
 ): MyChoresViewModel {
-  const overdue = input.upcoming.filter(
-    (assignment) => assignment.status === "PENDING" && assignment.overdue,
-  )
+  // My Chores lists what is still to do; a skipped day is not.
+  const toDo = input.upcoming.filter((assignment) => assignment.status !== "SKIPPED")
+  const overdue = toDo.filter((assignment) => assignment.status === "PENDING" && assignment.overdue)
   const attentionAssignment = overdue[0]
-  const upcoming = input.upcoming.filter((assignment) => assignment.id !== attentionAssignment?.id)
+  const upcoming = toDo.filter((assignment) => assignment.id !== attentionAssignment?.id)
   const completingIds = [...input.completingIds]
     .filter((key) => key.startsWith(`${input.householdId}:`))
     .map((key) => key.slice(`${input.householdId}:`.length))

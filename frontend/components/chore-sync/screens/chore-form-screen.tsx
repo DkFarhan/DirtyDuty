@@ -15,8 +15,25 @@ import {
   type ChoreRequest,
 } from "@/lib/household/chores"
 import { useHouseholds } from "@/lib/household/household-context"
+import {
+  INTERVAL_UNIT,
+  MAX_COUNT,
+  MAX_INTERVAL,
+  MONTHS,
+  ORDINALS,
+  WEEKDAYS,
+  buildRecurrenceRule,
+  defaultRecurrence,
+  describeRecurrence,
+  describeRecurrenceRule,
+  parseRecurrenceRule,
+  type Frequency,
+  type MonthlyMode,
+  type Recurrence,
+} from "@/lib/household/recurrence"
 import { householdChoreResource, useDataSync } from "@/lib/data-sync/data-sync-context"
 import { cn } from "@/lib/utils"
+import { CategoryDialog } from "../category-dialog"
 import { useDialogFocus } from "../use-dialog-focus"
 import {
   HouseholdLiveDesignHeader,
@@ -25,15 +42,7 @@ import {
 } from "../redesign/household-secondary-design-preview"
 import designStyles from "../redesign/household-secondary-design-preview.module.css"
 
-const weekdays = [
-  { key: "MO", short: "M" },
-  { key: "TU", short: "T" },
-  { key: "WE", short: "W" },
-  { key: "TH", short: "T" },
-  { key: "FR", short: "F" },
-  { key: "SA", short: "S" },
-  { key: "SU", short: "S" },
-]
+const NEW_CATEGORY = "__new-category__"
 const efforts = ["Quick", "Light", "Moderate", "Heavy", "Big job"]
 const priorities: { value: ChorePriority; label: string; style: string }[] = [
   { value: "LOW", label: "Low", style: "emerald" },
@@ -41,7 +50,7 @@ const priorities: { value: ChorePriority; label: string; style: string }[] = [
   { value: "HIGH", label: "High", style: "amber" },
   { value: "URGENT", label: "Urgent", style: "rose" },
 ]
-type Frequency = "ONCE" | "DAILY" | "WEEKLY" | "CUSTOM"
+type EndMode = "NEVER" | "DATE" | "COUNT"
 type FormValues = {
   categoryId: string
   title: string
@@ -51,12 +60,14 @@ type FormValues = {
   peopleNeeded: number
   fixedAssignee: string
   participants: string[]
-  frequency: Frequency
-  interval: number
-  weekdays: string[]
+  recurrence: Recurrence
+  /** A stored rule this form cannot represent; kept verbatim unless the user picks a new one. */
+  customRule: string | null
+  seasonal: boolean
+  endMode: EndMode
+  count: number
   startsOn: string
   endsOn: string
-  hasEnd: boolean
   dueTime: string
   priority: ChorePriority
   difficulty: number
@@ -69,36 +80,16 @@ function localDate() {
   return new Date(now.getTime() - offset).toISOString().slice(0, 10)
 }
 
-function parseRule(rule: string): Pick<FormValues, "frequency" | "interval" | "weekdays"> {
-  const fields = Object.fromEntries(
-    rule.split(";").map((field) => {
-      const [key, value] = field.split("=")
-      return [key, value]
-    }),
-  )
-  const frequency = fields.FREQ
-  const frequencyType: Frequency =
-    frequency === "DAILY"
-      ? "DAILY"
-      : frequency === "WEEKLY" && Number(fields.INTERVAL) > 1
-        ? "CUSTOM"
-        : frequency === "WEEKLY"
-          ? "WEEKLY"
-          : "ONCE"
-  return {
-    frequency: frequencyType,
-    interval: Math.max(2, Number(fields.INTERVAL) || 2),
-    weekdays:
-      fields.BYDAY?.split(",").filter((day) => weekdays.some((weekday) => weekday.key === day)) ??
-      [],
-  }
-}
-
 function valuesFromChore(chore: Chore): FormValues {
   const schedule = chore.schedule
-  const recurrence = schedule
-    ? parseRule(schedule.recurrenceRule)
-    : { frequency: "WEEKLY" as const, interval: 2, weekdays: ["MO"] }
+  const startsOn = schedule?.startsOn ?? localDate()
+  const parsed = schedule ? parseRecurrenceRule(schedule.recurrenceRule, startsOn) : null
+  // Non-weekly rules carry no weekdays; seed Monday as on create, so switching to Weekly has one.
+  const recurrence = parsed
+    ? parsed.weekdays.length > 0
+      ? parsed
+      : { ...parsed, weekdays: ["MO" as const] }
+    : { ...defaultRecurrence(startsOn), weekdays: ["MO" as const] }
   return {
     categoryId: chore.categoryId ?? "",
     title: chore.title,
@@ -108,12 +99,13 @@ function valuesFromChore(chore: Chore): FormValues {
     peopleNeeded: schedule?.peopleNeeded ?? 1,
     fixedAssignee: schedule?.fixedAssigneeUserId ?? "",
     participants: schedule?.participantUserIds ?? [],
-    frequency: recurrence.frequency,
-    interval: recurrence.interval,
-    weekdays: recurrence.weekdays,
-    startsOn: schedule?.startsOn ?? localDate(),
+    recurrence,
+    customRule: schedule && !parsed ? schedule.recurrenceRule : null,
+    seasonal: recurrence.activeMonths.length > 0,
+    endMode: recurrence.count !== null ? "COUNT" : schedule?.endsOn ? "DATE" : "NEVER",
+    count: recurrence.count ?? 10,
+    startsOn,
     endsOn: schedule?.endsOn ?? "",
-    hasEnd: Boolean(schedule?.endsOn),
     dueTime: schedule?.dueTime?.slice(0, 5) ?? "",
     priority: chore.defaultPriority,
     difficulty: chore.difficulty,
@@ -131,12 +123,13 @@ function initialValues(memberId: string): FormValues {
     peopleNeeded: 1,
     fixedAssignee: memberId,
     participants: [],
-    frequency: "WEEKLY",
-    interval: 2,
-    weekdays: ["MO"],
+    recurrence: { ...defaultRecurrence(localDate()), weekdays: ["MO"] },
+    customRule: null,
+    seasonal: false,
+    endMode: "NEVER",
+    count: 10,
     startsOn: localDate(),
     endsOn: "",
-    hasEnd: false,
     dueTime: "18:00",
     priority: "NORMAL",
     difficulty: 3,
@@ -158,6 +151,9 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
+  const [categoryDialogOpen, setCategoryDialogOpen] = useState(false)
+  const canManageCategories =
+    household?.currentUserRole === "OWNER" || household?.currentUserRole === "ADMIN"
   const discardDialogRef = useRef<HTMLElement | null>(null)
   const [savedValues, setSavedValues] = useState("")
   const householdId = household?.id
@@ -224,6 +220,15 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
     setError(null)
     setValues((current) => ({ ...current, [key]: value }))
   }
+  const updateRecurrence = (patch: Partial<Recurrence>) => {
+    setError(null)
+    // Any explicit change replaces a custom rule the form could not represent.
+    setValues((current) => ({
+      ...current,
+      customRule: null,
+      recurrence: { ...current.recurrence, ...patch },
+    }))
+  }
 
   const leave = useCallback(() => {
     if (dirty) {
@@ -258,10 +263,9 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
       setError("Choose a due time.")
       return null
     }
-    if (
-      (values.frequency === "WEEKLY" || values.frequency === "CUSTOM") &&
-      values.weekdays.length === 0
-    ) {
+    const recurrence = values.recurrence
+    const repeating = values.customRule === null && recurrence.frequency !== "ONCE"
+    if (repeating && recurrence.frequency === "WEEKLY" && recurrence.weekdays.length === 0) {
       setError("Choose at least one day to repeat.")
       return null
     }
@@ -311,31 +315,59 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
       setError("Estimated time must be a whole number between 1 and 1440 minutes.")
       return null
     }
-    if (values.hasEnd && values.endsOn && values.endsOn < values.startsOn) {
+    const endsWithDate =
+      values.customRule !== null ? Boolean(values.endsOn) : repeating && values.endMode === "DATE"
+    if (endsWithDate && values.endsOn && values.endsOn < values.startsOn) {
       setError("The end date cannot be before the start date.")
       return null
     }
-    if (values.hasEnd && !values.endsOn) {
+    if (endsWithDate && !values.endsOn) {
       setError("Choose an end date, or select Never.")
       return null
     }
-    if (
-      values.frequency === "CUSTOM" &&
-      (!Number.isInteger(values.interval) || values.interval < 2 || values.interval > 52)
-    ) {
-      setError("Custom recurrence must be between 2 and 52 weeks.")
-      return null
+    if (repeating) {
+      const frequency = recurrence.frequency as Exclude<Frequency, "ONCE">
+      const maxInterval = MAX_INTERVAL[frequency]
+      if (
+        !Number.isInteger(recurrence.interval) ||
+        recurrence.interval < 1 ||
+        recurrence.interval > maxInterval
+      ) {
+        setError(
+          `Repeat every must be between 1 and ${maxInterval} ${INTERVAL_UNIT[frequency][1]}.`,
+        )
+        return null
+      }
+      if (
+        frequency === "YEARLY" &&
+        recurrence.yearDay > (MONTHS[recurrence.yearMonth - 1]?.days ?? 31)
+      ) {
+        setError(`Choose a day that exists in ${MONTHS[recurrence.yearMonth - 1]?.label}.`)
+        return null
+      }
+      if (values.seasonal && frequency !== "YEARLY" && recurrence.activeMonths.length === 0) {
+        setError("Choose at least one active month.")
+        return null
+      }
+      if (
+        values.endMode === "COUNT" &&
+        (!Number.isInteger(values.count) || values.count < 1 || values.count > MAX_COUNT)
+      ) {
+        setError(`The number of times must be between 1 and ${MAX_COUNT}.`)
+        return null
+      }
     }
 
-    const days = values.weekdays.join(",")
     const recurrenceRule =
-      values.frequency === "ONCE"
-        ? "FREQ=ONCE"
-        : values.frequency === "DAILY"
-          ? "FREQ=DAILY"
-          : values.frequency === "WEEKLY"
-            ? `FREQ=WEEKLY;BYDAY=${days}`
-            : `FREQ=WEEKLY;INTERVAL=${values.interval};BYDAY=${days}`
+      values.customRule ??
+      buildRecurrenceRule({
+        ...recurrence,
+        activeMonths:
+          repeating && values.seasonal && recurrence.frequency !== "YEARLY"
+            ? recurrence.activeMonths
+            : [],
+        count: repeating && values.endMode === "COUNT" ? values.count : null,
+      })
 
     return {
       title,
@@ -349,7 +381,7 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
         recurrenceRule,
         timezone: household.timezone,
         startsOn: values.startsOn,
-        endsOn: values.frequency === "ONCE" || !values.hasEnd ? null : values.endsOn || null,
+        endsOn: endsWithDate ? values.endsOn || null : null,
         dueTime: values.dueTime || null,
         assignmentStrategy: values.strategy,
         peopleNeeded: values.peopleNeeded,
@@ -381,6 +413,23 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
     }
   }
 
+  const formRecurrence = values.recurrence
+  const isRepeating = values.customRule === null && formRecurrence.frequency !== "ONCE"
+  const repeatingFrequency = (
+    formRecurrence.frequency === "ONCE" ? "WEEKLY" : formRecurrence.frequency
+  ) as Exclude<Frequency, "ONCE">
+  const repeatSummary =
+    values.customRule !== null
+      ? describeRecurrenceRule(values.customRule, values.startsOn, values.endsOn || null)
+      : describeRecurrence(
+          {
+            ...formRecurrence,
+            activeMonths: values.seasonal ? formRecurrence.activeMonths : [],
+            count: isRepeating && values.endMode === "COUNT" ? values.count : null,
+          },
+          isRepeating && values.endMode === "DATE" ? values.endsOn || null : null,
+        )
+
   const memberLabel = (userId: string) =>
     options?.activeMembers.find((member) => member.userId === userId)?.displayName ?? userId
   const eligibleCount =
@@ -406,7 +455,7 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
 
   return (
     <div
-      className={`flex min-h-screen flex-col ${`${designStyles.liveRoot} ${designStyles[theme]}`}`}
+      className={`flex min-h-screen flex-col ${`${designStyles.liveRoot} ${designStyles.choreForm} ${designStyles[theme]}`}`}
     >
       {
         <HouseholdLiveDesignHeader
@@ -451,7 +500,9 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
         </div>
       ) : !options ? null : (
         <>
-          <main className={`flex-1 space-y-4 px-4 pb-28 pt-4 ${designStyles.liveContent}`}>
+          <main
+            className={`flex-1 space-y-4 px-4 pt-4 ${isEditing ? "pb-36" : "pb-28"} ${designStyles.liveContent}`}
+          >
             <section className={cn(groupClass, designStyles.liveCard)}>
               {
                 <HouseholdLiveDesignSectionHeading
@@ -467,15 +518,25 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
                   <span className="relative block">
                     <select
                       className={cn(fieldClass, "appearance-none pr-10")}
-                      onChange={(event) => update("categoryId", event.target.value)}
+                      id="chore-category"
+                      onChange={(event) => {
+                        // "+ New category" opens the dialog; the controlled value stays put.
+                        if (event.target.value === NEW_CATEGORY) setCategoryDialogOpen(true)
+                        else update("categoryId", event.target.value)
+                      }}
                       value={values.categoryId}
                     >
-                      <option value="">Choose a category</option>
+                      <option value="">
+                        {options.categories.length === 0
+                          ? "No categories yet"
+                          : "Choose a category"}
+                      </option>
                       {options.categories.map((category) => (
                         <option key={category.id} value={category.id}>
                           {categoryIcon(category.iconKey)} {category.name}
                         </option>
                       ))}
+                      {canManageCategories && <option value={NEW_CATEGORY}>+ New category</option>}
                     </select>
                     <ChevronDown
                       aria-hidden="true"
@@ -483,33 +544,6 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
                     />
                   </span>
                 </label>
-                <div>
-                  <p className="mb-2 text-sm font-semibold text-slate-700">Category icon</p>
-                  <div aria-label="Category icons" className="flex flex-wrap gap-2">
-                    {options.categories.map((category) => (
-                      <button
-                        aria-label={`Choose ${category.name} icon`}
-                        aria-pressed={values.categoryId === category.id}
-                        className={cn(
-                          "flex h-11 w-11 items-center justify-center rounded-2xl text-xl transition",
-                          values.categoryId === category.id
-                            ? "bg-teal-50 ring-2 ring-teal-500"
-                            : "bg-slate-100 hover:bg-slate-200",
-                        )}
-                        key={category.id}
-                        onClick={() => update("categoryId", category.id)}
-                        type="button"
-                      >
-                        {categoryIcon(category.iconKey)}
-                      </button>
-                    ))}
-                    {options.categories.length === 0 && (
-                      <p className="text-xs text-slate-400">
-                        Household categories aren’t set up yet.
-                      </p>
-                    )}
-                  </div>
-                </div>
                 <label className="block">
                   <span className="mb-1.5 block text-sm font-semibold text-slate-700">
                     Chore name
@@ -709,113 +743,267 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
                 />
               }
               <div className="space-y-4">
-                <div>
-                  <p className="mb-2 text-sm font-semibold text-slate-700">Frequency</p>
-                  <div className="grid grid-cols-2 gap-2">
+                {values.customRule !== null && (
+                  <div
+                    className="rounded-xl border border-amber-200 bg-amber-50 p-3.5 dark:border-amber-300/30"
+                    role="note"
+                  >
+                    <p className="text-sm font-semibold text-amber-900">Custom schedule</p>
+                    <p className="mt-1 text-sm text-amber-900">
+                      This chore uses a schedule this form cannot edit. It stays as it is unless you
+                      choose a new one below.
+                    </p>
+                  </div>
+                )}
+                <fieldset>
+                  <legend className="mb-2 text-sm font-semibold text-slate-700">Repeats</legend>
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
                     {(
                       [
                         ["ONCE", "One time"],
                         ["DAILY", "Daily"],
                         ["WEEKLY", "Weekly"],
-                        ["CUSTOM", "Custom"],
+                        ["MONTHLY", "Monthly"],
+                        ["YEARLY", "Yearly"],
                       ] as const
-                    ).map(([frequency, label]) => (
-                      <button
-                        aria-pressed={values.frequency === frequency}
-                        className={cn(
-                          "min-h-11 rounded-xl py-2.5 text-sm font-semibold transition",
-                          values.frequency === frequency
-                            ? "bg-teal-600 text-white"
-                            : "bg-slate-100 text-slate-600 hover:bg-slate-200",
-                        )}
-                        key={frequency}
-                        onClick={() => update("frequency", frequency)}
-                        type="button"
-                      >
-                        {label}
-                      </button>
-                    ))}
+                    ).map(([frequency, label]) => {
+                      const selected =
+                        values.customRule === null && formRecurrence.frequency === frequency
+                      return (
+                        <button
+                          aria-pressed={selected}
+                          className={cn(
+                            "min-h-11 rounded-xl px-2 py-2.5 text-sm font-semibold transition",
+                            selected
+                              ? "bg-teal-600 text-white"
+                              : "bg-slate-100 text-slate-600 hover:bg-slate-200",
+                          )}
+                          key={frequency}
+                          onClick={() => updateRecurrence({ frequency })}
+                          type="button"
+                        >
+                          {label}
+                        </button>
+                      )
+                    })}
                   </div>
-                </div>
-                {values.frequency === "ONCE" && (
-                  <label className="block">
-                    <span className="mb-1.5 block text-sm font-semibold text-slate-700">
-                      Due date
-                    </span>
-                    <input
-                      className={fieldClass}
-                      onChange={(event) => update("startsOn", event.target.value)}
-                      type="date"
-                      value={values.startsOn}
-                    />
-                  </label>
+                </fieldset>
+                {isRepeating && (
+                  <div>
+                    <label
+                      className="mb-1.5 block text-sm font-semibold text-slate-700"
+                      htmlFor="chore-repeat-interval"
+                    >
+                      Repeat every
+                    </label>
+                    <div className="flex items-center gap-3">
+                      <input
+                        aria-describedby="chore-repeat-interval-unit"
+                        className={cn(fieldClass, "w-24")}
+                        id="chore-repeat-interval"
+                        inputMode="numeric"
+                        max={MAX_INTERVAL[repeatingFrequency]}
+                        min={1}
+                        onChange={(event) =>
+                          updateRecurrence({ interval: Number(event.target.value) })
+                        }
+                        type="number"
+                        value={formRecurrence.interval}
+                      />
+                      <span className="text-sm text-slate-600" id="chore-repeat-interval-unit">
+                        {INTERVAL_UNIT[repeatingFrequency][formRecurrence.interval === 1 ? 0 : 1]}
+                      </span>
+                    </div>
+                  </div>
                 )}
-                {values.frequency !== "ONCE" && (
-                  <>
-                    {(values.frequency === "WEEKLY" || values.frequency === "CUSTOM") && (
-                      <div>
-                        <p className="mb-2 text-sm font-semibold text-slate-700">
-                          {values.frequency === "CUSTOM" ? "Repeat on" : "Repeat on"}
-                        </p>
-                        <div className="grid grid-cols-7 gap-1">
-                          {weekdays.map(({ key, short }) => {
-                            const selected = values.weekdays.includes(key)
-                            return (
-                              <button
-                                aria-label={`Repeat on ${key}`}
-                                aria-pressed={selected}
-                                className={cn(
-                                  "aspect-square rounded-full text-sm font-bold transition",
-                                  selected
-                                    ? "bg-teal-600 text-white"
-                                    : "bg-slate-100 text-slate-500 hover:bg-slate-200",
-                                )}
-                                key={key}
-                                onClick={() =>
-                                  update(
-                                    "weekdays",
-                                    selected
-                                      ? values.weekdays.filter((day) => day !== key)
-                                      : [...values.weekdays, key],
-                                  )
-                                }
-                                type="button"
-                              >
-                                {short}
-                              </button>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )}
-                    {values.frequency === "CUSTOM" && (
+                {isRepeating && formRecurrence.frequency === "WEEKLY" && (
+                  <fieldset>
+                    <legend className="mb-2 text-sm font-semibold text-slate-700">Repeat on</legend>
+                    <div className="grid grid-cols-7 gap-1">
+                      {WEEKDAYS.map(({ key, label, short }) => {
+                        const selected = formRecurrence.weekdays.includes(key)
+                        return (
+                          <button
+                            aria-label={label}
+                            aria-pressed={selected}
+                            className={cn(
+                              // The ::before extends the tap target to 44px without growing the chip.
+                              "relative aspect-square rounded-full text-sm font-bold transition before:absolute before:-inset-1 before:content-['']",
+                              selected
+                                ? "bg-teal-600 text-white"
+                                : "bg-slate-100 text-slate-500 hover:bg-slate-200",
+                            )}
+                            key={key}
+                            onClick={() =>
+                              updateRecurrence({
+                                weekdays: selected
+                                  ? formRecurrence.weekdays.filter((day) => day !== key)
+                                  : [...formRecurrence.weekdays, key],
+                              })
+                            }
+                            type="button"
+                          >
+                            {short.charAt(0)}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </fieldset>
+                )}
+                {isRepeating && formRecurrence.frequency === "MONTHLY" && (
+                  <fieldset className="space-y-3">
+                    <legend className="mb-2 text-sm font-semibold text-slate-700">
+                      Monthly on
+                    </legend>
+                    <div className="grid grid-cols-3 gap-2">
+                      {(
+                        [
+                          ["DAY", "Date"],
+                          ["WEEKDAY", "Weekday"],
+                          ["LAST_DAY", "Last day"],
+                        ] as [MonthlyMode, string][]
+                      ).map(([mode, label]) => (
+                        <button
+                          aria-pressed={formRecurrence.monthlyMode === mode}
+                          className={cn(
+                            "min-h-11 rounded-xl px-2 py-2.5 text-sm font-semibold transition",
+                            formRecurrence.monthlyMode === mode
+                              ? "bg-teal-600 text-white"
+                              : "bg-slate-100 text-slate-600 hover:bg-slate-200",
+                          )}
+                          key={mode}
+                          onClick={() => updateRecurrence({ monthlyMode: mode })}
+                          type="button"
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    {formRecurrence.monthlyMode === "DAY" && (
                       <label className="block">
                         <span className="mb-1.5 block text-sm font-semibold text-slate-700">
-                          Repeat every (weeks)
+                          Day of the month
                         </span>
-                        <input
+                        <select
                           className={fieldClass}
-                          max={52}
-                          min={2}
-                          onChange={(event) => update("interval", Number(event.target.value))}
-                          type="number"
-                          value={values.interval}
-                        />
+                          onChange={(event) =>
+                            updateRecurrence({ monthDay: Number(event.target.value) })
+                          }
+                          value={formRecurrence.monthDay}
+                        >
+                          {Array.from({ length: 31 }, (_, index) => index + 1).map((day) => (
+                            <option key={day} value={day}>
+                              {day}
+                            </option>
+                          ))}
+                        </select>
+                        {formRecurrence.monthDay >= 29 && (
+                          <span className="mt-1.5 block text-xs text-slate-500">
+                            In shorter months this falls on the last day.
+                          </span>
+                        )}
                       </label>
                     )}
+                    {formRecurrence.monthlyMode === "WEEKDAY" && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <label className="block">
+                          <span className="mb-1.5 block text-sm font-semibold text-slate-700">
+                            Which one
+                          </span>
+                          <select
+                            className={fieldClass}
+                            onChange={(event) =>
+                              updateRecurrence({ ordinal: Number(event.target.value) })
+                            }
+                            value={formRecurrence.ordinal}
+                          >
+                            {ORDINALS.map((ordinal) => (
+                              <option key={ordinal.value} value={ordinal.value}>
+                                {ordinal.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="block">
+                          <span className="mb-1.5 block text-sm font-semibold text-slate-700">
+                            Weekday
+                          </span>
+                          <select
+                            className={fieldClass}
+                            onChange={(event) =>
+                              updateRecurrence({
+                                ordinalWeekday: event.target.value as Recurrence["ordinalWeekday"],
+                              })
+                            }
+                            value={formRecurrence.ordinalWeekday}
+                          >
+                            {WEEKDAYS.map((day) => (
+                              <option key={day.key} value={day.key}>
+                                {day.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                    )}
+                  </fieldset>
+                )}
+                {isRepeating && formRecurrence.frequency === "YEARLY" && (
+                  <div className="grid grid-cols-2 gap-2">
                     <label className="block">
                       <span className="mb-1.5 block text-sm font-semibold text-slate-700">
-                        Starts
+                        Month
                       </span>
-                      <input
+                      <select
                         className={fieldClass}
-                        onChange={(event) => update("startsOn", event.target.value)}
-                        type="date"
-                        value={values.startsOn}
-                      />
+                        onChange={(event) => {
+                          const yearMonth = Number(event.target.value)
+                          updateRecurrence({
+                            yearMonth,
+                            yearDay: Math.min(formRecurrence.yearDay, MONTHS[yearMonth - 1].days),
+                          })
+                        }}
+                        value={formRecurrence.yearMonth}
+                      >
+                        {MONTHS.map((month) => (
+                          <option key={month.value} value={month.value}>
+                            {month.label}
+                          </option>
+                        ))}
+                      </select>
                     </label>
-                  </>
+                    <label className="block">
+                      <span className="mb-1.5 block text-sm font-semibold text-slate-700">Day</span>
+                      <select
+                        className={fieldClass}
+                        onChange={(event) =>
+                          updateRecurrence({ yearDay: Number(event.target.value) })
+                        }
+                        value={formRecurrence.yearDay}
+                      >
+                        {Array.from(
+                          { length: MONTHS[formRecurrence.yearMonth - 1]?.days ?? 31 },
+                          (_, index) => index + 1,
+                        ).map((day) => (
+                          <option key={day} value={day}>
+                            {day}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
                 )}
+                <label className="block">
+                  <span className="mb-1.5 block text-sm font-semibold text-slate-700">
+                    {isRepeating || values.customRule !== null ? "Starts" : "Due date"}
+                  </span>
+                  <input
+                    className={fieldClass}
+                    onChange={(event) => update("startsOn", event.target.value)}
+                    type="date"
+                    value={values.startsOn}
+                  />
+                </label>
                 <label className="block">
                   <span className="mb-1.5 block text-sm font-semibold text-slate-700">
                     Due time <span className="font-normal text-slate-400">(optional)</span>
@@ -827,25 +1015,34 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
                     value={values.dueTime}
                   />
                 </label>
-                {values.frequency !== "ONCE" && (
-                  <>
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-sm font-semibold text-slate-700">End date</span>
-                      <button
-                        aria-pressed={values.hasEnd}
-                        className={cn(
-                          "rounded-full px-3 py-1.5 text-xs font-bold",
-                          values.hasEnd
-                            ? "bg-teal-100 text-teal-800"
-                            : "bg-slate-100 text-slate-600",
-                        )}
-                        onClick={() => update("hasEnd", !values.hasEnd)}
-                        type="button"
-                      >
-                        {values.hasEnd ? "On date" : "Never"}
-                      </button>
+                {isRepeating && (
+                  <fieldset className="space-y-3">
+                    <legend className="mb-2 text-sm font-semibold text-slate-700">Ends</legend>
+                    <div className="grid grid-cols-3 gap-2">
+                      {(
+                        [
+                          ["NEVER", "Never"],
+                          ["DATE", "On date"],
+                          ["COUNT", "After"],
+                        ] as [EndMode, string][]
+                      ).map(([mode, label]) => (
+                        <button
+                          aria-pressed={values.endMode === mode}
+                          className={cn(
+                            "min-h-11 rounded-xl px-2 py-2.5 text-sm font-semibold transition",
+                            values.endMode === mode
+                              ? "bg-teal-600 text-white"
+                              : "bg-slate-100 text-slate-600 hover:bg-slate-200",
+                          )}
+                          key={mode}
+                          onClick={() => update("endMode", mode)}
+                          type="button"
+                        >
+                          {label}
+                        </button>
+                      ))}
                     </div>
-                    {values.hasEnd && (
+                    {values.endMode === "DATE" && (
                       <input
                         aria-label="End date"
                         className={fieldClass}
@@ -854,8 +1051,94 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
                         value={values.endsOn}
                       />
                     )}
-                  </>
+                    {values.endMode === "COUNT" && (
+                      <div className="flex items-center gap-3">
+                        <input
+                          aria-label="Number of times"
+                          className={cn(fieldClass, "w-24")}
+                          inputMode="numeric"
+                          max={MAX_COUNT}
+                          min={1}
+                          onChange={(event) => update("count", Number(event.target.value))}
+                          type="number"
+                          value={values.count}
+                        />
+                        <span className="text-sm text-slate-600">
+                          {values.count === 1 ? "time" : "times"}
+                        </span>
+                      </div>
+                    )}
+                  </fieldset>
                 )}
+                {isRepeating && formRecurrence.frequency !== "YEARLY" && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <span
+                        className="text-sm font-semibold text-slate-700"
+                        id="chore-active-months"
+                      >
+                        Active months
+                      </span>
+                      <button
+                        aria-describedby="chore-active-months"
+                        aria-pressed={values.seasonal}
+                        className={cn(
+                          "relative rounded-full px-3 py-1.5 text-xs font-bold before:absolute before:-inset-y-2 before:inset-x-0 before:content-['']",
+                          values.seasonal
+                            ? "bg-teal-100 text-teal-800"
+                            : "bg-slate-100 text-slate-600",
+                        )}
+                        onClick={() => update("seasonal", !values.seasonal)}
+                        type="button"
+                      >
+                        {values.seasonal ? "Selected months" : "All year"}
+                      </button>
+                    </div>
+                    {values.seasonal && (
+                      <div
+                        aria-labelledby="chore-active-months"
+                        className="grid grid-cols-6 gap-1.5"
+                        role="group"
+                      >
+                        {MONTHS.map((month) => {
+                          const selected = formRecurrence.activeMonths.includes(month.value)
+                          return (
+                            <button
+                              aria-label={month.label}
+                              aria-pressed={selected}
+                              className={cn(
+                                "min-h-11 rounded-lg text-xs font-bold transition",
+                                selected
+                                  ? "bg-teal-600 text-white"
+                                  : "bg-slate-100 text-slate-500 hover:bg-slate-200",
+                              )}
+                              key={month.value}
+                              onClick={() =>
+                                updateRecurrence({
+                                  activeMonths: selected
+                                    ? formRecurrence.activeMonths.filter(
+                                        (value) => value !== month.value,
+                                      )
+                                    : [...formRecurrence.activeMonths, month.value],
+                                })
+                              }
+                              type="button"
+                            >
+                              {month.short}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+                <p
+                  aria-live="polite"
+                  className="rounded-xl bg-teal-50 px-3.5 py-3 text-sm font-semibold text-teal-900"
+                  data-testid="repeat-summary"
+                >
+                  {repeatSummary}
+                </p>
               </div>
             </section>
 
@@ -943,6 +1226,11 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
           <div
             className={`fixed bottom-0 z-40 w-full border-t border-slate-100 bg-white/95 p-3 pr-[max(.75rem,env(safe-area-inset-right))] pb-[max(.75rem,env(safe-area-inset-bottom))] pl-[max(.75rem,env(safe-area-inset-left))] backdrop-blur ${`left-0 max-w-none ${designStyles.liveFormFooter}`}`}
           >
+            {isEditing && (
+              <p className="mb-2 text-center text-xs text-slate-500">
+                Changes apply to upcoming chores. Completed ones stay as they are.
+              </p>
+            )}
             <Button
               className="h-12 w-full rounded-xl bg-teal-600 font-bold text-white hover:bg-teal-700"
               disabled={saving}
@@ -953,6 +1241,23 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
             </Button>
           </div>
         </>
+      )}
+
+      {categoryDialogOpen && householdId && (
+        <CategoryDialog
+          getFallbackFocus={() => document.getElementById("chore-category")}
+          householdId={householdId}
+          onCancel={() => setCategoryDialogOpen(false)}
+          onSaved={(category) => {
+            setOptions((current) =>
+              current ? { ...current, categories: [...current.categories, category] } : current,
+            )
+            update("categoryId", category.id)
+            setCategoryDialogOpen(false)
+            // Home, My Chores and the admin list read categories; let them refresh.
+            invalidateChores()
+          }}
+        />
       )}
 
       {confirmDiscard && (

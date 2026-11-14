@@ -217,9 +217,10 @@ export function getUpcomingAssignments(
   return assignments
     .filter((assignment) => {
       const dateKey = scheduledDateKey(assignment)
+      // Skipped days stay listed (labelled) so an owner or admin can undo the skip.
       return (
-        assignment.status === "PENDING" &&
-        !assignment.overdue &&
+        ((assignment.status === "PENDING" && !assignment.overdue) ||
+          assignment.status === "SKIPPED") &&
         !todayIds.has(assignment.id) &&
         dateKey !== null &&
         dateKey > todayKey

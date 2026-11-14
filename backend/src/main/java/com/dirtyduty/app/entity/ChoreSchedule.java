@@ -76,6 +76,16 @@ public class ChoreSchedule {
   @Column(name = "is_active", nullable = false)
   private boolean active = true;
 
+  /**
+   * Set when a rule edit re-anchors a COUNT series: from this date the schedule produces only
+   * {@code COUNT - countProducedBefore} more occurrences, still anchored on {@link #startsOn}.
+   */
+  @Column(name = "count_rebased_on")
+  private LocalDate countRebasedOn;
+
+  @Column(name = "count_produced_before")
+  private Integer countProducedBefore;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private OffsetDateTime createdAt;
 

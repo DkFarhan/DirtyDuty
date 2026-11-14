@@ -172,7 +172,7 @@ describe("chore management", () => {
 
     expect(await screen.findByRole("heading", { name: "Clean Kitchen" })).toBeTruthy()
     const choreCard = screen.getByRole("heading", { name: "Clean Kitchen" }).closest("article")
-    expect(choreCard?.textContent).toContain("Every Monday · 6:00 PM")
+    expect(choreCard?.textContent).toContain("Weekly on Mon · 6:00 PM")
     expect(screen.getByText("Fixed · Jahid · Effort 3/5 · ~20 min")).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "Actions for Clean Kitchen" }))
     fetchMock
@@ -463,5 +463,157 @@ describe("chore management", () => {
           request?.method === "POST",
       ),
     ).toBe(false)
+  })
+})
+
+describe("chore recurrence form", () => {
+  beforeEach(() => {
+    fetchMock.mockReset()
+    stubAuthFeatures(fetchMock)
+    clearCsrfToken()
+    localStorage.clear()
+    sessionStorage.clear()
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+    clearCsrfToken()
+  })
+
+  async function openCreateForm() {
+    await openHousehold()
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([]))
+      .mockResolvedValueOnce(jsonResponse(options))
+      .mockResolvedValueOnce(jsonResponse(options))
+      .mockResolvedValueOnce(jsonResponse({ token: "chore-csrf", headerName: "X-CSRF-TOKEN" }))
+      .mockResolvedValueOnce(jsonResponse({ id: "chore-1" }, 201))
+      .mockResolvedValueOnce(jsonResponse([]))
+      .mockResolvedValueOnce(jsonResponse(options))
+    await enterChores()
+    await screen.findByText("No shared chores yet.")
+    fireEvent.click(screen.getByRole("button", { name: "Create a chore" }))
+    await screen.findByRole("heading", { name: "Create a chore" })
+    fireEvent.change(screen.getByLabelText("Category"), { target: { value: "category-1" } })
+    fireEvent.change(screen.getByPlaceholderText("e.g. Clean Kitchen"), {
+      target: { value: "Recycling" },
+    })
+  }
+
+  async function submittedSchedule(method: "POST" | "PUT") {
+    await screen.findByRole("heading", { name: "Manage chores" })
+    const request = fetchMock.mock.calls.find(
+      ([url, init]) =>
+        String(url).startsWith("http://localhost:8080/api/households/home-1/chores") &&
+        init?.method === method,
+    )
+    return JSON.parse(String(request?.[1]?.body)).schedule
+  }
+
+  async function openEditForm(recurrenceRule: string) {
+    const chore = { ...savedChore, schedule: { ...savedChore.schedule, recurrenceRule } }
+    await openHousehold()
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([chore]))
+      .mockResolvedValueOnce(jsonResponse(options))
+    await enterChores()
+    await screen.findByRole("heading", { name: "Clean Kitchen" })
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Clean Kitchen" }))
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(options))
+      .mockResolvedValueOnce(jsonResponse(chore))
+      .mockResolvedValueOnce(jsonResponse({ token: "edit-csrf", headerName: "X-CSRF-TOKEN" }))
+      .mockResolvedValueOnce(jsonResponse(chore))
+      .mockResolvedValueOnce(jsonResponse([chore]))
+      .mockResolvedValueOnce(jsonResponse(options))
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }))
+    await screen.findByRole("heading", { name: "Edit a chore" })
+    await screen.findByDisplayValue("Clean Kitchen")
+  }
+
+  it("creates a monthly chore on the last Friday", async () => {
+    await openCreateForm()
+
+    fireEvent.click(screen.getByRole("button", { name: "Monthly" }))
+    fireEvent.click(screen.getByRole("button", { name: "Weekday" }))
+    fireEvent.change(screen.getByLabelText("Which one"), { target: { value: "-1" } })
+    fireEvent.change(screen.getByLabelText("Weekday"), { target: { value: "FR" } })
+
+    expect(screen.getByRole("button", { name: "Monthly" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    )
+    expect(screen.getByTestId("repeat-summary").textContent).toBe("Monthly on the last Friday")
+    fireEvent.click(screen.getByRole("button", { name: "Create Chore" }))
+
+    expect(await submittedSchedule("POST")).toMatchObject({
+      recurrenceRule: "FREQ=MONTHLY;BYDAY=-1FR",
+      endsOn: null,
+    })
+  })
+
+  it("creates a seasonal weekly chore that ends after a number of times", async () => {
+    await openCreateForm()
+
+    fireEvent.click(screen.getByRole("button", { name: "Thursday" }))
+    fireEvent.change(screen.getByLabelText("Repeat every"), { target: { value: "2" } })
+    fireEvent.click(screen.getByRole("button", { name: "All year" }))
+    for (const month of ["November", "December", "January", "February", "March"]) {
+      fireEvent.click(screen.getByRole("button", { name: month }))
+    }
+    fireEvent.click(screen.getByRole("button", { name: "After" }))
+    expect((screen.getByLabelText("Number of times") as HTMLInputElement).value).toBe("10")
+
+    expect(screen.getByRole("button", { name: "March" }).getAttribute("aria-pressed")).toBe("true")
+    expect(screen.getByTestId("repeat-summary").textContent).toBe(
+      "Every 2 weeks on Mon and Thu, Nov to Mar, 10 times",
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Create Chore" }))
+
+    expect(await submittedSchedule("POST")).toMatchObject({
+      recurrenceRule: "FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,TH;BYMONTH=1,2,3,11,12;COUNT=10",
+      endsOn: null,
+    })
+  })
+
+  it("edits a legacy custom every-3-weeks chore without changing its rule", async () => {
+    await openEditForm("FREQ=WEEKLY;INTERVAL=3;BYDAY=WE")
+
+    expect(screen.getByRole("button", { name: "Weekly" }).getAttribute("aria-pressed")).toBe("true")
+    expect((screen.getByLabelText("Repeat every") as HTMLInputElement).value).toBe("3")
+    expect(screen.getByRole("button", { name: "Wednesday" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    )
+    expect(screen.getByTestId("repeat-summary").textContent).toBe("Every 3 weeks on Wed")
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }))
+
+    expect(await submittedSchedule("PUT")).toMatchObject({
+      recurrenceRule: "FREQ=WEEKLY;INTERVAL=3;BYDAY=WE",
+    })
+  })
+
+  it("seeds a weekday when an edited monthly chore is switched to weekly", async () => {
+    await openEditForm("FREQ=MONTHLY;BYMONTHDAY=31")
+
+    fireEvent.click(screen.getByRole("button", { name: "Weekly" }))
+
+    expect(screen.getByRole("button", { name: "Monday" }).getAttribute("aria-pressed")).toBe("true")
+    expect(screen.getByTestId("repeat-summary").textContent).toBe("Weekly on Mon")
+  })
+
+  it("keeps a schedule it cannot represent and shows it as a custom schedule", async () => {
+    await openEditForm("FREQ=WEEKLY;BYDAY=MO;BYSETPOS=1")
+
+    expect(screen.getByRole("note").textContent).toContain("Custom schedule")
+    expect(screen.getByTestId("repeat-summary").textContent).toBe("Custom schedule")
+    for (const name of ["One time", "Daily", "Weekly", "Monthly", "Yearly"]) {
+      expect(screen.getByRole("button", { name }).getAttribute("aria-pressed")).toBe("false")
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }))
+
+    expect(await submittedSchedule("PUT")).toMatchObject({
+      recurrenceRule: "FREQ=WEEKLY;BYDAY=MO;BYSETPOS=1",
+    })
   })
 })

@@ -283,9 +283,18 @@ public class NotificationScheduler {
           variables.put(
               "completion_count", Integer.toString(completionCount == null ? 0 : completionCount));
           if (!templateResolver.hasEnabledTemplate(
-                  rule.eventType(), assignment.householdId(), recipient)
-              || reminderExists(rule.eventType(), assignment.id(), recipient, scheduledAt)) {
+              rule.eventType(), assignment.householdId(), recipient)) {
             continue;
+          }
+          int revision =
+              reminderRevision(rule.eventType(), assignment.id(), recipient, scheduledAt);
+          if (revision < 0) {
+            continue;
+          }
+          if (revision > 1) {
+            variables.put(DefaultNotificationGenerator.DEDUPLICATION_REVISION, "r" + revision);
+          } else {
+            variables.remove(DefaultNotificationGenerator.DEDUPLICATION_REVISION);
           }
           eventService.publish(
               new NotificationEvent(
@@ -555,7 +564,8 @@ public class NotificationScheduler {
         jdbc.queryForObject(
             """
                 SELECT CASE
-                    WHEN ?='CHORE_ASSIGNED' THEN COALESCE(p.chore_assigned_enabled, TRUE)
+                    WHEN ? IN ('CHORE_ASSIGNED', 'CHORE_OCCURRENCE_MOVED', 'CHORE_OCCURRENCE_SKIPPED')
+                        THEN COALESCE(p.chore_assigned_enabled, TRUE)
                     WHEN ? IN ('CHORE_DUE_SOON', 'CHORE_DUE_NOW')
                         THEN COALESCE(p.chore_reminders_enabled, TRUE)
                     WHEN ?='CHORE_OVERDUE'
@@ -668,23 +678,59 @@ public class NotificationScheduler {
     return result;
   }
 
-  private boolean reminderExists(
+  /**
+   * Decides whether a reminder slot (type, assignment, recipient, scheduled time) needs a row.
+   *
+   * <p>Returns -1 when it must not be planned: a row for the slot is still live (pending, sent or
+   * failed), or any earlier row for it was delivered or attempted on any channel or subscription.
+   * Returns 1 for a first plan (the original key), and n &gt; 1 when every earlier row was
+   * cancelled before any delivery attempt, for example because the deadline moved away and came
+   * back. The new row then uses a versioned key so cancelled rows and their delivery history stay
+   * untouched and the unique key still prevents duplicates.
+   */
+  private int reminderRevision(
       String eventType, UUID assignmentId, UUID recipient, OffsetDateTime scheduledAt) {
-    String deduplicationKey =
+    String baseKey =
         String.join(
             ":",
             eventType,
             assignmentId.toString(),
             recipient.toString(),
             scheduledAt.toInstant().toString());
-    Boolean exists =
-        jdbc.queryForObject(
+    List<Boolean> reusable =
+        jdbc.query(
             """
-                SELECT EXISTS(SELECT 1 FROM notifications WHERE deduplication_key=?)
+                SELECT n.status='CANCELLED'
+                       AND NOT EXISTS (
+                           SELECT 1 FROM notification_deliveries d
+                           WHERE d.notification_id=n.id
+                             AND (d.attempts>0 OR d.sent_at IS NOT NULL
+                                  OR d.status IN ('SENT', 'FAILED'))
+                       )
+                       AND NOT EXISTS (
+                           SELECT 1 FROM notification_push_delivery_targets t
+                           WHERE t.notification_id=n.id
+                             AND (t.attempts>0 OR t.sent_at IS NOT NULL
+                                  OR t.status IN ('SENT', 'FAILED'))
+                       ) AS reusable
+                FROM notifications n
+                WHERE n.reference_type='CHORE_ASSIGNMENT' AND n.reference_id=?
+                  AND n.recipient_user_id=? AND n.type=?
+                  AND (n.deduplication_key=? OR starts_with(n.deduplication_key, ?))
                 """,
-            Boolean.class,
-            deduplicationKey);
-    return Boolean.TRUE.equals(exists);
+            (rs, row) -> rs.getBoolean("reusable"),
+            assignmentId,
+            recipient,
+            eventType,
+            baseKey,
+            baseKey + ":r");
+    if (reusable.isEmpty()) {
+      return 1;
+    }
+    if (reusable.contains(Boolean.FALSE)) {
+      return -1;
+    }
+    return reusable.size() + 1;
   }
 
   @Scheduled(cron = "${app.notifications.retention-cron:0 10 3 * * *}")

@@ -10,6 +10,12 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class DefaultNotificationGenerator implements NotificationGenerator {
+  /**
+   * Optional event variable ("r2", "r3", ...) that versions a reminder's deduplication key when the
+   * notification scheduler re-plans a slot whose earlier rows were all cancelled before delivery.
+   */
+  public static final String DEDUPLICATION_REVISION = "deduplication_revision";
+
   private final NotificationTemplateResolver templateResolver;
   private final JdbcTemplate jdbc;
 
@@ -55,6 +61,12 @@ public class DefaultNotificationGenerator implements NotificationGenerator {
                       event.referenceId() == null ? "none" : event.referenceId().toString(),
                       userId.toString(),
                       scheduledAt == null ? "event" : scheduledAt.toInstant().toString());
+              String revision =
+                  event.variables() == null ? null : event.variables().get(DEDUPLICATION_REVISION);
+              if (revision != null && revision.matches("r[0-9]{1,6}")) {
+                // A re-planned reminder whose earlier rows were all cancelled unsent.
+                deduplicationKey = deduplicationKey + ":" + revision;
+              }
               return new NotificationMessage(
                   userId,
                   event.type(),

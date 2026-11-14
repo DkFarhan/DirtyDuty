@@ -1,4 +1,5 @@
 import type { AssignmentDTO, HouseholdDashboard } from "@/lib/household/chores"
+import { hasOccurrenceActions, movedFromLabel } from "@/lib/household/occurrence-actions"
 import type { PushHealthState } from "@/lib/notifications/push-health"
 import { assignmentAssigneeNames, assignmentDate, assignmentTime } from "../chore-card"
 import {
@@ -105,6 +106,8 @@ function mapChore(
         : undefined,
     assignedTo: assignmentAssigneeNames(assignment, input.currentUserId),
     status: assignment.status,
+    movedFrom: movedFromLabel(assignment),
+    hasActions: hasOccurrenceActions(assignment),
     completedBy: assignment.completedByDisplayName,
     overdue: assignment.overdue && assignment.status === "PENDING",
     canComplete:
@@ -130,8 +133,11 @@ export function createHomeApplicationViewModel(
       assignment.assignees.some((assignee) => assignee.userId === input.currentUserId),
   )
   const overdueIds = new Set(overdueAssignments.map((assignment) => assignment.id))
-  const personalWeek = week.filter((assignment) =>
-    assignment.assignees.some((assignee) => assignee.userId === input.currentUserId),
+  // A skipped day is neither assigned work nor a miss.
+  const personalWeek = week.filter(
+    (assignment) =>
+      assignment.status !== "SKIPPED" &&
+      assignment.assignees.some((assignee) => assignee.userId === input.currentUserId),
   )
   const personalToday = today.filter((assignment) =>
     assignment.assignees.some((assignee) => assignee.userId === input.currentUserId),
@@ -167,6 +173,9 @@ export function createHomeApplicationViewModel(
       title: assignment.title,
       category: assignment.categoryName ?? "Chore",
       timeLabel: assignmentTime(assignment, input.householdTimezone) ?? "",
+      skipped: assignment.status === "SKIPPED",
+      movedFrom: movedFromLabel(assignment),
+      hasActions: hasOccurrenceActions(assignment),
     })),
   }))
   const overdueChores = overdueAssignments.map((assignment) => mapChore(assignment, input))

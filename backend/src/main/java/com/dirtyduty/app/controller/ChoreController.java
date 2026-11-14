@@ -1,12 +1,16 @@
 package com.dirtyduty.app.controller;
 
 import com.dirtyduty.app.dto.chore.AssignmentResponse;
+import com.dirtyduty.app.dto.chore.ChoreCategoryOrderRequest;
+import com.dirtyduty.app.dto.chore.ChoreCategoryRequest;
 import com.dirtyduty.app.dto.chore.ChoreCategoryResponse;
 import com.dirtyduty.app.dto.chore.ChoreManagementOptionsResponse;
 import com.dirtyduty.app.dto.chore.ChoreRequest;
 import com.dirtyduty.app.dto.chore.ChoreResponse;
 import com.dirtyduty.app.dto.chore.DashboardResponse;
 import com.dirtyduty.app.dto.chore.HouseholdMemberStatsResponse;
+import com.dirtyduty.app.dto.chore.MoveAssignmentRequest;
+import com.dirtyduty.app.dto.chore.ReassignAssignmentRequest;
 import com.dirtyduty.app.service.ChoreService;
 import com.dirtyduty.app.service.OccurrenceService;
 import jakarta.validation.Valid;
@@ -15,6 +19,7 @@ import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -22,6 +27,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -42,6 +48,41 @@ public class ChoreController {
       @PathVariable UUID assignmentId,
       Authentication authentication) {
     return occurrenceService.complete(householdId, assignmentId, authentication);
+  }
+
+  @PostMapping("/assignments/{assignmentId}/move")
+  public AssignmentResponse moveAssignment(
+      @PathVariable UUID householdId,
+      @PathVariable UUID assignmentId,
+      @RequestBody MoveAssignmentRequest request,
+      Authentication authentication) {
+    return occurrenceService.move(
+        householdId, assignmentId, request.date(), request.time(), authentication);
+  }
+
+  @PostMapping("/assignments/{assignmentId}/skip")
+  public AssignmentResponse skipAssignment(
+      @PathVariable UUID householdId,
+      @PathVariable UUID assignmentId,
+      Authentication authentication) {
+    return occurrenceService.skip(householdId, assignmentId, authentication);
+  }
+
+  @PostMapping("/assignments/{assignmentId}/unskip")
+  public AssignmentResponse unskipAssignment(
+      @PathVariable UUID householdId,
+      @PathVariable UUID assignmentId,
+      Authentication authentication) {
+    return occurrenceService.unskip(householdId, assignmentId, authentication);
+  }
+
+  @PutMapping("/assignments/{assignmentId}/assignees")
+  public AssignmentResponse reassignAssignment(
+      @PathVariable UUID householdId,
+      @PathVariable UUID assignmentId,
+      @RequestBody ReassignAssignmentRequest request,
+      Authentication authentication) {
+    return occurrenceService.reassign(householdId, assignmentId, request.userIds(), authentication);
   }
 
   @GetMapping("/my-chores")
@@ -68,6 +109,41 @@ public class ChoreController {
   public List<ChoreCategoryResponse> listCategories(
       @PathVariable UUID householdId, Authentication authentication) {
     return choreService.listCategories(householdId, authentication);
+  }
+
+  @PostMapping("/chore-categories")
+  public ResponseEntity<ChoreCategoryResponse> createCategory(
+      @PathVariable UUID householdId,
+      @RequestBody ChoreCategoryRequest request,
+      Authentication authentication) {
+    return ResponseEntity.status(HttpStatus.CREATED)
+        .body(choreService.createCategory(householdId, request, authentication));
+  }
+
+  @PutMapping("/chore-categories/order")
+  public List<ChoreCategoryResponse> reorderCategories(
+      @PathVariable UUID householdId,
+      @RequestBody ChoreCategoryOrderRequest request,
+      Authentication authentication) {
+    return choreService.reorderCategories(householdId, request, authentication);
+  }
+
+  @PutMapping("/chore-categories/{categoryId}")
+  public ChoreCategoryResponse updateCategory(
+      @PathVariable UUID householdId,
+      @PathVariable UUID categoryId,
+      @RequestBody ChoreCategoryRequest request,
+      Authentication authentication) {
+    return choreService.updateCategory(householdId, categoryId, request, authentication);
+  }
+
+  @DeleteMapping("/chore-categories/{categoryId}")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void deleteCategory(
+      @PathVariable UUID householdId,
+      @PathVariable UUID categoryId,
+      Authentication authentication) {
+    choreService.deleteCategory(householdId, categoryId, authentication);
   }
 
   @GetMapping("/chore-management-options")

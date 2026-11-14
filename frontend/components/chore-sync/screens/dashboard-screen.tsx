@@ -14,10 +14,19 @@ import {
   useDataSync,
 } from "@/lib/data-sync/data-sync-context"
 import {
+  findDashboardAssignment,
   optimisticallyCompleteDashboardAssignment,
+  replaceDashboardOccurrence,
   rollbackDashboardAssignmentCompletion,
   updateDashboardAssignment,
 } from "@/lib/household/assignment-state"
+import {
+  optimisticOccurrence,
+  runOccurrenceAction,
+  type OccurrenceAction,
+} from "@/lib/household/occurrence-actions"
+import { OccurrenceActionSheet } from "../occurrence-action-sheet"
+import { getLocalDateKey } from "../week-summary"
 import { usePushSubscriptionHealth } from "@/lib/notifications/push-health"
 import {
   HomeScreenView,
@@ -47,6 +56,7 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
   const [actionError, setActionError] = useState<string | null>(null)
   const [completingIds, setCompletingIds] = useState<Set<string>>(() => new Set())
   const [inviteHousehold, setInviteHousehold] = useState<Household | null>(null)
+  const [actionTargetId, setActionTargetId] = useState<string | null>(null)
   const [unreadCount, setUnreadCount] = useState(0)
   const dashboardRef = useRef<HouseholdDashboard | null>(null)
   const dashboardHouseholdIdRef = useRef<string | null>(null)
@@ -250,6 +260,62 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
     }
   }
 
+  /**
+   * Moves, skips, restores or reassigns one occurrence. The change shows at once and is replaced
+   * by the server's answer, or rolled back with an error if the server refuses it.
+   */
+  const performOccurrenceAction = async (assignmentId: string, action: OccurrenceAction) => {
+    if (!household) return
+    const operation = `occurrence:${assignmentId}`
+    const previous =
+      dashboardHouseholdIdRef.current === household.id
+        ? findDashboardAssignment(dashboardRef.current, assignmentId)
+        : null
+    if (!previous || !claimCompletion(operation)) return
+    const apply = (next: HouseholdDashboard) => {
+      if (dashboardHouseholdIdRef.current !== household.id) return
+      dashboardRef.current = next
+      setDashboard(next)
+    }
+    const todayKey = getLocalDateKey(new Date(), household.timezone)
+    const optimistic = optimisticOccurrence(
+      previous,
+      action,
+      household.timezone,
+      state.currentUser.id,
+    )
+    requestSequence.current += 1
+    if (dashboardRef.current) {
+      apply(replaceDashboardOccurrence(dashboardRef.current, optimistic, previous, todayKey))
+    }
+    setActionError(null)
+    try {
+      const confirmed = await runOccurrenceAction(household.id, assignmentId, action)
+      requestSequence.current += 1
+      const current = findDashboardAssignment(dashboardRef.current, assignmentId) ?? optimistic
+      if (dashboardRef.current) {
+        apply(replaceDashboardOccurrence(dashboardRef.current, confirmed, current, todayKey))
+      }
+      invalidateChores()
+    } catch (cause) {
+      requestSequence.current += 1
+      const current = findDashboardAssignment(dashboardRef.current, assignmentId)
+      if (current && dashboardRef.current) {
+        apply(replaceDashboardOccurrence(dashboardRef.current, previous, current, todayKey))
+      }
+      if (dashboardHouseholdIdRef.current === household.id) {
+        setActionError(
+          cause instanceof ApiError
+            ? cause.message
+            : "Unable to update this chore. Please try again.",
+        )
+      }
+      invalidateChores()
+    } finally {
+      releaseCompletion(operation)
+    }
+  }
+
   const setInviteOpen = useCallback((open: boolean) => {
     if (!open) setInviteHousehold(null)
   }, [])
@@ -288,6 +354,7 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
       <HomeScreenView
         activeDestination="home"
         onCompleteChore={(id) => void completeAssignment(id)}
+        onOpenChoreActions={setActionTargetId}
         onNavigate={onNavigate}
         onOpenNotifications={() => openNotifications("dashboard")}
         onPushAction={onPushAction}
@@ -296,6 +363,21 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
         theme={theme}
         viewModel={viewModel}
       />
+      {household && actionTargetId && findDashboardAssignment(currentDashboard, actionTargetId) && (
+        <OccurrenceActionSheet
+          assignment={findDashboardAssignment(currentDashboard, actionTargetId)!}
+          householdId={household.id}
+          householdTimezone={household.timezone}
+          viewerId={state.currentUser.id}
+          onClose={() => setActionTargetId(null)}
+          onSubmit={(action) => {
+            const target = actionTargetId
+            setActionTargetId(null)
+            void performOccurrenceAction(target, action)
+          }}
+          theme={theme}
+        />
+      )}
       {household && canInvite && (
         <InviteHousemateDialog
           household={inviteHousehold ?? household}
