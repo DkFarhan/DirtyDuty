@@ -456,9 +456,15 @@
   html.dark {
     background-color: #061923;
   }
+  /* iOS Safari tints the status bar / top toolbar from the body background, so body uses the
+     same canvas colour as html rather than --background (near-black in dark, white in light). */
   body {
-    @apply bg-background text-foreground;
+    @apply text-foreground;
+    background-color: #edf8f4;
     font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  }
+  html.dark body {
+    background-color: #061923;
   }
   h1,
   h2,

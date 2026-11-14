@@ -43,4 +43,26 @@ describe("iPhone full-screen viewport", () => {
     )
     expect(providerSource).toContain(`meta.content = dark ? "${DARK_TOP}" : "${LIGHT_TOP}"`)
   })
+
+  it("paints body with the same canvas colour as html and theme-color in both themes", async () => {
+    // iOS Safari tints the status bar from the body background, so it must match the canvas.
+    const css = readFileSync(new URL("./globals.css", import.meta.url), "utf8")
+    const backgroundOf = (selector: string) => {
+      const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+      const rule = css.match(new RegExp(`(?:^|\\n)\\s*${escaped}\\s*\\{([^}]*)\\}`))
+      return rule?.[1].match(/background-color:\s*([^;]+);/)?.[1].trim()
+    }
+
+    expect(backgroundOf("html")).toBe(LIGHT_TOP)
+    expect(backgroundOf("body")).toBe(LIGHT_TOP)
+    expect(backgroundOf("html.dark")).toBe(DARK_TOP)
+    expect(backgroundOf("html.dark body")).toBe(DARK_TOP)
+    expect(css).not.toMatch(/body\s*\{[^}]*bg-background/)
+
+    const { viewport } = await import("./layout")
+    expect(viewport.themeColor).toEqual([
+      { media: "(prefers-color-scheme: light)", color: backgroundOf("body") },
+      { media: "(prefers-color-scheme: dark)", color: backgroundOf("html.dark body") },
+    ])
+  })
 })
