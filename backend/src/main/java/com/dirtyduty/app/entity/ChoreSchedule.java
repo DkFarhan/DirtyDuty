@@ -1,6 +1,8 @@
 package com.dirtyduty.app.entity;
 
 import com.dirtyduty.app.entity.enums.AssignmentStrategy;
+import com.dirtyduty.app.entity.enums.IntervalUnit;
+import com.dirtyduty.app.entity.enums.ScheduleKind;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -46,8 +48,25 @@ public class ChoreSchedule {
   @JoinColumn(name = "chore_id", nullable = false)
   private Chore chore;
 
-  @Column(name = "recurrence_rule", nullable = false)
+  /** The RRULE subset for CALENDAR schedules; null for the other kinds. */
+  @Column(name = "recurrence_rule")
   private String recurrenceRule;
+
+  @Enumerated(EnumType.STRING)
+  @Column(name = "kind", nullable = false, length = 20)
+  private ScheduleKind kind = ScheduleKind.CALENDAR;
+
+  /** AFTER_COMPLETION only: the next occurrence is due this many units after the last one. */
+  @Column(name = "interval_count")
+  private Integer intervalCount;
+
+  @Enumerated(EnumType.STRING)
+  @Column(name = "interval_unit", length = 10)
+  private IntervalUnit intervalUnit;
+
+  /** AS_NEEDED only: "do at least every N days", or null when the backstop is off. */
+  @Column(name = "backstop_days")
+  private Integer backstopDays;
 
   @Column(name = "timezone", nullable = false, length = 100)
   private String timezone;

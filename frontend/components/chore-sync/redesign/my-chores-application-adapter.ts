@@ -1,4 +1,14 @@
 import { categoryIcon as categoryEmoji, type AssignmentDTO } from "@/lib/household/chores"
+import {
+  feedbackFor,
+  unplacedFeedbackError,
+  type CardFeedback,
+} from "@/lib/household/card-feedback"
+import {
+  categoryWithRepeat,
+  householdJobView,
+  isHouseholdJob,
+} from "@/lib/household/household-jobs"
 import { hasOccurrenceActions, movedFromLabel } from "@/lib/household/occurrence-actions"
 import { assignmentAssigneeNames, assignmentDate } from "../chore-card"
 import type {
@@ -15,6 +25,10 @@ export interface MyChoresApplicationViewModelInput {
   householdTimezone: string
   householdId: string | null
   completingIds: ReadonlySet<string>
+  /** "Needs doing" requests in flight, by assignment id. */
+  flaggingIds?: ReadonlySet<string>
+  /** The result of the last card action, shown under that card. */
+  cardFeedback?: CardFeedback | null
   status: MyChoresViewStatus
   errorMessage: string | null
   refreshError: string | null
@@ -64,7 +78,7 @@ function mapUpcoming(
   return {
     id: assignment.id,
     title: assignment.title,
-    category: assignment.categoryName ?? "Chore",
+    category: categoryWithRepeat(assignment),
     dateLabel: assignmentDate(assignment, input.householdTimezone),
     durationLabel: durationLabel(assignment),
     assignedTo: assignmentAssigneeNames(assignment, input.currentUserId),
@@ -78,6 +92,7 @@ function mapUpcoming(
       assignment.status === "PENDING" &&
       assignment.canComplete &&
       assignment.assignees.some((assignee) => assignee.userId === input.currentUserId),
+    feedback: feedbackFor(assignment, input.cardFeedback ?? null, "card"),
   }
 }
 
@@ -101,8 +116,25 @@ function mapCompleted(
 export function createMyChoresApplicationViewModel(
   input: MyChoresApplicationViewModelInput,
 ): MyChoresViewModel {
+  // "When needed" jobs have their own list: everyone in the rotation sees them, flagged and
+  // overdue ones for whoever's turn it is first.
+  const jobAssignments = input.upcoming.filter(
+    (assignment) => isHouseholdJob(assignment) && assignment.status === "PENDING",
+  )
+  const jobs = jobAssignments
+    .map((assignment) => ({
+      ...householdJobView(assignment, input.currentUserId, input.householdTimezone),
+      feedback: feedbackFor(assignment, input.cardFeedback ?? null, "job"),
+    }))
+    .sort(
+      (left, right) =>
+        Number(right.yourTurn && (right.flagged || right.overdue)) -
+        Number(left.yourTurn && (left.flagged || left.overdue)),
+    )
   // My Chores lists what is still to do; a skipped day is not.
-  const toDo = input.upcoming.filter((assignment) => assignment.status !== "SKIPPED")
+  const toDo = input.upcoming.filter(
+    (assignment) => assignment.status !== "SKIPPED" && !isHouseholdJob(assignment),
+  )
   const overdue = toDo.filter((assignment) => assignment.status === "PENDING" && assignment.overdue)
   const attentionAssignment = overdue[0]
   const upcoming = toDo.filter((assignment) => assignment.id !== attentionAssignment?.id)
@@ -114,9 +146,21 @@ export function createMyChoresApplicationViewModel(
     status: input.status,
     errorMessage: input.errorMessage ?? undefined,
     refreshError: input.refreshError ?? undefined,
-    actionError: input.actionError ?? undefined,
+    // A card action's result goes under its card; the banner only takes one no card can show.
+    actionError:
+      input.actionError ??
+      unplacedFeedbackError(
+        [
+          { surface: "card", assignments: toDo },
+          { surface: "job", assignments: jobAssignments },
+        ],
+        input.cardFeedback ?? null,
+      ) ??
+      undefined,
     attentionChore: attentionAssignment ? mapUpcoming(attentionAssignment, input) : null,
     upcomingChores: upcoming.map((assignment) => mapUpcoming(assignment, input)),
+    householdJobs: jobs,
+    flaggingIds: [...(input.flaggingIds ?? [])],
     completedChores: input.completed.map((assignment) => mapCompleted(assignment, input)),
     completedHeading: `${input.completed.length} ${
       input.completed.length === 1 ? "thing" : "things"

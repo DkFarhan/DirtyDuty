@@ -1,0 +1,43 @@
+/* Inline result of a card action, directly under that card. */
+
+.darkTheme {
+  --feedback-error: #ffb4a6;
+  --feedback-error-surface: rgb(74 41 51 / 85%);
+  --feedback-success: #9ef0d3;
+  --feedback-success-surface: rgb(20 77 66 / 85%);
+}
+
+.lightTheme {
+  --feedback-error: #8e2733;
+  --feedback-error-surface: #fbe3df;
+  --feedback-success: #0b5f4f;
+  --feedback-success-surface: #dcf4ea;
+}
+
+.message {
+  display: flex;
+  box-sizing: border-box;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.message > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.error {
+  background: var(--feedback-error-surface);
+  color: var(--feedback-error);
+}
+
+.success {
+  background: var(--feedback-success-surface);
+  color: var(--feedback-success);
+}

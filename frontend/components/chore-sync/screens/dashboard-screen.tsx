@@ -3,7 +3,15 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useChoreSync } from "@/lib/chore-sync/store"
 import { ApiError } from "@/lib/auth/api"
-import { choreApi, type HouseholdDashboard } from "@/lib/household/chores"
+import { choreApi, type AssignmentDTO, type HouseholdDashboard } from "@/lib/household/chores"
+import {
+  cardFeedback,
+  CONFIRMATION_MS,
+  flagConfirmation,
+  type CardFeedback,
+  type CardSurface,
+} from "@/lib/household/card-feedback"
+import { optimisticFlag } from "@/lib/household/household-jobs"
 import { useHouseholds } from "@/lib/household/household-context"
 import type { Household } from "@/lib/household/api"
 import { InviteHousemateDialog } from "../invite-housemate-dialog"
@@ -53,10 +61,12 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
   const [error, setError] = useState<string | null>(null)
   const [refreshError, setRefreshError] = useState<string | null>(null)
   const [notificationCountError, setNotificationCountError] = useState<string | null>(null)
-  const [actionError, setActionError] = useState<string | null>(null)
+  const [cardFeedbackState, setCardFeedback] = useState<CardFeedback | null>(null)
   const [completingIds, setCompletingIds] = useState<Set<string>>(() => new Set())
+  const [flaggingIds, setFlaggingIds] = useState<Set<string>>(() => new Set())
   const [inviteHousehold, setInviteHousehold] = useState<Household | null>(null)
   const [actionTargetId, setActionTargetId] = useState<string | null>(null)
+  const [actionSurface, setActionSurface] = useState<CardSurface>("card")
   const [unreadCount, setUnreadCount] = useState(0)
   const dashboardRef = useRef<HouseholdDashboard | null>(null)
   const dashboardHouseholdIdRef = useRef<string | null>(null)
@@ -184,7 +194,7 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
     queueCreatedHouseholdInvite(null)
   }, [createdHouseholdInvite, queueCreatedHouseholdInvite])
 
-  const completeAssignment = async (assignmentId: string) => {
+  const completeAssignment = async (assignmentId: string, surface: CardSurface = "card") => {
     if (!household) return
     const operationKey = `${household.id}:${assignmentId}`
     if (pendingCompletionIds.current.has(operationKey) || !claimCompletion(assignmentId)) return
@@ -212,7 +222,7 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
     setCompletingIds((current) => new Set(current).add(operationKey))
     dashboardRef.current = optimistic.dashboard
     setDashboard(optimistic.dashboard)
-    setActionError(null)
+    setCardFeedback(null)
     try {
       const confirmed = await choreApi.complete(household.id, assignmentId)
       requestSequence.current += 1
@@ -242,10 +252,15 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
       }
       pendingCompletions.current.delete(operationKey)
       if (dashboardHouseholdIdRef.current === household.id) {
-        setActionError(
-          cause instanceof ApiError
-            ? cause.message
-            : "Unable to complete this chore. Please try again.",
+        setCardFeedback(
+          cardFeedback(
+            optimistic.previous,
+            cause instanceof ApiError
+              ? cause.message
+              : "Unable to complete this chore. Please try again.",
+            "error",
+            surface,
+          ),
         )
       }
       invalidateChores()
@@ -264,7 +279,11 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
    * Moves, skips, restores or reassigns one occurrence. The change shows at once and is replaced
    * by the server's answer, or rolled back with an error if the server refuses it.
    */
-  const performOccurrenceAction = async (assignmentId: string, action: OccurrenceAction) => {
+  const performOccurrenceAction = async (
+    assignmentId: string,
+    action: OccurrenceAction,
+    surface: CardSurface = "card",
+  ) => {
     if (!household) return
     const operation = `occurrence:${assignmentId}`
     const previous =
@@ -288,7 +307,7 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
     if (dashboardRef.current) {
       apply(replaceDashboardOccurrence(dashboardRef.current, optimistic, previous, todayKey))
     }
-    setActionError(null)
+    setCardFeedback(null)
     try {
       const confirmed = await runOccurrenceAction(household.id, assignmentId, action)
       requestSequence.current += 1
@@ -304,10 +323,15 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
         apply(replaceDashboardOccurrence(dashboardRef.current, previous, current, todayKey))
       }
       if (dashboardHouseholdIdRef.current === household.id) {
-        setActionError(
-          cause instanceof ApiError
-            ? cause.message
-            : "Unable to update this chore. Please try again.",
+        setCardFeedback(
+          cardFeedback(
+            previous,
+            cause instanceof ApiError
+              ? cause.message
+              : "Unable to update this chore. Please try again.",
+            "error",
+            surface,
+          ),
         )
       }
       invalidateChores()
@@ -315,6 +339,75 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
       releaseCompletion(operation)
     }
   }
+
+  /** "Needs doing": shows the flag at once, then the server's answer, or rolls back with its message. */
+  const flagAssignment = async (assignmentId: string) => {
+    if (!household) return
+    const operation = `flag:${assignmentId}`
+    const previous =
+      dashboardHouseholdIdRef.current === household.id
+        ? findDashboardAssignment(dashboardRef.current, assignmentId)
+        : null
+    if (!previous || !claimCompletion(operation)) return
+    const apply = (next: AssignmentDTO) => {
+      if (dashboardHouseholdIdRef.current !== household.id || !dashboardRef.current) return
+      dashboardRef.current = updateDashboardAssignment(dashboardRef.current, next)
+      setDashboard(dashboardRef.current)
+    }
+    requestSequence.current += 1
+    apply(
+      optimisticFlag(previous, {
+        userId: state.currentUser.id,
+        displayName: state.currentUser.name,
+      }),
+    )
+    setFlaggingIds((current) => new Set(current).add(assignmentId))
+    setCardFeedback(null)
+    try {
+      const confirmed = await choreApi.flag(household.id, assignmentId)
+      requestSequence.current += 1
+      apply(confirmed)
+      setCardFeedback(
+        cardFeedback(
+          confirmed,
+          flagConfirmation(confirmed, state.currentUser.id),
+          "success",
+          "job",
+        ),
+      )
+      invalidateChores()
+    } catch (cause) {
+      requestSequence.current += 1
+      apply(previous)
+      if (dashboardHouseholdIdRef.current === household.id) {
+        setCardFeedback(
+          cardFeedback(
+            previous,
+            cause instanceof ApiError
+              ? cause.message
+              : "Unable to flag this job. Please try again.",
+            "error",
+            "job",
+          ),
+        )
+      }
+      invalidateChores()
+    } finally {
+      releaseCompletion(operation)
+      setFlaggingIds((current) => {
+        const next = new Set(current)
+        next.delete(assignmentId)
+        return next
+      })
+    }
+  }
+
+  // Confirmations clear themselves; errors stay until the next action.
+  useEffect(() => {
+    if (cardFeedbackState?.tone !== "success") return
+    const timer = window.setTimeout(() => setCardFeedback(null), CONFIRMATION_MS)
+    return () => window.clearTimeout(timer)
+  }, [cardFeedbackState])
 
   const setInviteOpen = useCallback((open: boolean) => {
     if (!open) setInviteHousehold(null)
@@ -333,9 +426,11 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
     status: visibleStatus,
     errorMessage: error,
     refreshError,
-    actionError,
+    actionError: null,
+    cardFeedback: cardFeedbackState,
     notificationCountError,
     completingIds,
+    flaggingIds,
     pushHealth,
   })
   const onNavigate = (destination: HomeNavigationDestination) =>
@@ -353,8 +448,12 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
     <>
       <HomeScreenView
         activeDestination="home"
-        onCompleteChore={(id) => void completeAssignment(id)}
-        onOpenChoreActions={setActionTargetId}
+        onCompleteChore={(id, surface) => void completeAssignment(id, surface)}
+        onOpenChoreActions={(id, surface = "card") => {
+          setActionSurface(surface)
+          setActionTargetId(id)
+        }}
+        onFlagJob={(id) => void flagAssignment(id)}
         onNavigate={onNavigate}
         onOpenNotifications={() => openNotifications("dashboard")}
         onPushAction={onPushAction}
@@ -373,7 +472,7 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
           onSubmit={(action) => {
             const target = actionTargetId
             setActionTargetId(null)
-            void performOccurrenceAction(target, action)
+            void performOccurrenceAction(target, action, actionSurface)
           }}
           theme={theme}
         />

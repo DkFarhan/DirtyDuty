@@ -74,7 +74,36 @@ const OCCURRENCE_ACTION_MESSAGES = [
   /^Choose between 1 and \d+ people for this chore\.$/,
   /^Everyone you choose must be a current household member\.$/,
   /^Assignment was not found in this household\.$/,
+  /^A When needed chore can't be (moved|skipped)\.$/,
+  /^This chore has already moved on to its next one, so the skip can't be undone\.$/,
+  /^Choose someone in this chore's rotation\.$/,
 ]
+
+/** Completing and flagging household jobs ("After it's done" and "When needed"). */
+const JOB_MESSAGES = [
+  /^Already done by [^\n]{1,80}\.$/,
+  /^Already flagged at \d{1,2}:\d{2} (AM|PM)\.$/,
+  /^Only people in this chore's rotation can complete it\.$/,
+  /^Only a When needed chore can be flagged\.$/,
+  /^This chore is already done\.$/,
+  /^Assignment was not found in this household\.$/,
+]
+
+/** Chore type settings checked when a chore is saved. */
+const CHORE_KIND_MESSAGES = new Set([
+  "An end date doesn't apply to this chore type.",
+  "A number of times doesn't apply to this chore type.",
+  "Choose how long after it's done the next one is due.",
+  "Choose between 1 and 365 days after it's done.",
+  "Choose between 1 and 52 weeks after it's done.",
+  "Choose the first due date.",
+  '"Do at least every" only applies to When needed chores.',
+  "An interval after it's done doesn't apply to When needed chores.",
+  'Choose "at least every" between 1 and 30 days.',
+  "A When needed chore either rotates or has one fixed person.",
+  "Choose who does this chore: one fixed person, random, or a rotation.",
+  "This chore type is done by one person at a time.",
+])
 
 function messageFor(
   status: number,
@@ -102,6 +131,29 @@ function messageFor(
     "message" in payload &&
     typeof payload.message === "string" &&
     OCCURRENCE_ACTION_MESSAGES.some((pattern) => pattern.test(payload.message as string))
+  ) {
+    return payload.message
+  }
+  if (
+    (status === 400 || status === 403 || status === 404 || status === 409) &&
+    /^\/api\/households\/[^/]+\/assignments\/[^/]+\/(complete|flag)$/.test(path) &&
+    payload !== null &&
+    typeof payload === "object" &&
+    "message" in payload &&
+    typeof payload.message === "string" &&
+    JOB_MESSAGES.some((pattern) => pattern.test(payload.message as string))
+  ) {
+    return payload.message
+  }
+  if (
+    status === 400 &&
+    (method === "POST" || method === "PUT") &&
+    /^\/api\/households\/[^/]+\/chores(\/[^/]+)?$/.test(path) &&
+    payload !== null &&
+    typeof payload === "object" &&
+    "message" in payload &&
+    typeof payload.message === "string" &&
+    CHORE_KIND_MESSAGES.has(payload.message)
   ) {
     return payload.message
   }

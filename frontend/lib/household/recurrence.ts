@@ -303,6 +303,51 @@ export function describeRecurrence(recurrence: Recurrence, endsOn?: string | nul
   return parts.join(", ")
 }
 
+function formatTime(time: string) {
+  const [hour, minute] = time.split(":").map(Number)
+  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return time
+  const suffix = hour < 12 ? "AM" : "PM"
+  const twelve = hour % 12 === 0 ? 12 : hour % 12
+  return `${twelve}:${String(minute).padStart(2, "0")} ${suffix}`
+}
+
+export type ChoreKindSummary = {
+  kind?: "CALENDAR" | "AFTER_COMPLETION" | "AS_NEEDED" | null
+  recurrenceRule?: string | null
+  startsOn?: string | null
+  endsOn?: string | null
+  intervalCount?: number | null
+  intervalUnit?: "DAY" | "WEEK" | null
+  backstopDays?: number | null
+  /** "HH:mm" or "HH:mm:ss". */
+  dueTime?: string | null
+}
+
+/**
+ * One line for any kind of chore, shared by the form and the admin list: "Every 3 days after it's
+ * done", "When needed · at least every 2 days by 8:00 PM", "When needed", or the calendar summary.
+ */
+export function describeChoreSchedule(schedule: ChoreKindSummary): string {
+  if (schedule.kind === "AFTER_COMPLETION") {
+    const count = schedule.intervalCount ?? 1
+    const unit = schedule.intervalUnit === "WEEK" ? ["week", "weeks"] : ["day", "days"]
+    return count === 1
+      ? `Every ${unit[0]} after it's done`
+      : `Every ${count} ${unit[1]} after it's done`
+  }
+  if (schedule.kind === "AS_NEEDED") {
+    if (!schedule.backstopDays) return "When needed"
+    const every = schedule.backstopDays === 1 ? "every day" : `every ${schedule.backstopDays} days`
+    const by = schedule.dueTime ? ` by ${formatTime(schedule.dueTime.slice(0, 5))}` : ""
+    return `When needed · at least ${every}${by}`
+  }
+  return describeRecurrenceRule(
+    schedule.recurrenceRule,
+    schedule.startsOn ?? undefined,
+    schedule.endsOn,
+  )
+}
+
 /** Describes a stored rule, or "Custom schedule" when it cannot be represented. */
 export function describeRecurrenceRule(
   rule: string | null | undefined,

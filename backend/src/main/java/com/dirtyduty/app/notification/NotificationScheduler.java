@@ -564,9 +564,10 @@ public class NotificationScheduler {
         jdbc.queryForObject(
             """
                 SELECT CASE
-                    WHEN ? IN ('CHORE_ASSIGNED', 'CHORE_OCCURRENCE_MOVED', 'CHORE_OCCURRENCE_SKIPPED')
+                    WHEN ? IN ('CHORE_ASSIGNED', 'CHORE_OCCURRENCE_MOVED', 'CHORE_OCCURRENCE_SKIPPED',
+                               'CHORE_TURN')
                         THEN COALESCE(p.chore_assigned_enabled, TRUE)
-                    WHEN ? IN ('CHORE_DUE_SOON', 'CHORE_DUE_NOW')
+                    WHEN ? IN ('CHORE_DUE_SOON', 'CHORE_DUE_NOW', 'CHORE_NEEDS_DOING')
                         THEN COALESCE(p.chore_reminders_enabled, TRUE)
                     WHEN ?='CHORE_OVERDUE'
                         THEN COALESCE(p.chore_reminders_enabled, TRUE)

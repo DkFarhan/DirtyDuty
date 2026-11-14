@@ -2,6 +2,10 @@
 
 import type { HomeNavigationDestination, HomeVisualTheme } from "./home-screen-view"
 import { BottomNav } from "../bottom-nav"
+import type { HouseholdJobViewModel } from "@/lib/household/household-jobs"
+import type { CardFeedbackView, CardSurface } from "@/lib/household/card-feedback"
+import { CardFeedbackMessage } from "../card-feedback"
+import { HouseholdJobCard } from "../household-job-card"
 import { OccurrenceMoreButton } from "../occurrence-action-sheet"
 import styles from "./my-chores-screen-view.module.css"
 
@@ -25,6 +29,8 @@ export interface MyChoreUpcomingViewModel {
   movedFrom?: string | null
   /** The viewer may move, skip, undo or reassign this occurrence. */
   hasActions?: boolean
+  /** The result of the last action taken from this card, shown under it. */
+  feedback?: CardFeedbackView
 }
 
 export interface MyChoreCompletedViewModel {
@@ -49,6 +55,9 @@ export interface MyChoresViewModel {
   completedChores: MyChoreCompletedViewModel[]
   completedHeading: string
   completingIds: string[]
+  /** "When needed" chores the viewer is in the rotation for. */
+  householdJobs?: HouseholdJobViewModel[]
+  flaggingIds?: string[]
 }
 
 export interface MyChoresScreenViewProps {
@@ -57,9 +66,11 @@ export interface MyChoresScreenViewProps {
   viewModel: MyChoresViewModel
   activeDestination: HomeNavigationDestination
   onSelectTab: (tab: MyChoresTab) => void
-  onCompleteChore: (choreId: string) => void
+  onCompleteChore: (choreId: string, surface?: CardSurface) => void
   /** Opens the move, skip and reassign sheet for one occurrence. */
-  onOpenChoreActions?: (choreId: string) => void
+  onOpenChoreActions?: (choreId: string, surface?: CardSurface) => void
+  /** "Needs doing" on a household job. */
+  onFlagJob?: (choreId: string) => void
   onRetry: () => void
   onNavigate: (destination: HomeNavigationDestination) => void
 }
@@ -83,71 +94,78 @@ function UpcomingCard({
     chore.canComplete !== false && chore.status !== "COMPLETED" && chore.status !== "CANCELLED"
   const showActions = Boolean(chore.hasActions && onOpenActions)
   return (
-    <article
-      className={`${styles.upcomingCard} ${index % 2 === 1 ? styles.alternateUpcomingCard : ""} ${showActions ? styles.upcomingCardWithActions : ""}`}
-      data-chore-id={chore.id}
-      data-occurrence-card={chore.id}
-      id={`assignment-${chore.id}`}
-    >
-      <span className={styles.categoryGlass} />
-      <span
-        aria-hidden="true"
-        className={`${styles.categoryGlyph} ${styles[`category${chore.categoryIcon}`]}`}
-        data-theme={theme}
-      />
-      {/* The title shrinks first, so it truncates before the status badge and the More button. */}
-      <div className={styles.upcomingHeading}>
-        <h3 className={styles.upcomingTitle}>{chore.title}</h3>
-        {chore.overdue && <span className={styles.upcomingStatus}>Overdue</span>}
-        {chore.status === "CANCELLED" && (
-          <span className={`${styles.upcomingStatus} ${styles.cancelledStatus}`}>Cancelled</span>
-        )}
-        {chore.status === "COMPLETED" && (
-          <span className={`${styles.upcomingStatus} ${styles.cancelledStatus}`}>Completed</span>
-        )}
-        {chore.priority &&
-          !chore.overdue &&
-          chore.status !== "CANCELLED" &&
-          chore.status !== "COMPLETED" && (
-            <span aria-hidden="true" className={styles.priorityIndicator} />
-          )}
-      </div>
-      <p className={styles.upcomingCategory}>{chore.category}</p>
-      <p className={styles.upcomingDate}>
-        {chore.dateLabel}
-        {chore.movedFrom && (
-          <>
-            <span aria-hidden="true"> · </span>
-            <span className={styles.movedHint}>{chore.movedFrom}</span>
-          </>
-        )}
-      </p>
-      {showActions && (
-        <OccurrenceMoreButton
-          className={styles.upcomingMoreButton}
-          onClick={() => onOpenActions?.(chore.id)}
-          title={chore.title}
+    <>
+      <article
+        className={`${styles.upcomingCard} ${index % 2 === 1 ? styles.alternateUpcomingCard : ""} ${showActions ? styles.upcomingCardWithActions : ""}`}
+        data-chore-id={chore.id}
+        data-occurrence-card={chore.id}
+        id={`assignment-${chore.id}`}
+      >
+        <span className={styles.categoryGlass} />
+        <span
+          aria-hidden="true"
+          className={`${styles.categoryGlyph} ${styles[`category${chore.categoryIcon}`]}`}
+          data-theme={theme}
         />
-      )}
-      <span aria-hidden="true" className={styles.upcomingDivider} />
-      <p className={styles.upcomingAssignees}>Assigned to {chore.assignedTo}</p>
-      {chore.durationLabel && <p className={styles.upcomingDuration}>{chore.durationLabel}</p>}
-      {canComplete && (
-        <button
-          aria-busy={completing}
-          aria-label={`${completing ? "Completing" : "Complete"} ${chore.title}`}
-          className={styles.inlineCompleteButton}
-          disabled={completing}
-          onClick={() => onComplete(chore.id)}
-          type="button"
-        >
-          {!completing && (
-            <span aria-hidden="true" className={styles.listCheck} data-theme={theme} />
+        {/* The title shrinks first, so it truncates before the status badge and the More button. */}
+        <div className={styles.upcomingHeading}>
+          <h3 className={styles.upcomingTitle}>{chore.title}</h3>
+          {chore.overdue && <span className={styles.upcomingStatus}>Overdue</span>}
+          {chore.status === "CANCELLED" && (
+            <span className={`${styles.upcomingStatus} ${styles.cancelledStatus}`}>Cancelled</span>
           )}
-          {completing ? "Completing..." : "Complete"}
-        </button>
-      )}
-    </article>
+          {chore.status === "COMPLETED" && (
+            <span className={`${styles.upcomingStatus} ${styles.cancelledStatus}`}>Completed</span>
+          )}
+          {chore.priority &&
+            !chore.overdue &&
+            chore.status !== "CANCELLED" &&
+            chore.status !== "COMPLETED" && (
+              <span aria-hidden="true" className={styles.priorityIndicator} />
+            )}
+        </div>
+        <p className={styles.upcomingCategory}>{chore.category}</p>
+        <p className={styles.upcomingDate}>
+          {chore.dateLabel}
+          {chore.movedFrom && (
+            <>
+              <span aria-hidden="true"> · </span>
+              <span className={styles.movedHint}>{chore.movedFrom}</span>
+            </>
+          )}
+        </p>
+        {showActions && (
+          <OccurrenceMoreButton
+            className={styles.upcomingMoreButton}
+            onClick={() => onOpenActions?.(chore.id)}
+            title={chore.title}
+          />
+        )}
+        <span aria-hidden="true" className={styles.upcomingDivider} />
+        <p className={styles.upcomingAssignees}>Assigned to {chore.assignedTo}</p>
+        {chore.durationLabel && <p className={styles.upcomingDuration}>{chore.durationLabel}</p>}
+        {canComplete && (
+          <button
+            aria-busy={completing}
+            aria-label={`${completing ? "Completing" : "Complete"} ${chore.title}`}
+            className={styles.inlineCompleteButton}
+            disabled={completing}
+            onClick={() => onComplete(chore.id)}
+            type="button"
+          >
+            {!completing && (
+              <span aria-hidden="true" className={styles.listCheck} data-theme={theme} />
+            )}
+            {completing ? "Completing..." : "Complete"}
+          </button>
+        )}
+      </article>
+      <CardFeedbackMessage
+        className={styles.cardFeedback}
+        feedback={chore.feedback}
+        theme={theme}
+      />
+    </>
   )
 }
 
@@ -166,55 +184,62 @@ function AttentionCard({
 }) {
   const showActions = Boolean(chore.hasActions && onOpenActions)
   return (
-    <article
-      className={`${styles.attentionCard} ${showActions ? styles.attentionCardWithActions : ""}`}
-      data-chore-id={chore.id}
-      data-occurrence-card={chore.id}
-      id={`assignment-${chore.id}`}
-    >
-      <span className={styles.attentionAccent} />
-      <span className={styles.overdueBadge}>OVERDUE</span>
-      <span className={styles.attentionIconGlass} />
-      <span aria-hidden="true" className={styles.attentionBath} data-theme={theme} />
-      <h3>{chore.title}</h3>
-      <p className={styles.attentionMeta}>
-        {chore.category}
-        <span aria-hidden="true"> · </span>
-        {chore.dateLabel}
-        {chore.movedFrom && (
-          <>
-            <span aria-hidden="true"> · </span>
-            <span className={styles.movedHint}>{chore.movedFrom}</span>
-          </>
+    <>
+      <article
+        className={`${styles.attentionCard} ${showActions ? styles.attentionCardWithActions : ""}`}
+        data-chore-id={chore.id}
+        data-occurrence-card={chore.id}
+        id={`assignment-${chore.id}`}
+      >
+        <span className={styles.attentionAccent} />
+        <span className={styles.overdueBadge}>OVERDUE</span>
+        <span className={styles.attentionIconGlass} />
+        <span aria-hidden="true" className={styles.attentionBath} data-theme={theme} />
+        <h3>{chore.title}</h3>
+        <p className={styles.attentionMeta}>
+          {chore.category}
+          <span aria-hidden="true"> · </span>
+          {chore.dateLabel}
+          {chore.movedFrom && (
+            <>
+              <span aria-hidden="true"> · </span>
+              <span className={styles.movedHint}>{chore.movedFrom}</span>
+            </>
+          )}
+        </p>
+        {showActions && (
+          <OccurrenceMoreButton
+            className={styles.attentionMoreButton}
+            onClick={() => onOpenActions?.(chore.id)}
+            title={chore.title}
+          />
         )}
-      </p>
-      {showActions && (
-        <OccurrenceMoreButton
-          className={styles.attentionMoreButton}
-          onClick={() => onOpenActions?.(chore.id)}
-          title={chore.title}
-        />
-      )}
-      <span aria-hidden="true" className={styles.attentionClock} data-theme={theme} />
-      {chore.durationLabel && <p className={styles.attentionDuration}>{chore.durationLabel}</p>}
-      <p className={styles.attentionAssignees}>Assigned to {chore.assignedTo}</p>
-      {chore.canComplete !== false &&
-        chore.status !== "COMPLETED" &&
-        chore.status !== "CANCELLED" && (
-          <button
-            aria-busy={completing}
-            className={styles.attentionCompleteButton}
-            disabled={completing}
-            onClick={() => onComplete(chore.id)}
-            type="button"
-          >
-            {!completing && (
-              <span aria-hidden="true" className={styles.attentionCheck} data-theme={theme} />
-            )}
-            {completing ? "Completing..." : "Mark complete"}
-          </button>
-        )}
-    </article>
+        <span aria-hidden="true" className={styles.attentionClock} data-theme={theme} />
+        {chore.durationLabel && <p className={styles.attentionDuration}>{chore.durationLabel}</p>}
+        <p className={styles.attentionAssignees}>Assigned to {chore.assignedTo}</p>
+        {chore.canComplete !== false &&
+          chore.status !== "COMPLETED" &&
+          chore.status !== "CANCELLED" && (
+            <button
+              aria-busy={completing}
+              className={styles.attentionCompleteButton}
+              disabled={completing}
+              onClick={() => onComplete(chore.id)}
+              type="button"
+            >
+              {!completing && (
+                <span aria-hidden="true" className={styles.attentionCheck} data-theme={theme} />
+              )}
+              {completing ? "Completing..." : "Mark complete"}
+            </button>
+          )}
+      </article>
+      <CardFeedbackMessage
+        className={styles.cardFeedback}
+        feedback={chore.feedback}
+        theme={theme}
+      />
+    </>
   )
 }
 
@@ -311,16 +336,21 @@ export function MyChoresScreenView({
   onSelectTab,
   onCompleteChore,
   onOpenChoreActions,
+  onFlagJob,
   onRetry,
   onNavigate,
 }: MyChoresScreenViewProps) {
-  const upcomingCount = viewModel.upcomingChores.length + (viewModel.attentionChore ? 1 : 0)
+  const jobs = viewModel.householdJobs ?? []
+  const upcomingCount =
+    viewModel.upcomingChores.length +
+    (viewModel.attentionChore ? 1 : 0) +
+    jobs.filter((job) => job.yourTurn).length
   const attentionCount = viewModel.attentionCount ?? Number(viewModel.attentionChore !== null)
   const overdueCount =
     viewModel.attentionCount ?? Number(viewModel.attentionChore?.overdue === true)
   const completedCount = viewModel.completedChores.length
   const hasLoaded = viewModel.status === "loaded"
-  const displayedCount = tab === "upcoming" ? upcomingCount : completedCount
+  const scheduledCount = viewModel.upcomingChores.length + (viewModel.attentionChore ? 1 : 0)
 
   return (
     <div
@@ -406,9 +436,36 @@ export function MyChoresScreenView({
 
                 {tab === "upcoming" && (
                   <>
-                    {displayedCount === 0 ? (
+                    {jobs.length > 0 && (
+                      <section
+                        aria-labelledby="household-jobs-title"
+                        className={styles.jobsSection}
+                      >
+                        <div className={styles.upNextHeading}>
+                          <h2 id="household-jobs-title">Household jobs</h2>
+                          <span>{jobs.filter((job) => job.yourTurn).length} YOUR TURN</span>
+                        </div>
+                        <div className={styles.jobList}>
+                          {jobs.map((job) => (
+                            <HouseholdJobCard
+                              completing={viewModel.completingIds.includes(job.id)}
+                              flagging={(viewModel.flaggingIds ?? []).includes(job.id)}
+                              job={job}
+                              key={job.id}
+                              onComplete={(id) => onCompleteChore(id, "job")}
+                              onFlag={onFlagJob}
+                              onOpenActions={
+                                onOpenChoreActions && ((id) => onOpenChoreActions(id, "job"))
+                              }
+                              theme={theme}
+                            />
+                          ))}
+                        </div>
+                      </section>
+                    )}
+                    {scheduledCount === 0 && jobs.length === 0 ? (
                       <EmptyState tab="upcoming" />
-                    ) : (
+                    ) : scheduledCount === 0 ? null : (
                       <>
                         {viewModel.attentionChore && (
                           <section

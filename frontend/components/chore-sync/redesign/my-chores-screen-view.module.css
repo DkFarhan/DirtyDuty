@@ -1474,3 +1474,26 @@
   color: var(--accent);
   font-weight: 600;
 }
+
+/* "When needed" household jobs: stacked cards with their own height. */
+.jobsSection {
+  margin-top: 29px;
+}
+
+/* Same gutters as the Up next cards. */
+.jobList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 18px 16px 0 17px;
+}
+
+/* Inline action result under a card, on the same gutters as the cards. */
+.cardFeedback {
+  margin: 8px 16px 0 17px;
+}
+
+.jobList > .cardFeedback,
+.jobList > p[data-card-feedback] {
+  margin: -4px 0 0;
+}

@@ -19,7 +19,9 @@ import com.dirtyduty.app.entity.enums.AccountStatus;
 import com.dirtyduty.app.entity.enums.AssignmentStrategy;
 import com.dirtyduty.app.entity.enums.ChorePriority;
 import com.dirtyduty.app.entity.enums.HouseholdRole;
+import com.dirtyduty.app.entity.enums.IntervalUnit;
 import com.dirtyduty.app.entity.enums.MembershipStatus;
+import com.dirtyduty.app.entity.enums.ScheduleKind;
 import com.dirtyduty.app.exception.DuplicateResourceException;
 import com.dirtyduty.app.exception.HouseholdAccessDeniedException;
 import com.dirtyduty.app.exception.InvalidHouseholdException;
@@ -322,35 +324,73 @@ public class ChoreService {
         choreScheduleRepository
             .findByChore_IdAndHousehold_IdForUpdate(chore.getId(), householdId)
             .orElseGet(() -> createSchedule(chore, household));
-    if (request.recurrenceRule() == null
-        || request.recurrenceRule().isBlank()
-        || household.getTimezone() == null
-        || !ZoneId.getAvailableZoneIds().contains(household.getTimezone())
-        || request.startsOn() == null) {
+    ScheduleKind kind = request.kind() == null ? ScheduleKind.CALENDAR : request.kind();
+    if (household.getTimezone() == null
+        || !ZoneId.getAvailableZoneIds().contains(household.getTimezone())) {
       throw new InvalidHouseholdException(
           "A schedule requires a supported recurrence rule, household timezone, and start date.");
     }
-    // Parsing validates the rule with a specific message; the canonical form is what we store.
-    RecurrenceRule parsedRule = RecurrenceRule.parse(request.recurrenceRule());
-    String recurrenceRule = parsedRule.toString();
-    if (request.endsOn() != null && request.endsOn().isBefore(request.startsOn())) {
-      throw new InvalidHouseholdException("Schedule end date cannot be before its start date.");
-    }
-    if (parsedRule.count().isPresent() && request.endsOn() != null) {
-      throw new InvalidHouseholdException(
-          "Choose either an end date or a number of times, not both.");
-    }
-    if (!parsedRule.isOneTime() && parsedRule.firstDate(request.startsOn()).isEmpty()) {
-      throw new InvalidHouseholdException(
-          "This schedule never produces a date. Check its start date and active months.");
+    java.time.LocalDate startsOn = request.startsOn();
+    RecurrenceRule parsedRule = null;
+    String recurrenceRule = null;
+    Integer intervalCount = null;
+    IntervalUnit intervalUnit = null;
+    Integer backstopDays = null;
+    if (kind == ScheduleKind.CALENDAR) {
+      if (request.recurrenceRule() == null
+          || request.recurrenceRule().isBlank()
+          || request.startsOn() == null) {
+        throw new InvalidHouseholdException(
+            "A schedule requires a supported recurrence rule, household timezone, and start date.");
+      }
+      // Parsing validates the rule with a specific message; the canonical form is what we store.
+      parsedRule = RecurrenceRule.parse(request.recurrenceRule());
+      recurrenceRule = parsedRule.toString();
+      if (request.endsOn() != null && request.endsOn().isBefore(request.startsOn())) {
+        throw new InvalidHouseholdException("Schedule end date cannot be before its start date.");
+      }
+      if (parsedRule.count().isPresent() && request.endsOn() != null) {
+        throw new InvalidHouseholdException(
+            "Choose either an end date or a number of times, not both.");
+      }
+      if (!parsedRule.isOneTime() && parsedRule.firstDate(request.startsOn()).isEmpty()) {
+        throw new InvalidHouseholdException(
+            "This schedule never produces a date. Check its start date and active months.");
+      }
+    } else {
+      validateOpenCopySettings(kind, request);
+      if (kind == ScheduleKind.AFTER_COMPLETION) {
+        intervalCount = request.intervalCount();
+        intervalUnit = request.intervalUnit();
+      } else {
+        boolean backstop = !Boolean.FALSE.equals(request.backstopEnabled());
+        backstopDays =
+            backstop ? (request.backstopDays() == null ? 2 : request.backstopDays()) : null;
+        if (startsOn == null) {
+          startsOn = java.time.LocalDate.now(ZoneId.of(household.getTimezone()));
+        }
+      }
     }
     AssignmentStrategy strategy =
         request.assignmentStrategy() == null
             ? AssignmentStrategy.MANUAL
             : request.assignmentStrategy();
+    if (kind == ScheduleKind.AS_NEEDED
+        && strategy != AssignmentStrategy.ROUND_ROBIN
+        && strategy != AssignmentStrategy.FIXED) {
+      throw new InvalidHouseholdException(
+          "A When needed chore either rotates or has one fixed person.");
+    }
+    if (kind == ScheduleKind.AFTER_COMPLETION && strategy == AssignmentStrategy.MANUAL) {
+      throw new InvalidHouseholdException(
+          "Choose who does this chore: one fixed person, random, or a rotation.");
+    }
     List<UUID> participantIds =
         request.participantUserIds() == null ? List.of() : request.participantUserIds();
     int peopleNeeded = request.peopleNeeded() == null ? 1 : request.peopleNeeded();
+    if (kind != ScheduleKind.CALENDAR && peopleNeeded != 1) {
+      throw new InvalidHouseholdException("This chore type is done by one person at a time.");
+    }
     if (peopleNeeded < 1 || peopleNeeded > 50) {
       throw new InvalidHouseholdException("People Needed must be between 1 and 50.");
     }
@@ -385,16 +425,29 @@ public class ChoreService {
     List<UUID> validatedParticipants = configuration.participantIds();
     String previousRecurrenceRule = schedule.getRecurrenceRule();
     java.time.LocalDate previousStartsOn = schedule.getStartsOn();
+    ScheduleKind previousKind = schedule.getKind();
     occurrenceService.validateScheduleFrequencyChange(
-        schedule, previousRecurrenceRule, recurrenceRule);
+        schedule, previousKind, previousRecurrenceRule, recurrenceRule);
+    boolean kindChanged = schedule.getId() != null && previousKind != kind;
     boolean assignmentConfigChanged =
         schedule.getId() != null
-            && (schedule.getAssignmentStrategy() != strategy
+            && (kindChanged
+                || schedule.getAssignmentStrategy() != strategy
                 || peopleNeeded(schedule.getStrategyConfig()) != peopleNeeded
                 || !participantIds(schedule.getStrategyConfig()).equals(validatedParticipants));
+    // Rotation baselines for the open-copy kinds: a newcomer starts level with the lowest count.
+    Map<String, Integer> turnOffsets =
+        kind == ScheduleKind.CALENDAR
+            ? null
+            : occurrenceService.rebaseTurnOffsets(
+                schedule, validatedParticipants, schedule.getId() == null || kindChanged);
+    schedule.setKind(kind);
     schedule.setRecurrenceRule(recurrenceRule);
+    schedule.setIntervalCount(intervalCount);
+    schedule.setIntervalUnit(intervalUnit);
+    schedule.setBackstopDays(backstopDays);
     schedule.setTimezone(household.getTimezone());
-    schedule.setStartsOn(request.startsOn());
+    schedule.setStartsOn(startsOn);
     schedule.setEndsOn(request.endsOn());
     schedule.setDueTime(request.dueTime());
     schedule.setAssignmentStrategy(strategy);
@@ -402,11 +455,14 @@ public class ChoreService {
     Map<String, Object> config = new HashMap<>();
     config.put("participantUserIds", validatedParticipants.stream().map(UUID::toString).toList());
     config.put("peopleNeeded", peopleNeeded);
+    if (turnOffsets != null) {
+      config.put(OccurrenceService.TURN_OFFSETS, turnOffsets);
+    }
     schedule.setStrategyConfig(config);
     schedule.setActive(chore.isActive());
     // A COUNT series keeps its total across rule edits (see anchorCountRemainder); an edit that
     // leaves the rule and start date alone keeps the existing anchor.
-    if (parsedRule.count().isEmpty()) {
+    if (parsedRule == null || parsedRule.count().isEmpty()) {
       schedule.setCountRebasedOn(null);
       schedule.setCountProducedBefore(null);
     } else if (schedule.getId() != null
@@ -416,6 +472,46 @@ public class ChoreService {
     }
     choreScheduleRepository.saveAndFlush(schedule);
     occurrenceService.synchronizeSchedule(schedule, assignmentConfigChanged, true);
+  }
+
+  /** Settings checks for AFTER_COMPLETION and AS_NEEDED, with messages the form can show. */
+  private static void validateOpenCopySettings(ScheduleKind kind, ChoreScheduleRequest request) {
+    if (request.endsOn() != null) {
+      throw new InvalidHouseholdException("An end date doesn't apply to this chore type.");
+    }
+    if (request.recurrenceRule() != null && request.recurrenceRule().contains("COUNT=")) {
+      throw new InvalidHouseholdException("A number of times doesn't apply to this chore type.");
+    }
+    if (kind == ScheduleKind.AFTER_COMPLETION) {
+      if (request.intervalUnit() == null || request.intervalCount() == null) {
+        throw new InvalidHouseholdException("Choose how long after it's done the next one is due.");
+      }
+      if (request.intervalUnit() == IntervalUnit.DAY
+          && (request.intervalCount() < 1 || request.intervalCount() > 365)) {
+        throw new InvalidHouseholdException("Choose between 1 and 365 days after it's done.");
+      }
+      if (request.intervalUnit() == IntervalUnit.WEEK
+          && (request.intervalCount() < 1 || request.intervalCount() > 52)) {
+        throw new InvalidHouseholdException("Choose between 1 and 52 weeks after it's done.");
+      }
+      if (request.startsOn() == null) {
+        throw new InvalidHouseholdException("Choose the first due date.");
+      }
+      if (request.backstopEnabled() != null || request.backstopDays() != null) {
+        throw new InvalidHouseholdException(
+            "\"Do at least every\" only applies to When needed chores.");
+      }
+    } else {
+      if (request.intervalCount() != null || request.intervalUnit() != null) {
+        throw new InvalidHouseholdException(
+            "An interval after it's done doesn't apply to When needed chores.");
+      }
+      if (!Boolean.FALSE.equals(request.backstopEnabled())
+          && request.backstopDays() != null
+          && (request.backstopDays() < 1 || request.backstopDays() > 30)) {
+        throw new InvalidHouseholdException("Choose \"at least every\" between 1 and 30 days.");
+      }
+    }
   }
 
   private ChoreSchedule createSchedule(Chore chore, Household household) {
@@ -555,7 +651,11 @@ public class ChoreService {
                             : schedule.getFixedAssignee().getId(),
                         participantIds(schedule.getStrategyConfig()),
                         schedule.isActive(),
-                        peopleNeeded(schedule.getStrategyConfig())))
+                        peopleNeeded(schedule.getStrategyConfig()),
+                        schedule.getKind(),
+                        schedule.getIntervalCount(),
+                        schedule.getIntervalUnit(),
+                        schedule.getBackstopDays()))
             .orElse(null);
     return new ChoreResponse(
         chore.getId(),

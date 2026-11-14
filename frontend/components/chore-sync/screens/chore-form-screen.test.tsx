@@ -110,6 +110,114 @@ describe("ChoreFormScreen integration", () => {
     )
     expect(mocks.invalidate).toHaveBeenCalledOnce()
   })
+  describe("chore types", () => {
+    const nameIt = (title: string) =>
+      fireEvent.change(screen.getByPlaceholderText("e.g. Clean Kitchen"), {
+        target: { value: title },
+      })
+
+    it("sets up a When needed chore with the backstop toggle and only Fixed or Rotate", async () => {
+      render(<ChoreFormScreen />)
+      await screen.findByRole("option", { name: /Kitchen/ })
+      fireEvent.click(screen.getByRole("button", { name: "Random" }))
+      fireEvent.click(screen.getByRole("button", { name: "When needed" }))
+
+      expect(screen.queryByRole("button", { name: "Random" })).toBeNull()
+      expect(screen.getByRole("button", { name: "Rotate" }).getAttribute("aria-pressed")).toBe(
+        "true",
+      )
+      expect(screen.queryByLabelText("People Needed")).toBeNull()
+      expect(screen.queryByText("Repeats")).toBeNull()
+      expect(screen.queryByText("Ends")).toBeNull()
+      const toggle = screen.getByRole("button", { name: "Do at least every" })
+      expect(toggle.getAttribute("aria-pressed")).toBe("true")
+      expect(
+        (screen.getByLabelText("Do at least every", { selector: "input" }) as HTMLInputElement)
+          .value,
+      ).toBe("2")
+      expect(
+        screen.getByText(/Anyone in the rotation can do it early\. "Needs doing" alerts/),
+      ).toBeTruthy()
+      expect(screen.getByTestId("repeat-summary").textContent).toBe(
+        "When needed · at least every 2 days by 6:00 PM",
+      )
+
+      expect(screen.getByText("Due time")).toBeTruthy()
+      fireEvent.click(toggle)
+      expect(screen.getByTestId("repeat-summary").textContent).toBe("When needed")
+      // No deadline, so no due time to set.
+      expect(screen.queryByText("Due time")).toBeNull()
+      expect(
+        (screen.getByLabelText("Do at least every", { selector: "input" }) as HTMLInputElement)
+          .disabled,
+      ).toBe(true)
+
+      nameIt("Toilet paper")
+      fireEvent.click(screen.getByRole("button", { name: "Current member" }))
+      fireEvent.click(screen.getByRole("button", { name: "Create Chore" }))
+      await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1))
+      expect(mocks.create.mock.calls[0][1].schedule).toMatchObject({
+        kind: "AS_NEEDED",
+        recurrenceRule: null,
+        endsOn: null,
+        assignmentStrategy: "ROUND_ROBIN",
+        participantUserIds: ["user-1"],
+        peopleNeeded: 1,
+        backstopEnabled: false,
+        backstopDays: null,
+        intervalCount: null,
+        dueTime: null,
+      })
+    })
+
+    it("sets up an After it's done chore with an interval, a first due date and all strategies", async () => {
+      render(<ChoreFormScreen />)
+      await screen.findByRole("option", { name: /Kitchen/ })
+      fireEvent.click(screen.getByRole("button", { name: "After it's done" }))
+
+      expect(screen.getByRole("button", { name: "Random" })).toBeTruthy()
+      expect(screen.getByText("First due date")).toBeTruthy()
+      expect(screen.getByTestId("repeat-summary").textContent).toBe("Every 3 days after it's done")
+      fireEvent.change(screen.getByLabelText("Every"), { target: { value: "2" } })
+      fireEvent.change(screen.getByLabelText("Interval unit"), { target: { value: "WEEK" } })
+      expect(screen.getByTestId("repeat-summary").textContent).toBe("Every 2 weeks after it's done")
+      fireEvent.change(screen.getByLabelText("Every"), { target: { value: "60" } })
+      nameIt("Change sheets")
+      fireEvent.click(screen.getByRole("button", { name: "Create Chore" }))
+      expect(await screen.findByText("Choose between 1 and 52 weeks after it's done.")).toBeTruthy()
+      expect(mocks.create).not.toHaveBeenCalled()
+
+      fireEvent.change(screen.getByLabelText("Every"), { target: { value: "2" } })
+      fireEvent.click(screen.getByRole("button", { name: "Create Chore" }))
+      await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1))
+      expect(mocks.create.mock.calls[0][1].schedule).toMatchObject({
+        kind: "AFTER_COMPLETION",
+        recurrenceRule: null,
+        endsOn: null,
+        intervalCount: 2,
+        intervalUnit: "WEEK",
+        backstopEnabled: null,
+        assignmentStrategy: "FIXED",
+        fixedAssigneeUserId: "user-1",
+      })
+    })
+
+    it("keeps On a schedule and One time on the calendar controls", async () => {
+      render(<ChoreFormScreen />)
+      await screen.findByRole("option", { name: /Kitchen/ })
+      expect(
+        screen.getByRole("button", { name: "On a schedule" }).getAttribute("aria-pressed"),
+      ).toBe("true")
+      expect(screen.getByText("Repeats")).toBeTruthy()
+      fireEvent.click(screen.getByRole("button", { name: "One time" }))
+      expect(screen.queryByText("Repeats")).toBeNull()
+      expect(screen.getByText("Due date")).toBeTruthy()
+      expect(screen.getByTestId("repeat-summary").textContent).toBe("One time")
+      fireEvent.click(screen.getByRole("button", { name: "On a schedule" }))
+      expect(screen.getByTestId("repeat-summary").textContent).toBe("Weekly on Mon")
+    })
+  })
+
   describe("inline category creation", () => {
     const NEW = "__new-category__"
     const picker = () => screen.getByLabelText("Category") as HTMLSelectElement

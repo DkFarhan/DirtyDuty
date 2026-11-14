@@ -1,0 +1,167 @@
+/* A "When needed" household job. Tokens follow the occurrence sheet and the screen cards. */
+
+.darkTheme {
+  --job-surface: linear-gradient(145.79deg, #0e2c36 10.57%, #0c2630 91.87%);
+  --job-border: rgb(56 101 107 / 38%);
+  --job-title: #f7f8f1;
+  --job-body: #9fb9bd;
+  --job-accent: #79e7de;
+  --job-accent-text: #081f29;
+  --job-turn-surface: rgb(121 231 222 / 14%);
+  --job-secondary: rgb(23 79 84 / 88%);
+  --job-secondary-text: #c2fcf4;
+  --job-warn: #ffc98a;
+  --job-warn-surface: rgb(255 201 138 / 12%);
+  --job-overdue: #ffad9a;
+  --more-text: var(--job-body);
+  --more-accent: var(--job-accent);
+}
+
+.lightTheme {
+  --job-surface: linear-gradient(145.79deg, #ffffff 10.57%, #f6fcf9 91.87%);
+  --job-border: rgb(169 210 205 / 90%);
+  --job-title: #17383d;
+  --job-body: #4a6569;
+  --job-accent: #0d706c;
+  --job-accent-text: #ffffff;
+  --job-turn-surface: rgb(13 112 108 / 10%);
+  --job-secondary: rgb(206 241 231 / 96%);
+  --job-secondary-text: #0d5f5b;
+  --job-warn: #8a4b06;
+  --job-warn-surface: #fff1dd;
+  --job-overdue: #9b4050;
+  --more-text: var(--job-body);
+  --more-accent: var(--job-accent);
+}
+
+.card {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 16px 16px 14px;
+  border: 1px solid var(--job-border);
+  border-radius: 22px;
+  background: var(--job-surface);
+  color: var(--job-body);
+}
+
+.card[data-flagged] {
+  border-color: color-mix(in srgb, var(--job-warn) 55%, var(--job-border));
+}
+
+.heading {
+  min-width: 0;
+  /* Leaves room for the More button in the top-right corner. */
+  padding-right: 40px;
+}
+
+.turn {
+  display: inline-block;
+  margin: 0 0 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--job-turn-surface);
+  color: var(--job-accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 16px;
+  text-transform: uppercase;
+}
+
+.card:not([data-your-turn]) .turn {
+  background: transparent;
+  padding-left: 0;
+  color: var(--job-body);
+}
+
+.title {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--job-title);
+  font-family: var(--font-household-serif), "Libre Baskerville", Georgia, serif;
+  font-size: 19px;
+  font-weight: 400;
+  line-height: 1.3;
+}
+
+.more {
+  position: absolute;
+  top: 8px;
+  right: 6px;
+}
+
+.meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 10px 0 0;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  list-style: none;
+}
+
+.overdue {
+  color: var(--job-overdue);
+  font-weight: 600;
+}
+
+.flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  padding: 3px 9px 3px 7px;
+  border-radius: 999px;
+  background: var(--job-warn-surface);
+  color: var(--job-warn);
+  font-weight: 600;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.primary,
+.secondary {
+  display: inline-flex;
+  flex: 1 1 120px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 14px;
+  border-radius: 14px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.primary {
+  border: 1px solid var(--job-accent);
+  background: var(--job-accent);
+  color: var(--job-accent-text);
+}
+
+.secondary {
+  border: 1px solid var(--job-border);
+  background: var(--job-secondary);
+  color: var(--job-secondary-text);
+}
+
+.primary:disabled,
+.secondary:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.primary:focus-visible,
+.secondary:focus-visible {
+  outline: 2px solid var(--job-accent);
+  outline-offset: 2px;
+}

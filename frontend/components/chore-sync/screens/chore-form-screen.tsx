@@ -13,6 +13,8 @@ import {
   type ChoreManagementOptions,
   type ChorePriority,
   type ChoreRequest,
+  type IntervalUnit,
+  type ScheduleKind,
 } from "@/lib/household/chores"
 import { useHouseholds } from "@/lib/household/household-context"
 import {
@@ -24,6 +26,7 @@ import {
   WEEKDAYS,
   buildRecurrenceRule,
   defaultRecurrence,
+  describeChoreSchedule,
   describeRecurrence,
   describeRecurrenceRule,
   parseRecurrenceRule,
@@ -51,7 +54,24 @@ const priorities: { value: ChorePriority; label: string; style: string }[] = [
   { value: "URGENT", label: "Urgent", style: "rose" },
 ]
 type EndMode = "NEVER" | "DATE" | "COUNT"
+/** The first choice in "When": a calendar schedule, one time, or one of the open-copy kinds. */
+type ChoreType = "SCHEDULE" | "AFTER_COMPLETION" | "AS_NEEDED" | "ONCE"
+const CHORE_TYPES: { value: ChoreType; label: string }[] = [
+  { value: "SCHEDULE", label: "On a schedule" },
+  { value: "AFTER_COMPLETION", label: "After it's done" },
+  { value: "AS_NEEDED", label: "When needed" },
+  { value: "ONCE", label: "One time" },
+]
+const MAX_AFTER: Record<IntervalUnit, number> = { DAY: 365, WEEK: 52 }
+const MAX_BACKSTOP_DAYS = 30
 type FormValues = {
+  kind: ScheduleKind
+  /** "After it's done": every N days or weeks. */
+  afterCount: number
+  afterUnit: IntervalUnit
+  /** "When needed": "Do at least every N days" (on by default, 2). */
+  backstopEnabled: boolean
+  backstopDays: number
   categoryId: string
   title: string
   description: string
@@ -83,7 +103,11 @@ function localDate() {
 function valuesFromChore(chore: Chore): FormValues {
   const schedule = chore.schedule
   const startsOn = schedule?.startsOn ?? localDate()
-  const parsed = schedule ? parseRecurrenceRule(schedule.recurrenceRule, startsOn) : null
+  const kind = schedule?.kind ?? "CALENDAR"
+  const parsed =
+    schedule?.recurrenceRule && kind === "CALENDAR"
+      ? parseRecurrenceRule(schedule.recurrenceRule, startsOn)
+      : null
   // Non-weekly rules carry no weekdays; seed Monday as on create, so switching to Weekly has one.
   const recurrence = parsed
     ? parsed.weekdays.length > 0
@@ -91,6 +115,11 @@ function valuesFromChore(chore: Chore): FormValues {
       : { ...parsed, weekdays: ["MO" as const] }
     : { ...defaultRecurrence(startsOn), weekdays: ["MO" as const] }
   return {
+    kind,
+    afterCount: schedule?.intervalCount ?? 3,
+    afterUnit: schedule?.intervalUnit ?? "DAY",
+    backstopEnabled: kind !== "AS_NEEDED" || schedule?.backstopDays != null,
+    backstopDays: schedule?.backstopDays ?? 2,
     categoryId: chore.categoryId ?? "",
     title: chore.title,
     description: chore.description ?? "",
@@ -100,7 +129,8 @@ function valuesFromChore(chore: Chore): FormValues {
     fixedAssignee: schedule?.fixedAssigneeUserId ?? "",
     participants: schedule?.participantUserIds ?? [],
     recurrence,
-    customRule: schedule && !parsed ? schedule.recurrenceRule : null,
+    customRule:
+      schedule?.recurrenceRule && kind === "CALENDAR" && !parsed ? schedule.recurrenceRule : null,
     seasonal: recurrence.activeMonths.length > 0,
     endMode: recurrence.count !== null ? "COUNT" : schedule?.endsOn ? "DATE" : "NEVER",
     count: recurrence.count ?? 10,
@@ -115,6 +145,11 @@ function valuesFromChore(chore: Chore): FormValues {
 
 function initialValues(memberId: string): FormValues {
   return {
+    kind: "CALENDAR",
+    afterCount: 3,
+    afterUnit: "DAY",
+    backstopEnabled: true,
+    backstopDays: 2,
     categoryId: "",
     title: "",
     description: "",
@@ -230,6 +265,46 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
     }))
   }
 
+  const choreType: ChoreType =
+    values.kind !== "CALENDAR"
+      ? values.kind
+      : values.customRule === null && values.recurrence.frequency === "ONCE"
+        ? "ONCE"
+        : "SCHEDULE"
+  const chooseType = (type: ChoreType) => {
+    setError(null)
+    setValues((current) => {
+      if (type === "AFTER_COMPLETION" || type === "AS_NEEDED") {
+        // Each person does it alone, and "When needed" either rotates or has one fixed person.
+        const strategy =
+          type === "AS_NEEDED" && current.strategy === "RANDOM" ? "ROUND_ROBIN" : current.strategy
+        return { ...current, kind: type, strategy, peopleNeeded: 1 }
+      }
+      if (type === "ONCE") {
+        return {
+          ...current,
+          kind: "CALENDAR",
+          customRule: null,
+          recurrence: { ...current.recurrence, frequency: "ONCE" },
+        }
+      }
+      const keepRule = current.kind === "CALENDAR" && current.recurrence.frequency !== "ONCE"
+      return {
+        ...current,
+        kind: "CALENDAR",
+        recurrence: keepRule ? current.recurrence : { ...current.recurrence, frequency: "WEEKLY" },
+      }
+    })
+  }
+  const openCopyKind = values.kind !== "CALENDAR"
+  const strategyOptions = (
+    [
+      ["FIXED", "Fixed"],
+      ["ROUND_ROBIN", "Rotate"],
+      ["RANDOM", "Random"],
+    ] as const
+  ).filter(([strategy]) => values.kind !== "AS_NEEDED" || strategy !== "RANDOM")
+
   const leave = useCallback(() => {
     if (dirty) {
       setConfirmDiscard(true)
@@ -259,12 +334,35 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
       setError("Choose a start date.")
       return null
     }
-    if (!values.dueTime) {
+    if (!values.dueTime && !openCopyKind) {
       setError("Choose a due time.")
       return null
     }
+    if (values.kind === "AFTER_COMPLETION") {
+      const max = MAX_AFTER[values.afterUnit]
+      if (
+        !Number.isInteger(values.afterCount) ||
+        values.afterCount < 1 ||
+        values.afterCount > max
+      ) {
+        setError(
+          `Choose between 1 and ${max} ${values.afterUnit === "WEEK" ? "weeks" : "days"} after it's done.`,
+        )
+        return null
+      }
+    }
+    if (
+      values.kind === "AS_NEEDED" &&
+      values.backstopEnabled &&
+      (!Number.isInteger(values.backstopDays) ||
+        values.backstopDays < 1 ||
+        values.backstopDays > MAX_BACKSTOP_DAYS)
+    ) {
+      setError(`Choose "at least every" between 1 and ${MAX_BACKSTOP_DAYS} days.`)
+      return null
+    }
     const recurrence = values.recurrence
-    const repeating = values.customRule === null && recurrence.frequency !== "ONCE"
+    const repeating = !openCopyKind && values.customRule === null && recurrence.frequency !== "ONCE"
     if (repeating && recurrence.frequency === "WEEKLY" && recurrence.weekdays.length === 0) {
       setError("Choose at least one day to repeat.")
       return null
@@ -315,8 +413,11 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
       setError("Estimated time must be a whole number between 1 and 1440 minutes.")
       return null
     }
-    const endsWithDate =
-      values.customRule !== null ? Boolean(values.endsOn) : repeating && values.endMode === "DATE"
+    const endsWithDate = openCopyKind
+      ? false
+      : values.customRule !== null
+        ? Boolean(values.endsOn)
+        : repeating && values.endMode === "DATE"
     if (endsWithDate && values.endsOn && values.endsOn < values.startsOn) {
       setError("The end date cannot be before the start date.")
       return null
@@ -358,16 +459,17 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
       }
     }
 
-    const recurrenceRule =
-      values.customRule ??
-      buildRecurrenceRule({
-        ...recurrence,
-        activeMonths:
-          repeating && values.seasonal && recurrence.frequency !== "YEARLY"
-            ? recurrence.activeMonths
-            : [],
-        count: repeating && values.endMode === "COUNT" ? values.count : null,
-      })
+    const recurrenceRule = openCopyKind
+      ? null
+      : (values.customRule ??
+        buildRecurrenceRule({
+          ...recurrence,
+          activeMonths:
+            repeating && values.seasonal && recurrence.frequency !== "YEARLY"
+              ? recurrence.activeMonths
+              : [],
+          count: repeating && values.endMode === "COUNT" ? values.count : null,
+        }))
 
     return {
       title,
@@ -382,13 +484,20 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
         timezone: household.timezone,
         startsOn: values.startsOn,
         endsOn: endsWithDate ? values.endsOn || null : null,
-        dueTime: values.dueTime || null,
+        dueTime:
+          values.kind === "AS_NEEDED" && !values.backstopEnabled ? null : values.dueTime || null,
         assignmentStrategy: values.strategy,
         peopleNeeded: values.peopleNeeded,
         fixedAssigneeUserId:
           values.strategy === "FIXED" && values.peopleNeeded === 1 ? values.fixedAssignee : null,
         participantUserIds:
           values.strategy === "FIXED" && values.peopleNeeded === 1 ? [] : values.participants,
+        kind: values.kind,
+        intervalCount: values.kind === "AFTER_COMPLETION" ? values.afterCount : null,
+        intervalUnit: values.kind === "AFTER_COMPLETION" ? values.afterUnit : null,
+        backstopEnabled: values.kind === "AS_NEEDED" ? values.backstopEnabled : null,
+        backstopDays:
+          values.kind === "AS_NEEDED" && values.backstopEnabled ? values.backstopDays : null,
       },
     }
   }
@@ -414,12 +523,20 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
   }
 
   const formRecurrence = values.recurrence
-  const isRepeating = values.customRule === null && formRecurrence.frequency !== "ONCE"
+  const isRepeating =
+    !openCopyKind && values.customRule === null && formRecurrence.frequency !== "ONCE"
   const repeatingFrequency = (
     formRecurrence.frequency === "ONCE" ? "WEEKLY" : formRecurrence.frequency
   ) as Exclude<Frequency, "ONCE">
-  const repeatSummary =
-    values.customRule !== null
+  const repeatSummary = openCopyKind
+    ? describeChoreSchedule({
+        kind: values.kind,
+        intervalCount: values.afterCount,
+        intervalUnit: values.afterUnit,
+        backstopDays: values.backstopEnabled ? values.backstopDays : null,
+        dueTime: values.dueTime || null,
+      })
+    : values.customRule !== null
       ? describeRecurrenceRule(values.customRule, values.startsOn, values.endsOn || null)
       : describeRecurrence(
           {
@@ -577,32 +694,33 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
                   title="Who takes this on?"
                 />
               }
-              <label className="mb-4 block">
-                <span className="mb-1.5 block text-sm font-semibold text-slate-700">
-                  People Needed
-                </span>
-                <input
-                  aria-label="People Needed"
-                  className={fieldClass}
-                  max={
-                    values.strategy === "FIXED"
-                      ? options.activeMembers.length
-                      : Math.max(1, values.participants.length)
-                  }
-                  min={1}
-                  onChange={(event) => update("peopleNeeded", Number(event.target.value))}
-                  type="number"
-                  value={values.peopleNeeded}
-                />
-              </label>
-              <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1">
-                {(
-                  [
-                    ["FIXED", "Fixed"],
-                    ["ROUND_ROBIN", "Rotate"],
-                    ["RANDOM", "Random"],
-                  ] as const
-                ).map(([strategy, label]) => (
+              {!openCopyKind && (
+                <label className="mb-4 block">
+                  <span className="mb-1.5 block text-sm font-semibold text-slate-700">
+                    People Needed
+                  </span>
+                  <input
+                    aria-label="People Needed"
+                    className={fieldClass}
+                    max={
+                      values.strategy === "FIXED"
+                        ? options.activeMembers.length
+                        : Math.max(1, values.participants.length)
+                    }
+                    min={1}
+                    onChange={(event) => update("peopleNeeded", Number(event.target.value))}
+                    type="number"
+                    value={values.peopleNeeded}
+                  />
+                </label>
+              )}
+              <div
+                className={cn(
+                  "grid gap-1 rounded-xl bg-slate-100 p-1",
+                  strategyOptions.length === 2 ? "grid-cols-2" : "grid-cols-3",
+                )}
+              >
+                {strategyOptions.map(([strategy, label]) => (
                   <button
                     aria-pressed={values.strategy === strategy}
                     className={cn(
@@ -712,9 +830,11 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
                     )
                   })}
                   <p className="text-xs text-slate-500">
-                    {values.strategy === "ROUND_ROBIN"
-                      ? `Rotate ${values.peopleNeeded}/${values.participants.length} people fairly.`
-                      : `${values.peopleNeeded} of ${values.participants.length} eligible people are assigned each time.`}
+                    {values.strategy === "ROUND_ROBIN" && openCopyKind
+                      ? "Whoever has done it least goes next. Doing it for someone keeps it their turn."
+                      : values.strategy === "ROUND_ROBIN"
+                        ? `Rotate ${values.peopleNeeded}/${values.participants.length} people fairly.`
+                        : `${values.peopleNeeded} of ${values.participants.length} eligible people are assigned each time.`}
                   </p>
                   {poolMessage && error !== poolMessage && (
                     <p role="alert" className="text-xs font-medium text-rose-600">
@@ -743,6 +863,113 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
                 />
               }
               <div className="space-y-4">
+                <fieldset>
+                  <legend className="mb-2 text-sm font-semibold text-slate-700">Type</legend>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    {CHORE_TYPES.map(({ value, label }) => {
+                      const selected = choreType === value
+                      return (
+                        <button
+                          aria-pressed={selected}
+                          className={cn(
+                            "min-h-11 rounded-xl px-2 py-2.5 text-sm font-semibold transition",
+                            selected
+                              ? "bg-teal-600 text-white"
+                              : "bg-slate-100 text-slate-600 hover:bg-slate-200",
+                          )}
+                          key={value}
+                          onClick={() => chooseType(value)}
+                          type="button"
+                        >
+                          {label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </fieldset>
+                {values.kind === "AFTER_COMPLETION" && (
+                  <div>
+                    <label
+                      className="mb-1.5 block text-sm font-semibold text-slate-700"
+                      htmlFor="chore-after-count"
+                    >
+                      Every
+                    </label>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <input
+                        className={cn(fieldClass, "w-24")}
+                        id="chore-after-count"
+                        inputMode="numeric"
+                        max={MAX_AFTER[values.afterUnit]}
+                        min={1}
+                        onChange={(event) => update("afterCount", Number(event.target.value))}
+                        type="number"
+                        value={values.afterCount}
+                      />
+                      <select
+                        aria-label="Interval unit"
+                        className={cn(fieldClass, "w-auto")}
+                        onChange={(event) =>
+                          update("afterUnit", event.target.value as IntervalUnit)
+                        }
+                        value={values.afterUnit}
+                      >
+                        <option value="DAY">{values.afterCount === 1 ? "day" : "days"}</option>
+                        <option value="WEEK">{values.afterCount === 1 ? "week" : "weeks"}</option>
+                      </select>
+                      <span className="text-sm text-slate-600">after it&apos;s done</span>
+                    </div>
+                  </div>
+                )}
+                {values.kind === "AS_NEEDED" && (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        aria-pressed={values.backstopEnabled}
+                        aria-label="Do at least every"
+                        className={cn(
+                          "relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition before:absolute before:-inset-2 before:content-['']",
+                          values.backstopEnabled ? "bg-teal-600" : "bg-slate-300",
+                        )}
+                        onClick={() => update("backstopEnabled", !values.backstopEnabled)}
+                        type="button"
+                      >
+                        <span
+                          className={cn(
+                            "inline-block h-5 w-5 rounded-full bg-white shadow transition",
+                            values.backstopEnabled ? "translate-x-6" : "translate-x-1",
+                          )}
+                        />
+                      </button>
+                      <label
+                        className="text-sm font-semibold text-slate-700"
+                        htmlFor="chore-backstop-days"
+                      >
+                        Do at least every
+                      </label>
+                      <span className="inline-flex items-center gap-3">
+                        <input
+                          className={cn(fieldClass, "w-20")}
+                          disabled={!values.backstopEnabled}
+                          id="chore-backstop-days"
+                          inputMode="numeric"
+                          max={MAX_BACKSTOP_DAYS}
+                          min={1}
+                          onChange={(event) => update("backstopDays", Number(event.target.value))}
+                          type="number"
+                          value={values.backstopDays}
+                        />
+                        <span className="text-sm text-slate-600">
+                          {values.backstopDays === 1 ? "day" : "days"}
+                        </span>
+                      </span>
+                    </div>
+                    <p className="text-sm text-slate-500">
+                      Anyone in the rotation can do it early. &quot;Needs doing&quot; alerts
+                      whoever&apos;s turn it is.
+                    </p>
+                  </div>
+                )}
                 {values.customRule !== null && (
                   <div
                     className="rounded-xl border border-amber-200 bg-amber-50 p-3.5 dark:border-amber-300/30"
@@ -755,39 +982,40 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
                     </p>
                   </div>
                 )}
-                <fieldset>
-                  <legend className="mb-2 text-sm font-semibold text-slate-700">Repeats</legend>
-                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
-                    {(
-                      [
-                        ["ONCE", "One time"],
-                        ["DAILY", "Daily"],
-                        ["WEEKLY", "Weekly"],
-                        ["MONTHLY", "Monthly"],
-                        ["YEARLY", "Yearly"],
-                      ] as const
-                    ).map(([frequency, label]) => {
-                      const selected =
-                        values.customRule === null && formRecurrence.frequency === frequency
-                      return (
-                        <button
-                          aria-pressed={selected}
-                          className={cn(
-                            "min-h-11 rounded-xl px-2 py-2.5 text-sm font-semibold transition",
-                            selected
-                              ? "bg-teal-600 text-white"
-                              : "bg-slate-100 text-slate-600 hover:bg-slate-200",
-                          )}
-                          key={frequency}
-                          onClick={() => updateRecurrence({ frequency })}
-                          type="button"
-                        >
-                          {label}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </fieldset>
+                {choreType === "SCHEDULE" && (
+                  <fieldset>
+                    <legend className="mb-2 text-sm font-semibold text-slate-700">Repeats</legend>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      {(
+                        [
+                          ["DAILY", "Daily"],
+                          ["WEEKLY", "Weekly"],
+                          ["MONTHLY", "Monthly"],
+                          ["YEARLY", "Yearly"],
+                        ] as const
+                      ).map(([frequency, label]) => {
+                        const selected =
+                          values.customRule === null && formRecurrence.frequency === frequency
+                        return (
+                          <button
+                            aria-pressed={selected}
+                            className={cn(
+                              "min-h-11 rounded-xl px-2 py-2.5 text-sm font-semibold transition",
+                              selected
+                                ? "bg-teal-600 text-white"
+                                : "bg-slate-100 text-slate-600 hover:bg-slate-200",
+                            )}
+                            key={frequency}
+                            onClick={() => updateRecurrence({ frequency })}
+                            type="button"
+                          >
+                            {label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </fieldset>
+                )}
                 {isRepeating && (
                   <div>
                     <label
@@ -993,28 +1221,37 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
                     </label>
                   </div>
                 )}
-                <label className="block">
-                  <span className="mb-1.5 block text-sm font-semibold text-slate-700">
-                    {isRepeating || values.customRule !== null ? "Starts" : "Due date"}
-                  </span>
-                  <input
-                    className={fieldClass}
-                    onChange={(event) => update("startsOn", event.target.value)}
-                    type="date"
-                    value={values.startsOn}
-                  />
-                </label>
-                <label className="block">
-                  <span className="mb-1.5 block text-sm font-semibold text-slate-700">
-                    Due time <span className="font-normal text-slate-400">(optional)</span>
-                  </span>
-                  <input
-                    className={fieldClass}
-                    onChange={(event) => update("dueTime", event.target.value)}
-                    type="time"
-                    value={values.dueTime}
-                  />
-                </label>
+                {values.kind !== "AS_NEEDED" && (
+                  <label className="block">
+                    <span className="mb-1.5 block text-sm font-semibold text-slate-700">
+                      {values.kind === "AFTER_COMPLETION"
+                        ? "First due date"
+                        : isRepeating || values.customRule !== null
+                          ? "Starts"
+                          : "Due date"}
+                    </span>
+                    <input
+                      className={fieldClass}
+                      onChange={(event) => update("startsOn", event.target.value)}
+                      type="date"
+                      value={values.startsOn}
+                    />
+                  </label>
+                )}
+                {/* A When needed chore without "at least every" has no deadline, so no due time. */}
+                {!(values.kind === "AS_NEEDED" && !values.backstopEnabled) && (
+                  <label className="block">
+                    <span className="mb-1.5 block text-sm font-semibold text-slate-700">
+                      Due time <span className="font-normal text-slate-400">(optional)</span>
+                    </span>
+                    <input
+                      className={fieldClass}
+                      onChange={(event) => update("dueTime", event.target.value)}
+                      type="time"
+                      value={values.dueTime}
+                    />
+                  </label>
+                )}
                 {isRepeating && (
                   <fieldset className="space-y-3">
                     <legend className="mb-2 text-sm font-semibold text-slate-700">Ends</legend>

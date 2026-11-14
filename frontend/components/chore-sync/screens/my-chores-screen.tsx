@@ -8,6 +8,14 @@ import { useHouseholds } from "@/lib/household/household-context"
 import { householdChoreResource, useDataSync } from "@/lib/data-sync/data-sync-context"
 import { optimisticAssignmentCompletion } from "@/lib/household/assignment-state"
 import {
+  cardFeedback,
+  CONFIRMATION_MS,
+  flagConfirmation,
+  type CardFeedback,
+  type CardSurface,
+} from "@/lib/household/card-feedback"
+import { isHouseholdJob, optimisticFlag, replaceJob } from "@/lib/household/household-jobs"
+import {
   optimisticOccurrence,
   runOccurrenceAction,
   type OccurrenceAction,
@@ -26,10 +34,12 @@ export function MyChoresScreen({ theme = "dark" }: { theme?: HomeVisualTheme } =
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading")
   const [error, setError] = useState<string | null>(null)
   const [refreshError, setRefreshError] = useState<string | null>(null)
-  const [actionError, setActionError] = useState<string | null>(null)
+  const [cardFeedbackState, setCardFeedback] = useState<CardFeedback | null>(null)
   const [completingIds, setCompletingIds] = useState<Set<string>>(() => new Set())
+  const [flaggingIds, setFlaggingIds] = useState<Set<string>>(() => new Set())
   const [targetAssignmentId, setTargetAssignmentId] = useState<string | null>(null)
   const [actionTargetId, setActionTargetId] = useState<string | null>(null)
+  const [actionSurface, setActionSurface] = useState<CardSurface>("card")
   const requestSequence = useRef(0)
   const loadedHouseholdId = useRef<string | null>(null)
   const upcomingRef = useRef<AssignmentDTO[]>([])
@@ -143,7 +153,7 @@ export function MyChoresScreen({ theme = "dark" }: { theme?: HomeVisualTheme } =
     }
   }, [completed, targetAssignmentId, upcoming, visibleStatus])
 
-  const completeAssignment = async (assignmentId: string) => {
+  const completeAssignment = async (assignmentId: string, surface: CardSurface = "card") => {
     if (!household) return
     const operationKey = `${household.id}:${assignmentId}`
     if (pendingCompletionIds.current.has(operationKey) || !claim(assignmentId)) return
@@ -171,7 +181,7 @@ export function MyChoresScreen({ theme = "dark" }: { theme?: HomeVisualTheme } =
     setUpcoming(nextUpcoming)
     setCompleted(nextCompleted)
     setCompletingIds((current) => new Set(current).add(operationKey))
-    setActionError(null)
+    setCardFeedback(null)
     try {
       const confirmed = await choreApi.complete(household.id, assignmentId)
       requestSequence.current += 1
@@ -208,10 +218,15 @@ export function MyChoresScreen({ theme = "dark" }: { theme?: HomeVisualTheme } =
       }
       pendingCompletions.current.delete(operationKey)
       if (loadedHouseholdId.current === household.id) {
-        setActionError(
-          cause instanceof ApiError
-            ? cause.message
-            : "Unable to complete this chore. Please try again.",
+        setCardFeedback(
+          cardFeedback(
+            previous,
+            cause instanceof ApiError
+              ? cause.message
+              : "Unable to complete this chore. Please try again.",
+            "error",
+            surface,
+          ),
         )
       }
       invalidate()
@@ -230,16 +245,22 @@ export function MyChoresScreen({ theme = "dark" }: { theme?: HomeVisualTheme } =
    * Moves, skips or reassigns one occurrence optimistically. A skipped day, or one given to
    * someone else, leaves this to-do list; a failure puts it back where it was with an error.
    */
-  const performOccurrenceAction = async (assignmentId: string, action: OccurrenceAction) => {
+  const performOccurrenceAction = async (
+    assignmentId: string,
+    action: OccurrenceAction,
+    surface: CardSurface = "card",
+  ) => {
     if (!household || loadedHouseholdId.current !== household.id) return
     const operation = `occurrence:${assignmentId}`
     const index = upcomingRef.current.findIndex((assignment) => assignment.id === assignmentId)
     const previous = upcomingRef.current[index]
     if (!previous || !claim(operation)) return
     const viewerId = state.currentUser.id
+    // A household job stays listed for everyone in its rotation, whoever's turn it is.
     const stillListed = (assignment: AssignmentDTO) =>
       assignment.status !== "SKIPPED" &&
-      assignment.assignees.some((assignee) => assignee.userId === viewerId)
+      (isHouseholdJob(assignment) ||
+        assignment.assignees.some((assignee) => assignee.userId === viewerId))
     const apply = (next: AssignmentDTO, fallbackIndex: number) => {
       if (loadedHouseholdId.current !== household.id) return
       const without = upcomingRef.current.filter((assignment) => assignment.id !== assignmentId)
@@ -255,7 +276,7 @@ export function MyChoresScreen({ theme = "dark" }: { theme?: HomeVisualTheme } =
     }
     requestSequence.current += 1
     apply(optimisticOccurrence(previous, action, household.timezone, viewerId), index)
-    setActionError(null)
+    setCardFeedback(null)
     try {
       const confirmed = await runOccurrenceAction(household.id, assignmentId, action)
       requestSequence.current += 1
@@ -265,10 +286,15 @@ export function MyChoresScreen({ theme = "dark" }: { theme?: HomeVisualTheme } =
       requestSequence.current += 1
       apply(previous, index)
       if (loadedHouseholdId.current === household.id) {
-        setActionError(
-          cause instanceof ApiError
-            ? cause.message
-            : "Unable to update this chore. Please try again.",
+        setCardFeedback(
+          cardFeedback(
+            previous,
+            cause instanceof ApiError
+              ? cause.message
+              : "Unable to update this chore. Please try again.",
+            "error",
+            surface,
+          ),
         )
       }
       invalidate()
@@ -276,6 +302,71 @@ export function MyChoresScreen({ theme = "dark" }: { theme?: HomeVisualTheme } =
       release(operation)
     }
   }
+  /** "Needs doing": shows the flag at once, then the server's answer, or rolls back with its message. */
+  const flagAssignment = async (assignmentId: string) => {
+    if (!household || loadedHouseholdId.current !== household.id) return
+    const operation = `flag:${assignmentId}`
+    const previous = upcomingRef.current.find((assignment) => assignment.id === assignmentId)
+    if (!previous || !claim(operation)) return
+    const apply = (next: AssignmentDTO) => {
+      if (loadedHouseholdId.current !== household.id) return
+      upcomingRef.current = replaceJob(upcomingRef.current, next)
+      setUpcoming(upcomingRef.current)
+    }
+    requestSequence.current += 1
+    apply(
+      optimisticFlag(previous, {
+        userId: state.currentUser.id,
+        displayName: state.currentUser.name,
+      }),
+    )
+    setFlaggingIds((current) => new Set(current).add(assignmentId))
+    setCardFeedback(null)
+    try {
+      const confirmed = await choreApi.flag(household.id, assignmentId)
+      requestSequence.current += 1
+      apply(confirmed)
+      setCardFeedback(
+        cardFeedback(
+          confirmed,
+          flagConfirmation(confirmed, state.currentUser.id),
+          "success",
+          "job",
+        ),
+      )
+      invalidate()
+    } catch (cause) {
+      requestSequence.current += 1
+      apply(previous)
+      if (loadedHouseholdId.current === household.id) {
+        setCardFeedback(
+          cardFeedback(
+            previous,
+            cause instanceof ApiError
+              ? cause.message
+              : "Unable to flag this job. Please try again.",
+            "error",
+            "job",
+          ),
+        )
+      }
+      invalidate()
+    } finally {
+      release(operation)
+      setFlaggingIds((current) => {
+        const next = new Set(current)
+        next.delete(assignmentId)
+        return next
+      })
+    }
+  }
+  // Confirmations clear themselves; errors stay until the next action.
+  useEffect(() => {
+    if (cardFeedbackState?.tone !== "success") return
+    const timer = window.setTimeout(() => setCardFeedback(null), CONFIRMATION_MS)
+    return () => window.clearTimeout(timer)
+  }, [cardFeedbackState])
+
   const actionTarget = upcoming.find((assignment) => assignment.id === actionTargetId) ?? null
 
   const displayed = tab === "upcoming" ? upcoming : completed
@@ -295,10 +386,12 @@ export function MyChoresScreen({ theme = "dark" }: { theme?: HomeVisualTheme } =
     householdTimezone: household?.timezone ?? "UTC",
     householdId: household?.id ?? null,
     completingIds,
+    flaggingIds,
     status: visibleStatus,
     errorMessage: error,
     refreshError,
-    actionError,
+    actionError: null,
+    cardFeedback: cardFeedbackState,
   })
   const onNavigate = (destination: HomeNavigationDestination) =>
     navigate(destination === "home" ? "dashboard" : destination)
@@ -306,8 +399,12 @@ export function MyChoresScreen({ theme = "dark" }: { theme?: HomeVisualTheme } =
     <>
       <MyChoresScreenView
         activeDestination="my-chores"
-        onCompleteChore={(id) => void completeAssignment(id)}
-        onOpenChoreActions={setActionTargetId}
+        onCompleteChore={(id, surface) => void completeAssignment(id, surface)}
+        onOpenChoreActions={(id, surface = "card") => {
+          setActionSurface(surface)
+          setActionTargetId(id)
+        }}
+        onFlagJob={(id) => void flagAssignment(id)}
         onNavigate={onNavigate}
         onRetry={() => void loadChores()}
         onSelectTab={setTab}
@@ -325,7 +422,7 @@ export function MyChoresScreen({ theme = "dark" }: { theme?: HomeVisualTheme } =
           onSubmit={(action) => {
             const target = actionTarget.id
             setActionTargetId(null)
-            void performOccurrenceAction(target, action)
+            void performOccurrenceAction(target, action, actionSurface)
           }}
           theme={theme}
         />
