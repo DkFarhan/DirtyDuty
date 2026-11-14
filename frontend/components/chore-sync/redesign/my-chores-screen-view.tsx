@@ -2,6 +2,7 @@
 
 import type { HomeNavigationDestination, HomeVisualTheme } from "./home-screen-view"
 import { BottomNav } from "../bottom-nav"
+import { OccurrenceMoreButton } from "../occurrence-action-sheet"
 import styles from "./my-chores-screen-view.module.css"
 
 export type MyChoresTab = "upcoming" | "completed"
@@ -18,8 +19,12 @@ export interface MyChoreUpcomingViewModel {
   categoryIcon: MyChoreCategoryIcon
   priority?: boolean
   overdue?: boolean
-  status?: "PENDING" | "COMPLETED" | "CANCELLED"
+  status?: "PENDING" | "COMPLETED" | "CANCELLED" | "SKIPPED"
   canComplete?: boolean
+  /** "Moved from Tue" when moved to another day. */
+  movedFrom?: string | null
+  /** The viewer may move, skip, undo or reassign this occurrence. */
+  hasActions?: boolean
 }
 
 export interface MyChoreCompletedViewModel {
@@ -53,6 +58,8 @@ export interface MyChoresScreenViewProps {
   activeDestination: HomeNavigationDestination
   onSelectTab: (tab: MyChoresTab) => void
   onCompleteChore: (choreId: string) => void
+  /** Opens the move, skip and reassign sheet for one occurrence. */
+  onOpenChoreActions?: (choreId: string) => void
   onRetry: () => void
   onNavigate: (destination: HomeNavigationDestination) => void
 }
@@ -63,17 +70,23 @@ function UpcomingCard({
   theme,
   completing,
   onComplete,
+  onOpenActions,
 }: {
   chore: MyChoreUpcomingViewModel
   index: number
   theme: HomeVisualTheme
   completing: boolean
   onComplete: (choreId: string) => void
+  onOpenActions?: (choreId: string) => void
 }) {
+  const canComplete =
+    chore.canComplete !== false && chore.status !== "COMPLETED" && chore.status !== "CANCELLED"
+  const showActions = Boolean(chore.hasActions && onOpenActions)
   return (
     <article
-      className={`${styles.upcomingCard} ${index % 2 === 1 ? styles.alternateUpcomingCard : ""}`}
+      className={`${styles.upcomingCard} ${index % 2 === 1 ? styles.alternateUpcomingCard : ""} ${showActions ? styles.upcomingCardWithActions : ""}`}
       data-chore-id={chore.id}
+      data-occurrence-card={chore.id}
       id={`assignment-${chore.id}`}
     >
       <span className={styles.categoryGlass} />
@@ -97,27 +110,41 @@ function UpcomingCard({
           <span aria-hidden="true" className={styles.priorityIndicator} />
         )}
       <p className={styles.upcomingCategory}>{chore.category}</p>
-      <p className={styles.upcomingDate}>{chore.dateLabel}</p>
+      <p className={styles.upcomingDate}>
+        {chore.dateLabel}
+        {chore.movedFrom && (
+          <>
+            <span aria-hidden="true"> · </span>
+            <span className={styles.movedHint}>{chore.movedFrom}</span>
+          </>
+        )}
+      </p>
       <span aria-hidden="true" className={styles.upcomingDivider} />
       <p className={styles.upcomingAssignees}>Assigned to {chore.assignedTo}</p>
       {chore.durationLabel && <p className={styles.upcomingDuration}>{chore.durationLabel}</p>}
-      {chore.canComplete !== false &&
-        chore.status !== "COMPLETED" &&
-        chore.status !== "CANCELLED" && (
-          <button
-            aria-busy={completing}
-            aria-label={`${completing ? "Completing" : "Complete"} ${chore.title}`}
-            className={styles.inlineCompleteButton}
-            disabled={completing}
-            onClick={() => onComplete(chore.id)}
-            type="button"
-          >
-            {!completing && (
-              <span aria-hidden="true" className={styles.listCheck} data-theme={theme} />
-            )}
-            {completing ? "Completing..." : "Complete"}
-          </button>
-        )}
+      {showActions && (
+        <OccurrenceMoreButton
+          className={canComplete ? styles.upcomingMoreButton : styles.upcomingMoreButtonSolo}
+          onClick={() => onOpenActions?.(chore.id)}
+          theme={theme}
+          title={chore.title}
+        />
+      )}
+      {canComplete && (
+        <button
+          aria-busy={completing}
+          aria-label={`${completing ? "Completing" : "Complete"} ${chore.title}`}
+          className={styles.inlineCompleteButton}
+          disabled={completing}
+          onClick={() => onComplete(chore.id)}
+          type="button"
+        >
+          {!completing && (
+            <span aria-hidden="true" className={styles.listCheck} data-theme={theme} />
+          )}
+          {completing ? "Completing..." : "Complete"}
+        </button>
+      )}
     </article>
   )
 }
@@ -127,18 +154,30 @@ function AttentionCard({
   theme,
   completing,
   onComplete,
+  onOpenActions,
 }: {
   chore: MyChoreUpcomingViewModel
   theme: HomeVisualTheme
   completing: boolean
   onComplete: (choreId: string) => void
+  onOpenActions?: (choreId: string) => void
 }) {
+  const showActions = Boolean(chore.hasActions && onOpenActions)
   return (
     <article
-      className={styles.attentionCard}
+      className={`${styles.attentionCard} ${showActions ? styles.attentionCardWithActions : ""}`}
       data-chore-id={chore.id}
+      data-occurrence-card={chore.id}
       id={`assignment-${chore.id}`}
     >
+      {showActions && (
+        <OccurrenceMoreButton
+          className={styles.attentionMoreButton}
+          onClick={() => onOpenActions?.(chore.id)}
+          theme={theme}
+          title={chore.title}
+        />
+      )}
       <span className={styles.attentionAccent} />
       <span className={styles.overdueBadge}>OVERDUE</span>
       <span className={styles.attentionIconGlass} />
@@ -148,6 +187,12 @@ function AttentionCard({
         {chore.category}
         <span aria-hidden="true"> · </span>
         {chore.dateLabel}
+        {chore.movedFrom && (
+          <>
+            <span aria-hidden="true"> · </span>
+            <span className={styles.movedHint}>{chore.movedFrom}</span>
+          </>
+        )}
       </p>
       <span aria-hidden="true" className={styles.attentionClock} data-theme={theme} />
       {chore.durationLabel && <p className={styles.attentionDuration}>{chore.durationLabel}</p>}
@@ -264,6 +309,7 @@ export function MyChoresScreenView({
   activeDestination,
   onSelectTab,
   onCompleteChore,
+  onOpenChoreActions,
   onRetry,
   onNavigate,
 }: MyChoresScreenViewProps) {
@@ -381,6 +427,7 @@ export function MyChoresScreenView({
                                 viewModel.attentionChore.id,
                               )}
                               onComplete={onCompleteChore}
+                              onOpenActions={onOpenChoreActions}
                               theme={theme}
                             />
                           </section>
@@ -398,6 +445,7 @@ export function MyChoresScreenView({
                                 index={index}
                                 key={chore.id}
                                 onComplete={onCompleteChore}
+                                onOpenActions={onOpenChoreActions}
                                 theme={theme}
                               />
                             ))}

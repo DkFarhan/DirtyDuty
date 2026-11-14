@@ -230,6 +230,34 @@ describe("auth API client", () => {
     })
   })
 
+  it("shows the known occurrence action messages and hides anything else", async () => {
+    const failure = (message: string) =>
+      new Response(JSON.stringify({ message }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      })
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ token: "csrf-token", headerName: "X-CSRF-TOKEN" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(failure("This chore is already scheduled on that day."))
+      .mockResolvedValueOnce(failure("Choose between 1 and 3 people for this chore."))
+      .mockResolvedValueOnce(failure("Internal validation detail"))
+
+    await expect(
+      api.post("/api/households/h/assignments/a/move", { date: "2026-11-20" }),
+    ).rejects.toMatchObject({ message: "This chore is already scheduled on that day." })
+    await expect(
+      api.put("/api/households/h/assignments/a/assignees", { userIds: [] }),
+    ).rejects.toMatchObject({ message: "Choose between 1 and 3 people for this chore." })
+    await expect(api.post("/api/households/h/assignments/a/skip")).rejects.toMatchObject({
+      message: "Please check your information and try again.",
+    })
+  })
+
   it("shows the known chore-category messages and hides anything else", async () => {
     const csrf = () =>
       new Response(JSON.stringify({ token: "csrf-token", headerName: "X-CSRF-TOKEN" }), {

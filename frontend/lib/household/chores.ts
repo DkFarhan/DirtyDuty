@@ -75,7 +75,7 @@ export type AssignmentDTO = {
   title: string
   scheduledFor: string
   dueAt: string | null
-  status: "PENDING" | "COMPLETED" | "CANCELLED"
+  status: "PENDING" | "COMPLETED" | "CANCELLED" | "SKIPPED"
   priority: ChorePriority
   difficulty: number
   estimatedMinutes: number | null
@@ -84,6 +84,26 @@ export type AssignmentDTO = {
   completedAt: string | null
   completedByDisplayName: string | null
   overdue: boolean
+  /** The day it was originally due, when it has been moved to another day. */
+  originalDate?: string | null
+  /** Moved to another day or time. */
+  moved?: boolean
+  /** Given to other people for this day only. */
+  reassigned?: boolean
+  /** What the viewer may do with this occurrence, decided by the server. */
+  actions?: OccurrenceActions
+}
+
+export type OccurrenceActions = {
+  canMove: boolean
+  canSkip: boolean
+  canUnskip: boolean
+  canReassign: boolean
+  /** First day the viewer may move it to (YYYY-MM-DD). */
+  moveEarliest: string | null
+  /** Last day the viewer may move it to, or null for no limit. */
+  moveLatest: string | null
+  maxAssignees: number
 }
 
 export type HouseholdDashboard = {
@@ -126,6 +146,24 @@ export const choreApi = {
   complete: (householdId: string, assignmentId: string) =>
     api.post<AssignmentDTO>(
       `${householdPath(householdId)}/assignments/${encodeURIComponent(assignmentId)}/complete`,
+    ),
+  move: (householdId: string, assignmentId: string, date: string, time: string | null) =>
+    api.post<AssignmentDTO>(
+      `${householdPath(householdId)}/assignments/${encodeURIComponent(assignmentId)}/move`,
+      { date, time },
+    ),
+  skip: (householdId: string, assignmentId: string) =>
+    api.post<AssignmentDTO>(
+      `${householdPath(householdId)}/assignments/${encodeURIComponent(assignmentId)}/skip`,
+    ),
+  unskip: (householdId: string, assignmentId: string) =>
+    api.post<AssignmentDTO>(
+      `${householdPath(householdId)}/assignments/${encodeURIComponent(assignmentId)}/unskip`,
+    ),
+  reassign: (householdId: string, assignmentId: string, userIds: string[]) =>
+    api.put<AssignmentDTO>(
+      `${householdPath(householdId)}/assignments/${encodeURIComponent(assignmentId)}/assignees`,
+      { userIds },
     ),
 }
 

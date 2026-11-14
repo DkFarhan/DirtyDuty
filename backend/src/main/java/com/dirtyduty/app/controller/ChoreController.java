@@ -9,6 +9,8 @@ import com.dirtyduty.app.dto.chore.ChoreRequest;
 import com.dirtyduty.app.dto.chore.ChoreResponse;
 import com.dirtyduty.app.dto.chore.DashboardResponse;
 import com.dirtyduty.app.dto.chore.HouseholdMemberStatsResponse;
+import com.dirtyduty.app.dto.chore.MoveAssignmentRequest;
+import com.dirtyduty.app.dto.chore.ReassignAssignmentRequest;
 import com.dirtyduty.app.service.ChoreService;
 import com.dirtyduty.app.service.OccurrenceService;
 import jakarta.validation.Valid;
@@ -46,6 +48,41 @@ public class ChoreController {
       @PathVariable UUID assignmentId,
       Authentication authentication) {
     return occurrenceService.complete(householdId, assignmentId, authentication);
+  }
+
+  @PostMapping("/assignments/{assignmentId}/move")
+  public AssignmentResponse moveAssignment(
+      @PathVariable UUID householdId,
+      @PathVariable UUID assignmentId,
+      @RequestBody MoveAssignmentRequest request,
+      Authentication authentication) {
+    return occurrenceService.move(
+        householdId, assignmentId, request.date(), request.time(), authentication);
+  }
+
+  @PostMapping("/assignments/{assignmentId}/skip")
+  public AssignmentResponse skipAssignment(
+      @PathVariable UUID householdId,
+      @PathVariable UUID assignmentId,
+      Authentication authentication) {
+    return occurrenceService.skip(householdId, assignmentId, authentication);
+  }
+
+  @PostMapping("/assignments/{assignmentId}/unskip")
+  public AssignmentResponse unskipAssignment(
+      @PathVariable UUID householdId,
+      @PathVariable UUID assignmentId,
+      Authentication authentication) {
+    return occurrenceService.unskip(householdId, assignmentId, authentication);
+  }
+
+  @PutMapping("/assignments/{assignmentId}/assignees")
+  public AssignmentResponse reassignAssignment(
+      @PathVariable UUID householdId,
+      @PathVariable UUID assignmentId,
+      @RequestBody ReassignAssignmentRequest request,
+      Authentication authentication) {
+    return occurrenceService.reassign(householdId, assignmentId, request.userIds(), authentication);
   }
 
   @GetMapping("/my-chores")

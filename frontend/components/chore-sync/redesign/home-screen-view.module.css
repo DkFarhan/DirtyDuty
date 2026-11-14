@@ -1158,3 +1158,35 @@
     animation: none;
   }
 }
+
+/* Single-occurrence actions. */
+.cardMoreButton {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+}
+
+.cardWithActions .choreTitle {
+  padding-right: 52px;
+}
+
+.upcomingMoreButton {
+  margin-top: -4px;
+}
+
+.movedHint {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.skippedCard .choreTitle,
+.skippedItem h3 {
+  color: var(--secondary-text);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.skippedLabel {
+  color: var(--secondary-text);
+  font-weight: 600;
+}

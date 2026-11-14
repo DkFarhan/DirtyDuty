@@ -1,6 +1,7 @@
 "use client"
 
 import type { CSSProperties } from "react"
+import { OccurrenceMoreButton } from "../occurrence-action-sheet"
 import { BottomNav } from "../bottom-nav"
 import styles from "./home-screen-view.module.css"
 
@@ -15,7 +16,11 @@ export interface HomeChoreViewModel {
   scheduledLabel: string
   durationLabel?: string
   assignedTo: string
-  status?: "PENDING" | "COMPLETED" | "CANCELLED"
+  status?: "PENDING" | "COMPLETED" | "CANCELLED" | "SKIPPED"
+  /** "Moved from Tue" when moved to another day. */
+  movedFrom?: string | null
+  /** The viewer may move, skip, undo or reassign this occurrence. */
+  hasActions?: boolean
   completedBy?: string | null
   overdue?: boolean
   canComplete?: boolean
@@ -27,6 +32,9 @@ export interface HomeUpcomingChoreViewModel {
   title: string
   category: string
   timeLabel: string
+  skipped?: boolean
+  movedFrom?: string | null
+  hasActions?: boolean
 }
 
 export interface HomeUpcomingGroupViewModel {
@@ -77,6 +85,8 @@ export interface HomeScreenViewProps {
   viewModel: HomeScreenViewModel
   activeDestination: HomeNavigationDestination
   onCompleteChore: (choreId: string) => void
+  /** Opens the move, skip and reassign sheet for one occurrence. */
+  onOpenChoreActions?: (choreId: string) => void
   onRetry: () => void
   onRetryNotificationCount?: () => void
   onPushAction?: () => void
@@ -96,25 +106,43 @@ function paddedCount(value: number) {
 function ChoreCard({
   chore,
   onComplete,
+  onOpenActions,
+  theme,
   attention = false,
   today = false,
 }: {
   chore: HomeChoreViewModel
   onComplete: (choreId: string) => void
+  onOpenActions?: (choreId: string) => void
+  theme: HomeVisualTheme
   attention?: boolean
   today?: boolean
 }) {
   const canComplete =
-    chore.canComplete !== false && chore.status !== "COMPLETED" && chore.status !== "CANCELLED"
+    chore.canComplete !== false &&
+    chore.status !== "COMPLETED" &&
+    chore.status !== "CANCELLED" &&
+    chore.status !== "SKIPPED"
+  const showActions = Boolean(chore.hasActions && onOpenActions)
   const cardClassName = [
     styles.attentionCard,
     today && styles.todayCard,
     today && chore.overdue && chore.status === "PENDING" && styles.todayOverdueCard,
+    showActions && styles.cardWithActions,
+    chore.status === "SKIPPED" && styles.skippedCard,
   ]
     .filter(Boolean)
     .join(" ")
   return (
-    <article className={cardClassName} data-chore-id={chore.id}>
+    <article className={cardClassName} data-chore-id={chore.id} data-occurrence-card={chore.id}>
+      {showActions && (
+        <OccurrenceMoreButton
+          className={styles.cardMoreButton}
+          onClick={() => onOpenActions?.(chore.id)}
+          theme={theme}
+          title={chore.title}
+        />
+      )}
       {(chore.overdue || (attention && chore.status === undefined)) && (
         <span className={styles.overdueBadge}>OVERDUE</span>
       )}
@@ -123,6 +151,12 @@ function ChoreCard({
         {chore.category}
         <span aria-hidden="true"> · </span>
         {chore.scheduledLabel}
+        {chore.movedFrom && (
+          <>
+            <span aria-hidden="true"> · </span>
+            <span className={styles.movedHint}>{chore.movedFrom}</span>
+          </>
+        )}
       </p>
       {chore.durationLabel && (
         <p className={styles.duration}>
@@ -137,6 +171,7 @@ function ChoreCard({
         </p>
       )}
       {chore.status === "CANCELLED" && <p className={styles.choreStatus}>Cancelled</p>}
+      {chore.status === "SKIPPED" && <p className={styles.choreStatus}>Skipped</p>}
       {canComplete && (
         <button
           aria-busy={chore.completing}
@@ -179,6 +214,7 @@ export function HomeScreenView({
   viewModel,
   activeDestination,
   onCompleteChore,
+  onOpenChoreActions,
   onRetry,
   onRetryNotificationCount = onRetry,
   onPushAction = onRetry,
@@ -415,6 +451,8 @@ export function HomeScreenView({
                       chore={chore}
                       key={chore.id}
                       onComplete={onCompleteChore}
+                      onOpenActions={onOpenChoreActions}
+                      theme={theme}
                     />
                   ))}
                 </div>
@@ -439,7 +477,14 @@ export function HomeScreenView({
               ) : (
                 <div className={styles.todayList}>
                   {viewModel.todayChores.map((chore) => (
-                    <ChoreCard chore={chore} key={chore.id} onComplete={onCompleteChore} today />
+                    <ChoreCard
+                      chore={chore}
+                      key={chore.id}
+                      onComplete={onCompleteChore}
+                      onOpenActions={onOpenChoreActions}
+                      theme={theme}
+                      today
+                    />
                   ))}
                 </div>
               )}
@@ -447,7 +492,7 @@ export function HomeScreenView({
 
             <section aria-labelledby="up-next-title" className={styles.upcomingSection}>
               <SectionHeading
-                count={viewModel.upcomingChores.length}
+                count={viewModel.upcomingChores.filter((chore) => !chore.skipped).length}
                 countLabel="UPCOMING"
                 id="up-next-title"
                 title="Up next"
@@ -460,15 +505,41 @@ export function HomeScreenView({
                     <div className={styles.upcomingList} key={group.dateLabel}>
                       <p className={styles.upcomingDate}>{group.dateLabel}</p>
                       {group.chores.map((chore, index) => (
-                        <article className={styles.upcomingItem} key={chore.id}>
+                        <article
+                          className={`${styles.upcomingItem} ${chore.skipped ? styles.skippedItem : ""}`}
+                          data-occurrence-card={chore.id}
+                          key={chore.id}
+                        >
                           <span aria-hidden="true" className={styles.timelineStop}>
                             <span className={styles.timelineStopCore} />
                           </span>
                           <div className={styles.upcomingCopy}>
                             <h3>{chore.title}</h3>
-                            <p>{chore.category}</p>
+                            <p>
+                              {chore.category}
+                              {chore.skipped && (
+                                <>
+                                  <span aria-hidden="true"> · </span>
+                                  <span className={styles.skippedLabel}>Skipped</span>
+                                </>
+                              )}
+                              {chore.movedFrom && (
+                                <>
+                                  <span aria-hidden="true"> · </span>
+                                  <span className={styles.movedHint}>{chore.movedFrom}</span>
+                                </>
+                              )}
+                            </p>
                           </div>
                           <time className={styles.upcomingTime}>{chore.timeLabel}</time>
+                          {chore.hasActions && onOpenChoreActions && (
+                            <OccurrenceMoreButton
+                              className={styles.upcomingMoreButton}
+                              onClick={() => onOpenChoreActions(chore.id)}
+                              theme={theme}
+                              title={chore.title}
+                            />
+                          )}
                           {index < group.chores.length - 1 && (
                             <span aria-hidden="true" className={styles.timelineDivider} />
                           )}

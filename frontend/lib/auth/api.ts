@@ -56,6 +56,26 @@ const CATEGORY_MESSAGES = new Set([
   "Category was not found in this household.",
 ])
 
+/** Single-occurrence action messages from the server that are safe to show as written. */
+const OCCURRENCE_ACTION_MESSAGES = [
+  /^You can only move chores that are assigned to you\.$/,
+  /^Only a chore that is still to do can be (moved|skipped|reassigned)\.$/,
+  /^Choose a day to move this chore to\.$/,
+  /^Choose today or a later day\.$/,
+  /^You can move your chore up to 7 days before or after its original day\.$/,
+  /^This chore is already scheduled on that day\.$/,
+  /^The selected due date has a cancelled assignment\. Choose another due date\.$/,
+  /^Only household owners and admins can (skip|restore|reassign) a chore\.$/,
+  /^Only a skipped chore can be restored\.$/,
+  /^This day has passed, so the skip can't be undone\.$/,
+  /^Turn this chore back on before restoring a skipped day\.$/,
+  /^This day is no longer part of the chore's schedule\.$/,
+  /^Choose one person for this chore\.$/,
+  /^Choose between 1 and \d+ people for this chore\.$/,
+  /^Everyone you choose must be a current household member\.$/,
+  /^Assignment was not found in this household\.$/,
+]
+
 function messageFor(
   status: number,
   path: string,
@@ -73,6 +93,17 @@ function messageFor(
       "A recurring chore with existing assignment history cannot be converted to one-time. Create a separate one-time chore to preserve its history."
   ) {
     return "This chore has recurring assignment history and can't be changed to a one-time chore. Keep its recurring schedule or create a new one-time chore."
+  }
+  if (
+    (status === 400 || status === 404) &&
+    /^\/api\/households\/[^/]+\/assignments\/[^/]+\/(move|skip|unskip|assignees)$/.test(path) &&
+    payload !== null &&
+    typeof payload === "object" &&
+    "message" in payload &&
+    typeof payload.message === "string" &&
+    OCCURRENCE_ACTION_MESSAGES.some((pattern) => pattern.test(payload.message as string))
+  ) {
+    return payload.message
   }
   if (
     (status === 400 || status === 404 || status === 409) &&
