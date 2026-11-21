@@ -14,7 +14,12 @@ import {
   type CardFeedback,
   type CardSurface,
 } from "@/lib/household/card-feedback"
-import { isHouseholdJob, optimisticFlag, replaceJob } from "@/lib/household/household-jobs"
+import {
+  flagErrorWording,
+  isHouseholdJob,
+  optimisticFlag,
+  replaceJob,
+} from "@/lib/household/household-jobs"
 import {
   optimisticOccurrence,
   runOccurrenceAction,
@@ -343,7 +348,7 @@ export function MyChoresScreen({ theme = "dark" }: { theme?: HomeVisualTheme } =
           cardFeedback(
             previous,
             cause instanceof ApiError
-              ? cause.message
+              ? flagErrorWording(cause.message)
               : "Unable to flag this job. Please try again.",
             "error",
             "job",

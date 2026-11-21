@@ -195,6 +195,7 @@ describe("household jobs (When needed) on Home and My Chores", () => {
 
   afterEach(() => {
     cleanup()
+    vi.useRealTimers()
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
     clearCsrfToken()
@@ -219,9 +220,15 @@ describe("household jobs (When needed) on Home and My Chores", () => {
     expect(screen.queryByRole("region", { name: "Household jobs" })).toBeNull()
   })
 
-  it("shows Needs doing at once and rolls back with the server's Already flagged message", async () => {
+  it("shows Reminder sent at once, and Already asked then the server's flag after a 409", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date(`${today}T15:00:00Z`))
     const response = deferred()
     const calls: string[] = []
+    let conflicted = false
+    const benAsked = job({
+      flag: { at: `${today}T14:59:00Z`, byUserId: "ben", byDisplayName: "Ben" },
+    })
     serve({
       dashboard: { ...dashboardWith([]), householdJobs: [job()] },
       upcoming: [],
@@ -229,18 +236,34 @@ describe("household jobs (When needed) on Home and My Chores", () => {
         calls.push(url)
         return response.promise
       },
+      after: () => ({
+        dashboard: { ...dashboardWith([]), householdJobs: [conflicted ? benAsked : job()] },
+        upcoming: [],
+      }),
     })
     await startAtHome()
 
     fireEvent.click(await screen.findByRole("button", { name: "Needs doing: Garbage" }))
-    expect(await screen.findByText("Flagged just now by you")).toBeTruthy()
-    expect(screen.queryByText("Due by 11:30 PM today")).toBeNull()
+    expect(await screen.findByText("You asked just now")).toBeTruthy()
+    expect(screen.getByText("Due now")).toBeTruthy()
+    expect(
+      screen.getByRole("button", { name: "Reminder sent: Garbage" }).getAttribute("aria-disabled"),
+    ).toBe("true")
     expect(calls.at(-1)).toMatch(/\/assignments\/garbage\/flag$/)
 
-    response.resolve(json({ message: "Already flagged at 3:10 PM." }, 409))
-    expect(await screen.findByText("Already flagged at 3:10 PM.")).toBeTruthy()
-    await waitFor(() => expect(screen.queryByText("Flagged just now by you")).toBeNull())
-    expect(screen.getByText("Due by 11:30 PM today")).toBeTruthy()
+    conflicted = true
+    response.resolve(json({ message: "Already flagged at 2:59 PM." }, 409))
+    const alert = await screen.findByText("Already asked at 2:59 PM.")
+    expect(
+      alert.closest("[data-card-feedback]")?.previousElementSibling?.getAttribute("aria-label"),
+    ).toBe("Garbage")
+    expect(await screen.findByText("Ben asked 1 min ago")).toBeTruthy()
+    const sent = screen.getByRole("button", { name: "Reminder sent: Garbage" })
+    expect(sent.getAttribute("aria-disabled")).toBe("true")
+    expect(document.getElementById(sent.getAttribute("aria-describedby")!)?.textContent).toBe(
+      "You can remind again at 4:59 PM",
+    )
+    expect(screen.queryByRole("button", { name: "Needs doing: Garbage" })).toBeNull()
   })
 
   it("lets a participant whose turn it is not do the job with I did it from My Chores", async () => {
@@ -264,7 +287,7 @@ describe("household jobs (When needed) on Home and My Chores", () => {
     await waitFor(() => expect(calls.at(-1)).toMatch(/\/assignments\/garbage\/complete$/))
   })
 
-  it("labels the button Done and puts a flagged job first when it is the viewer's turn", async () => {
+  it("puts a flagged job first with a full-width I did it and no reminder button on the viewer's turn", async () => {
     const mine = job({
       id: "mine",
       title: "Recycling",
@@ -287,23 +310,31 @@ describe("household jobs (When needed) on Home and My Chores", () => {
     expect(cards[0].getAttribute("aria-label")).toBe("Recycling")
     expect(within(cards[0]).getByText("Your turn")).toBeTruthy()
     expect(within(cards[0]).getByText("Not done yet")).toBeTruthy()
-    expect(within(cards[0]).getByText("Flagged 10 min ago by Ben")).toBeTruthy()
-    expect(within(cards[0]).getByRole("button", { name: "Done Recycling" })).toBeTruthy()
+    expect(within(cards[0]).getByText("Ben asked 10 min ago")).toBeTruthy()
+    expect(within(cards[0]).getByRole("button", { name: "I did it Recycling" })).toBeTruthy()
+    expect(
+      within(cards[0]).queryByRole("button", {
+        name: /^(Needs doing|Reminder sent|Remind again):/,
+      }),
+    ).toBeNull()
   })
-  it("puts Needs doing results under the job card, not in the page banner", async () => {
-    let flagged = false
+  it("puts the Needs doing confirmation under the job card, then holds Reminder sent", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date(`${today}T15:00:00Z`))
+    let flagged: AssignmentDTO | null = null
     serve({
       dashboard: { ...dashboardWith([]), householdJobs: [job()] },
       upcoming: [],
       action: async () => {
-        if (flagged) return json({ message: "Already flagged at 5:01 AM." }, 409)
-        flagged = true
-        return json(
-          job({
-            flag: { at: new Date().toISOString(), byUserId: "owner", byDisplayName: "Olive" },
-          }),
-        )
+        flagged = job({
+          flag: { at: new Date().toISOString(), byUserId: "owner", byDisplayName: "Olive" },
+        })
+        return json(flagged)
       },
+      after: () => ({
+        dashboard: { ...dashboardWith([]), householdJobs: [flagged ?? job()] },
+        upcoming: [],
+      }),
     })
     await startAtHome()
 
@@ -312,13 +343,14 @@ describe("household jobs (When needed) on Home and My Chores", () => {
     expect(confirmation.textContent).toBe("Flagged. Ben has been told.")
     expect(confirmation.previousElementSibling?.getAttribute("aria-label")).toBe("Garbage")
 
-    fireEvent.click(screen.getByRole("button", { name: "Needs doing: Garbage" }))
-    const alert = await screen.findByText("Already flagged at 5:01 AM.")
-    const message = alert.closest("[data-card-feedback]")!
-    expect(message.getAttribute("role")).toBe("alert")
-    expect(message.previousElementSibling?.getAttribute("aria-label")).toBe("Garbage")
-    expect(screen.getAllByText("Already flagged at 5:01 AM.")).toHaveLength(1)
-    expect(screen.queryByRole("status")).toBeNull()
+    const card = screen.getByRole("article", { name: "Garbage" })
+    expect(within(card).getByText("You asked just now")).toBeTruthy()
+    expect(
+      within(card)
+        .getByRole("button", { name: "Reminder sent: Garbage" })
+        .getAttribute("aria-disabled"),
+    ).toBe("true")
+    expect(within(card).getByText("You can remind again at 5:00 PM")).toBeTruthy()
   })
 
   it("shows Already done next to the job's new open copy after someone else did it", async () => {
@@ -418,12 +450,16 @@ describe("household jobs (When needed) on Home and My Chores", () => {
     expect(within(group).getAllByRole("radio")).toHaveLength(3)
   })
   it("shows a result only under the card that was pressed when a job is on Home twice", async () => {
+    // Asked three hours ago, so the window has ended and Remind again is back.
     const flaggedMine = job({
-      turn: { userId: "owner", displayName: "Olive" },
       assignees: [{ userId: "owner", displayName: "Olive" }],
       canComplete: true,
       overdue: true,
-      flag: { at: new Date().toISOString(), byUserId: "ben", byDisplayName: "Ben" },
+      flag: {
+        at: new Date(Date.now() - 3 * 3_600_000).toISOString(),
+        byUserId: "ben",
+        byDisplayName: "Ben",
+      },
     })
     serve({
       dashboard: { ...dashboardWith([]), overdue: [flaggedMine], householdJobs: [flaggedMine] },
@@ -435,12 +471,12 @@ describe("household jobs (When needed) on Home and My Chores", () => {
     })
     await startAtHome()
 
-    fireEvent.click(await screen.findByRole("button", { name: "Needs doing: Garbage" }))
-    await screen.findByText("Already flagged at 5:01 AM.")
-    expect(screen.getAllByText("Already flagged at 5:01 AM.")).toHaveLength(1)
+    fireEvent.click(await screen.findByRole("button", { name: "Remind again: Garbage" }))
+    await screen.findByText("Already asked at 5:01 AM.")
+    expect(screen.getAllByText("Already asked at 5:01 AM.")).toHaveLength(1)
     expect(
       screen
-        .getByText("Already flagged at 5:01 AM.")
+        .getByText("Already asked at 5:01 AM.")
         .closest("[data-card-feedback]")
         ?.previousElementSibling?.getAttribute("data-household-job"),
     ).toBe("garbage")
@@ -452,6 +488,6 @@ describe("household jobs (When needed) on Home and My Chores", () => {
     // The section left during the optimistic completion and came back on rollback.
     const restored = screen.getByRole("region", { name: "Needs attention" })
     expect(within(restored).getByText("Already done by Ben.")).toBeTruthy()
-    expect(screen.queryByText("Already flagged at 5:01 AM.")).toBeNull()
+    expect(screen.queryByText("Already asked at 5:01 AM.")).toBeNull()
   })
 })

@@ -1,32 +1,40 @@
-/* A "When needed" household job. Tokens follow the occurrence sheet and the screen cards. */
+/* A "When needed" household job. Tokens follow the Figma "Household job card" frames. */
 
 .darkTheme {
-  --job-surface: linear-gradient(145.79deg, #0e2c36 10.57%, #0c2630 91.87%);
-  --job-border: rgb(56 101 107 / 38%);
+  --job-surface: linear-gradient(137deg, #0e2c36 0%, #0c2630 71.43%);
+  --job-border: #2a5059;
   --job-title: #f7f8f1;
   --job-body: #9fb9bd;
   --job-accent: #79e7de;
-  --job-accent-text: #081f29;
-  --job-turn-surface: rgb(121 231 222 / 14%);
-  --job-secondary: rgb(23 79 84 / 88%);
+  --job-accent-text: #06222a;
+  --job-turn-surface: #163f47;
+  --job-avatar-surface: #1d5157;
+  --job-outline: #2f6168;
   --job-secondary-text: #c2fcf4;
+  --job-quiet-surface: #11323a;
+  --job-quiet-text: #7fa7a9;
+  --job-hint: #6f9196;
   --job-warn: #ffc98a;
-  --job-warn-surface: rgb(255 201 138 / 12%);
+  --job-warn-surface: #3a3222;
   --job-overdue: #ffad9a;
   --more-text: var(--job-body);
   --more-accent: var(--job-accent);
 }
 
 .lightTheme {
-  --job-surface: linear-gradient(145.79deg, #ffffff 10.57%, #f6fcf9 91.87%);
-  --job-border: rgb(169 210 205 / 90%);
+  --job-surface: linear-gradient(137deg, #ffffff 0%, #f6fcf9 71.43%);
+  --job-border: #cfe4de;
   --job-title: #17383d;
   --job-body: #4a6569;
   --job-accent: #0d706c;
   --job-accent-text: #ffffff;
-  --job-turn-surface: rgb(13 112 108 / 10%);
-  --job-secondary: rgb(206 241 231 / 96%);
+  --job-turn-surface: #dcf1ea;
+  --job-avatar-surface: #cfeae2;
+  --job-outline: #a9d2cd;
   --job-secondary-text: #0d5f5b;
+  --job-quiet-surface: #eaf4f1;
+  --job-quiet-text: #5f7d80;
+  --job-hint: #6d8a8e;
   --job-warn: #8a4b06;
   --job-warn-surface: #fff1dd;
   --job-overdue: #9b4050;
@@ -34,72 +42,101 @@
   --more-accent: var(--job-accent);
 }
 
+/* The border stays neutral in every state; a flag shows only as the amber chip. */
 .card {
-  position: relative;
   box-sizing: border-box;
   width: 100%;
-  padding: 16px 16px 14px;
+  padding: 16px;
   border: 1px solid var(--job-border);
   border-radius: 22px;
   background: var(--job-surface);
   color: var(--job-body);
 }
 
-.card[data-flagged] {
-  border-color: color-mix(in srgb, var(--job-warn) 55%, var(--job-border));
-}
-
-.heading {
-  min-width: 0;
-  /* Leaves room for the More button in the top-right corner. */
-  padding-right: 40px;
+.top {
+  display: flex;
+  min-height: 24px;
+  align-items: center;
+  gap: 8px;
 }
 
 .turn {
-  display: inline-block;
-  margin: 0 0 6px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  background: var(--job-turn-surface);
-  color: var(--job-accent);
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.04em;
-  line-height: 16px;
+  letter-spacing: 0.06em;
+  line-height: 14px;
   text-transform: uppercase;
 }
 
-.card:not([data-your-turn]) .turn {
-  background: transparent;
-  padding-left: 0;
+.avatar {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--job-avatar-surface);
+  color: var(--job-accent);
+  font-size: 10px;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.turnPill {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--job-turn-surface);
+  color: var(--job-accent);
+}
+
+.turnText {
+  overflow: hidden;
   color: var(--job-body);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The 44px tap target overhangs the 32x24 slot in the design without moving the row. */
+.more {
+  margin: -10px -12px -10px 0;
 }
 
 .title {
-  margin: 0;
+  margin: 10px 0 0;
   overflow-wrap: anywhere;
   color: var(--job-title);
   font-family: var(--font-household-serif), "Libre Baskerville", Georgia, serif;
-  font-size: 19px;
+  font-size: 20px;
   font-weight: 400;
-  line-height: 1.3;
-}
-
-.more {
-  position: absolute;
-  top: 8px;
-  right: 6px;
+  line-height: 26px;
 }
 
 .meta {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 10px 0 0;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 8px 0 0;
   padding: 0;
-  font-size: 13px;
-  line-height: 1.45;
+  font-size: 12.5px;
+  line-height: 16px;
   list-style: none;
+}
+
+.meta li {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+}
+
+.meta svg {
+  flex: 0 0 auto;
 }
 
 .overdue {
@@ -108,50 +145,78 @@
 }
 
 .flag {
-  display: inline-flex;
+  display: flex;
+  width: fit-content;
   align-items: center;
   gap: 6px;
-  align-self: flex-start;
-  padding: 3px 9px 3px 7px;
+  margin: 10px 0 0;
+  padding: 5px 10px 5px 8px;
   border-radius: 999px;
   background: var(--job-warn-surface);
   color: var(--job-warn);
+  font-size: 12.5px;
   font-weight: 600;
+  line-height: 16px;
+}
+
+.flag svg {
+  flex: 0 0 auto;
 }
 
 .actions {
   display: flex;
-  flex-wrap: wrap;
   gap: 8px;
   margin-top: 14px;
 }
 
 .primary,
-.secondary {
-  display: inline-flex;
-  flex: 1 1 120px;
-  min-height: 44px;
+.secondary,
+.sent {
+  display: flex;
+  min-width: 0;
+  min-height: 48px;
+  flex: 1 1 0;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  padding: 0 14px;
+  padding: 0 10px;
+  border: 1px solid transparent;
   border-radius: 14px;
   cursor: pointer;
   font: inherit;
-  font-size: 14px;
+  font-size: 14.5px;
   font-weight: 700;
+  line-height: 18px;
+}
+
+/* The icon and the label are centred together as one group; the label wraps on narrow screens. */
+.buttonContent {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.buttonContent svg {
+  flex: 0 0 auto;
 }
 
 .primary {
-  border: 1px solid var(--job-accent);
+  border-color: var(--job-accent);
   background: var(--job-accent);
   color: var(--job-accent-text);
 }
 
 .secondary {
-  border: 1px solid var(--job-border);
-  background: var(--job-secondary);
+  border-color: var(--job-outline);
+  background: transparent;
   color: var(--job-secondary-text);
+}
+
+.sent {
+  background: var(--job-quiet-surface);
+  color: var(--job-quiet-text);
+  cursor: default;
 }
 
 .primary:disabled,
@@ -161,7 +226,16 @@
 }
 
 .primary:focus-visible,
-.secondary:focus-visible {
+.secondary:focus-visible,
+.sent:focus-visible {
   outline: 2px solid var(--job-accent);
   outline-offset: 2px;
+}
+
+.hint {
+  margin: 8px 0 0;
+  color: var(--job-hint);
+  font-size: 11.5px;
+  line-height: 15px;
+  text-align: right;
 }
