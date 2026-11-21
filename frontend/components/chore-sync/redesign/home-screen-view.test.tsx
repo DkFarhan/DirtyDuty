@@ -104,7 +104,7 @@ describe("HomeScreenView", () => {
     for (const assetSlot of assetSlots) {
       expect(container.querySelector(`.${assetSlot}`)).not.toBeNull()
     }
-    expect(container.querySelectorAll(`.${navigationStyles.icon}`)).toHaveLength(4)
+    expect(container.querySelectorAll(`.${navigationStyles.icon}`)).toHaveLength(5)
   })
 
   it("renders loading and recoverable error states", () => {

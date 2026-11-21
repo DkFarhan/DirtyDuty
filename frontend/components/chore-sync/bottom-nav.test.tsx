@@ -2,7 +2,7 @@
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { BottomNav, type NavKey } from "./bottom-nav"
+import { BoardUnseenContext, BottomNav, type NavKey } from "./bottom-nav"
 import styles from "./bottom-nav.module.css"
 
 afterEach(cleanup)
@@ -12,7 +12,13 @@ describe("BottomNav", () => {
     let referenceGeometry: string[] | undefined
 
     for (const theme of ["light", "dark"] as const) {
-      for (const active of ["dashboard", "my-chores", "household", "profile"] as NavKey[]) {
+      for (const active of [
+        "dashboard",
+        "my-chores",
+        "board",
+        "household",
+        "profile",
+      ] as NavKey[]) {
         const { container, unmount } = render(
           <BottomNav
             active={active}
@@ -26,7 +32,7 @@ describe("BottomNav", () => {
         expect(
           navigation.querySelector(`.${styles.activeIsland}`)?.getAttribute("data-active"),
         ).toBe(active)
-        expect(screen.getAllByRole("button")).toHaveLength(4)
+        expect(screen.getAllByRole("button")).toHaveLength(5)
         expect(
           screen
             .getByRole("button", {
@@ -35,9 +41,11 @@ describe("BottomNav", () => {
                   ? "Home"
                   : active === "my-chores"
                     ? "My Chores"
-                    : active === "household"
-                      ? "Household"
-                      : "Profile",
+                    : active === "board"
+                      ? "Board"
+                      : active === "household"
+                        ? "Household"
+                        : "Profile",
             })
             .getAttribute("aria-current"),
         ).toBe("page")
@@ -64,5 +72,16 @@ describe("BottomNav", () => {
     fireEvent.click(screen.getByRole("button", { name: "My Chores" }))
     expect(navigate).toHaveBeenCalledWith("my-chores")
     expect(screen.getByRole("button", { name: "Home" }).getAttribute("aria-current")).toBe("page")
+    fireEvent.click(screen.getByRole("button", { name: "Board" }))
+    expect(navigate).toHaveBeenCalledWith("board")
+  })
+
+  it("marks the Board tab when there are unseen posts", () => {
+    render(
+      <BoardUnseenContext.Provider value={true}>
+        <BottomNav active="dashboard" navigate={vi.fn()} />
+      </BoardUnseenContext.Provider>,
+    )
+    expect(screen.getByRole("button", { name: "Board, new posts" })).toBeTruthy()
   })
 })

@@ -1792,18 +1792,8 @@
   padding-top: var(--app-safe-top);
 }
 
-.settingsPage {
-  --font-libre-baskerville: var(--font-household-serif);
-}
-
 .adminPage {
-  --font-libre-baskerville: var(--font-household-serif);
   padding-bottom: 0;
-}
-
-/* The chore form's titles use the Household serif, like Settings and Manage chores. */
-.choreForm {
-  --font-libre-baskerville: var(--font-household-serif);
 }
 
 .dark.adminPage > .liveContent + .liveContent {

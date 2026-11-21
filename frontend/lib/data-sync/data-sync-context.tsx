@@ -86,4 +86,9 @@ export function householdChoreResource(householdId: string) {
   return `household:${householdId}:chores-and-assignments`
 }
 
+/** The household's board: posts, seen and Got it. The Board tab's dot and Home's section read it. */
+export function householdBoardResource(householdId: string) {
+  return `household:${householdId}:board`
+}
+
 export const notificationResource = "notifications"

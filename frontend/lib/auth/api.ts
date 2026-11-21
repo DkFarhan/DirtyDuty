@@ -89,6 +89,33 @@ const JOB_MESSAGES = [
   /^Assignment was not found in this household\.$/,
 ]
 
+/** Household Board messages from the server that are safe to show as written. */
+const BOARD_MESSAGES = [
+  /^Household was not found\.$/,
+  /^This post is no longer on the board\.$/,
+  /^Enter what's happening\.$/,
+  /^Keep it to 120 characters\.$/,
+  /^Details can be at most 2000 characters\.$/,
+  /^Choose Event, Problem or Heads-up\.$/,
+  /^Choose a date for this event\.$/,
+  /^Choose today or a later date\.$/,
+  /^Add a start time first\.$/,
+  /^The end time must be after the start time\.$/,
+  /^Only owners and admins can pin posts\.$/,
+  /^Choose who gets a notification\.$/,
+  /^Pick at least one person to notify\.$/,
+  /^Everyone you pick must be a current household member\.$/,
+  /^Only the person who posted it or an owner or admin can (edit this post|delete this post|send a reminder)\.$/,
+  /^This post is in Past and can't be (edited|confirmed|reminded about) anymore\.$/,
+  /^[^\n]{1,80} is already handling it\.$/,
+  /^Only a problem can be (handled|marked fixed)\.$/,
+  /^This problem is already fixed\.$/,
+  /^Already fixed by [^\n]{1,80}\.$/,
+  /^Already reminded at \d{1,2}:\d{2} (AM|PM)\.$/,
+  /^Everyone has seen this post\.$/,
+  /^Send at most 100 posts at a time\.$/,
+]
+
 /** Chore type settings checked when a chore is saved. */
 const CHORE_KIND_MESSAGES = new Set([
   "An end date doesn't apply to this chore type.",
@@ -168,6 +195,17 @@ function messageFor(
     "message" in payload &&
     typeof payload.message === "string" &&
     JOB_MESSAGES.some((pattern) => pattern.test(payload.message as string))
+  ) {
+    return payload.message
+  }
+  if (
+    (status === 400 || status === 403 || status === 404 || status === 409) &&
+    /^\/api\/households\/[^/]+\/board(\/.*)?$/.test(path) &&
+    payload !== null &&
+    typeof payload === "object" &&
+    "message" in payload &&
+    typeof payload.message === "string" &&
+    BOARD_MESSAGES.some((pattern) => pattern.test(payload.message as string))
   ) {
     return payload.message
   }

@@ -7,11 +7,22 @@ import { initialState } from "./mock-data"
 const validReturnScreens = new Set<Screen>([
   "dashboard",
   "my-chores",
+  "board",
   "household",
   "admin",
   "profile",
   "household-settings",
 ])
+
+/**
+ * A chore the Board asks Create a chore to start with: the title, and for an event a one-time date
+ * and time. Saving or leaving the form returns to {@link returnTo}.
+ */
+export type ChoreDraft = {
+  title: string
+  once?: { date: string; time: string }
+  returnTo: Screen
+}
 
 /**
  * Central client store + navigation. This is the ONLY place that owns app data
@@ -24,6 +35,12 @@ interface ChoreSyncContextValue {
   screen: Screen
   adminTab: "members" | "chores"
   editingChoreId: string | null
+  /** The post Board details shows, and where its back button goes. */
+  boardPostId: string | null
+  boardPostReturn: Screen
+  /** The post the Board form edits; null for a new post. */
+  editingBoardPostId: string | null
+  choreDraft: ChoreDraft | null
   pendingAccountDeletionUserId: string | null
   navigate: (screen: Screen, adminTab?: "members" | "chores") => void
   beginAccountDeletion: (userId: string) => void
@@ -31,6 +48,10 @@ interface ChoreSyncContextValue {
   openNotifications: (returnTo: Screen) => void
   returnFromNotifications: () => void
   editChore: (choreId: string) => void
+  openBoardPost: (postId: string, returnTo?: Screen) => void
+  openBoardPostForm: (postId: string | null) => void
+  startChoreDraft: (draft: ChoreDraft) => void
+  clearChoreDraft: () => void
   setCurrentUser: (user: Member) => void
   resetUserData: () => void
   markComplete: (choreId: string) => void
@@ -51,6 +72,10 @@ export function ChoreSyncProvider({
   const [screen, setScreen] = useState<Screen>(initialScreen)
   const [adminTab, setAdminTab] = useState<"members" | "chores">("chores")
   const [editingChoreId, setEditingChoreId] = useState<string | null>(null)
+  const [boardPostId, setBoardPostId] = useState<string | null>(null)
+  const [boardPostReturn, setBoardPostReturn] = useState<Screen>("board")
+  const [editingBoardPostId, setEditingBoardPostId] = useState<string | null>(null)
+  const [choreDraft, setChoreDraft] = useState<ChoreDraft | null>(null)
   const [notificationReturnScreen, setNotificationReturnScreen] = useState<Screen | null>(null)
   const [pendingAccountDeletionUserId, setPendingAccountDeletionUserId] = useState<string | null>(
     null,
@@ -96,8 +121,27 @@ export function ChoreSyncProvider({
 
   const editChore = useCallback((choreId: string) => {
     setEditingChoreId(choreId)
+    setChoreDraft(null)
     setScreen("edit-chore")
   }, [])
+
+  const openBoardPost = useCallback((postId: string, returnTo: Screen = "board") => {
+    setBoardPostId(postId)
+    setBoardPostReturn(returnTo)
+    setScreen("board-post")
+  }, [])
+
+  const openBoardPostForm = useCallback((postId: string | null) => {
+    setEditingBoardPostId(postId)
+    setScreen("board-post-form")
+  }, [])
+
+  const startChoreDraft = useCallback((draft: ChoreDraft) => {
+    setChoreDraft(draft)
+    setScreen("create-chore")
+  }, [])
+
+  const clearChoreDraft = useCallback(() => setChoreDraft(null), [])
 
   const setCurrentUser = useCallback((user: Member) => {
     setState((s) => ({ ...s, currentUser: user }))
@@ -106,6 +150,9 @@ export function ChoreSyncProvider({
   const resetUserData = useCallback(() => {
     setState(initialState)
     setEditingChoreId(null)
+    setBoardPostId(null)
+    setEditingBoardPostId(null)
+    setChoreDraft(null)
     setPendingAccountDeletionUserId(null)
   }, [])
 
@@ -130,6 +177,10 @@ export function ChoreSyncProvider({
       screen,
       adminTab,
       editingChoreId,
+      boardPostId,
+      boardPostReturn,
+      editingBoardPostId,
+      choreDraft,
       pendingAccountDeletionUserId,
       navigate,
       beginAccountDeletion,
@@ -137,6 +188,10 @@ export function ChoreSyncProvider({
       openNotifications,
       returnFromNotifications,
       editChore,
+      openBoardPost,
+      openBoardPostForm,
+      startChoreDraft,
+      clearChoreDraft,
       setCurrentUser,
       resetUserData,
       markComplete,
@@ -148,6 +203,10 @@ export function ChoreSyncProvider({
       screen,
       adminTab,
       editingChoreId,
+      boardPostId,
+      boardPostReturn,
+      editingBoardPostId,
+      choreDraft,
       pendingAccountDeletionUserId,
       navigate,
       beginAccountDeletion,

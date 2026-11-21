@@ -1,0 +1,375 @@
+/* New post / Edit post (Figma B3, B6–B9) and Post details (B4) on top of the chore form's styles.
+   Colours come from the secondary-page tokens (--ink, --muted, --accent, --line, …). */
+
+.typeSegments {
+  --segments: 3;
+}
+
+.typeSegment {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+
+.typeSegment svg {
+  flex: none;
+}
+
+/* "'Water plants' sounds like a chore." */
+.choreHint {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--accent-soft);
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+.choreHint > svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--accent);
+}
+
+.choreHint p {
+  margin: 0;
+}
+
+.choreHintLink {
+  display: inline;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+}
+
+.choreHintLink:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Details is written on the page, under its row label. */
+.detailsBlock {
+  padding: 10px 0 14px;
+}
+
+.detailsHead {
+  display: grid;
+  min-height: 36px;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.detailsHead small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.detailsInput {
+  display: block;
+  width: 100%;
+  min-height: 84px;
+  box-sizing: border-box;
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  outline: none;
+  background: var(--surface-strong);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14.5px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.detailsInput:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.pinRow {
+  display: grid;
+  min-height: 60px;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 10px 0;
+}
+
+.pinRow > span:nth-child(2) {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+/* Board sheet titles are 20px (Figma B10), so "Who gets a notification?" fits on one line.
+   h2 + class outranks the chore form's .sheetTitle whatever order the modules load in. */
+h2.sheetTitle {
+  font-size: 20px;
+  line-height: 26px;
+}
+
+/* When sheet */
+.whenFields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.whenField {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.timeRow {
+  display: flex;
+  gap: 10px;
+}
+
+/* Notify sheet */
+.sheetFootnote {
+  margin: 0 0 12px;
+  color: var(--secondary-text, var(--muted));
+  font-size: 12.5px;
+  text-align: center;
+}
+
+.pickList {
+  padding: 2px 12px;
+  border: 1px solid var(--rule, var(--line));
+  border-radius: 18px;
+}
+
+.pickAvatar {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--accent-soft, rgb(121 231 222 / 16%));
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.pickName {
+  min-width: 0;
+  flex: 1 1 auto;
+  text-align: left;
+}
+
+/* ---- Post details (B4) --------------------------------------------------------------------- */
+
+.detailText {
+  margin: 0;
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+.cardLabel {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.seenHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.seenHead h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.seenHead span {
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.readers {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reader {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 10px;
+}
+
+.readerAvatar {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.reader[data-status="not-seen"] .readerAvatar,
+.reader[data-status="not-seen"] .readerName {
+  opacity: 0.55;
+}
+
+.readerName {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 14.5px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.readerStatus {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.reader[data-status="got-it"] .readerStatus {
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.remind {
+  display: inline-flex;
+  width: 100%;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 700;
+}
+
+.remind[aria-disabled="true"] {
+  background: var(--surface-strong);
+  color: var(--muted);
+  cursor: default;
+}
+
+.remindHint {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.deleteLink {
+  display: inline-flex;
+  min-height: 44px;
+  align-self: center;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--danger, #ffad9a);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 650;
+}
+
+.handlerChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.footerStack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gotItDone {
+  display: inline-flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.remind:focus-visible,
+.deleteLink:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- Past posts (B12) ---------------------------------------------------------------------- */
+
+.pastGroupTitle {
+  margin: 8px 4px 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.pastFootnote {
+  margin: 4px 12px 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+/* A footer with one button (Got it, or Mark fixed once someone is handling it) uses the full row. */
+.singleFooter {
+  grid-template-columns: minmax(0, 1fr);
+}

@@ -72,7 +72,7 @@ describe("MyChoresScreenView", () => {
       expect(container.querySelector(`.${selector}`)).not.toBeNull()
     }
     expect(container.querySelectorAll(`.${styles.categoryGlyph}`)).toHaveLength(9)
-    expect(container.querySelectorAll(`.${navigationStyles.icon}`)).toHaveLength(4)
+    expect(container.querySelectorAll(`.${navigationStyles.icon}`)).toHaveLength(5)
 
     rerender(
       <MyChoresScreenView

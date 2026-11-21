@@ -34,6 +34,11 @@ import { DisplayNamePersonalizationScreen } from "./screens/display-name-persona
 import { AppLaunchGate } from "./launch-experience"
 import { AppShellError, AppShellLoading } from "./app-shell-status"
 import { PushSubscriptionHealthProvider } from "@/lib/notifications/push-health"
+import { BoardUnseenProvider } from "./board/board-unseen-provider"
+import { BoardScreen } from "./screens/board-screen"
+import { BoardPostScreen } from "./screens/board-post-screen"
+import { BoardPostFormScreen } from "./screens/board-post-form-screen"
+import { BoardPastScreen } from "./screens/board-past-screen"
 
 const authenticationScreens = new Set<Screen>([
   "login",
@@ -46,6 +51,7 @@ const authenticationScreens = new Set<Screen>([
 const screenTargets = new Map<string, Screen>([
   ["dashboard", "dashboard"],
   ["my-chores", "my-chores"],
+  ["board", "board"],
   ["household", "household"],
   ["notifications", "notifications"],
   ["profile", "profile"],
@@ -61,6 +67,7 @@ function ScreenRouter() {
     screen,
     adminTab,
     navigate,
+    openBoardPost,
     setCurrentUser,
     pendingAccountDeletionUserId,
     clearAccountDeletion,
@@ -93,11 +100,15 @@ function ScreenRouter() {
     const target = new URLSearchParams(window.location.search).get("screen")
     const screenTarget = target ? screenTargets.get(target) : undefined
     if (screenTarget) {
-      skipNextRouteGuard.current = screenTarget !== screen
-      navigate(screenTarget)
       const params = new URLSearchParams(window.location.search)
+      // A board notification opens its post: /?screen=board&postId=…
+      const postId = screenTarget === "board" ? params.get("postId") : null
+      skipNextRouteGuard.current = (postId ? "board-post" : screenTarget) !== screen
+      if (postId) openBoardPost(postId)
+      else navigate(screenTarget)
       params.delete("screen")
       params.delete("returnTo")
+      params.delete("postId")
       const query = params.toString()
       window.history.replaceState(
         {},
@@ -105,7 +116,7 @@ function ScreenRouter() {
         query ? `${window.location.pathname}?${query}` : window.location.pathname,
       )
     }
-  }, [isLoading, navigate, screen])
+  }, [isLoading, navigate, openBoardPost, screen])
 
   useEffect(() => {
     if (user) {
@@ -232,6 +243,14 @@ function ScreenRouter() {
       return <DashboardScreen theme={resolvedTheme} />
     case "my-chores":
       return <MyChoresScreen theme={resolvedTheme} />
+    case "board":
+      return <BoardScreen theme={resolvedTheme} />
+    case "board-post":
+      return <BoardPostScreen theme={resolvedTheme} />
+    case "board-post-form":
+      return <BoardPostFormScreen theme={resolvedTheme} />
+    case "board-past":
+      return <BoardPastScreen theme={resolvedTheme} />
     case "household":
       return <HouseholdScreen theme={resolvedTheme} />
     case "admin":
@@ -316,20 +335,22 @@ export function AppShell({ initialScreen = "login" }: { initialScreen?: Screen }
           <HouseholdProvider>
             <ChoreSyncProvider initialScreen={initialScreen}>
               <PushSubscriptionHealthProvider>
-                {/* Each screen paints its own background. The wrapper uses the theme-color canvas
+                <BoardUnseenProvider>
+                  {/* Each screen paints its own background. The wrapper uses the theme-color canvas
                     so any edge it shows (landscape notch insets, overscroll) matches the screens,
                     and its side padding keeps landscape content clear of the notch now that the
                     viewport covers the whole display. */}
-                <div className="min-h-screen flex items-start justify-center bg-[#edf8f4] dark:bg-[#061923]">
-                  <div className="w-full min-h-screen relative overflow-hidden max-w-none shadow-none pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
-                    <AppLaunchGate>
-                      <HouseholdRefreshNotice />
-                      <ScreenTopInset>
-                        <ScreenRouter />
-                      </ScreenTopInset>
-                    </AppLaunchGate>
+                  <div className="min-h-screen flex items-start justify-center bg-[#edf8f4] dark:bg-[#061923]">
+                    <div className="w-full min-h-screen relative overflow-hidden max-w-none shadow-none pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
+                      <AppLaunchGate>
+                        <HouseholdRefreshNotice />
+                        <ScreenTopInset>
+                          <ScreenRouter />
+                        </ScreenTopInset>
+                      </AppLaunchGate>
+                    </div>
                   </div>
-                </div>
+                </BoardUnseenProvider>
               </PushSubscriptionHealthProvider>
             </ChoreSyncProvider>
           </HouseholdProvider>

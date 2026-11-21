@@ -16,6 +16,11 @@ const mocks = vi.hoisted(() => ({
   role: "OWNER",
   screen: "create-chore",
   editingChoreId: null as string | null,
+  choreDraft: null as {
+    title: string
+    once?: { date: string; time: string }
+    returnTo: string
+  } | null,
 }))
 
 vi.mock("@/lib/chore-sync/store", () => ({
@@ -24,6 +29,8 @@ vi.mock("@/lib/chore-sync/store", () => ({
     screen: mocks.screen,
     navigate: mocks.navigate,
     editingChoreId: mocks.editingChoreId,
+    choreDraft: mocks.choreDraft,
+    clearChoreDraft: vi.fn(),
   }),
 }))
 

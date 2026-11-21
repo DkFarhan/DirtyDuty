@@ -369,6 +369,9 @@ public class WebPushNotificationProvider implements NotificationDeliveryProvider
         && notification.referenceId() != null) {
       return "/?screen=my-chores&assignmentId=" + notification.referenceId();
     }
+    if ("BOARD_POST".equals(notification.referenceType()) && notification.referenceId() != null) {
+      return "/?screen=board&postId=" + notification.referenceId();
+    }
     if ("CHORE_SCHEDULE".equals(notification.referenceType())) {
       return "/?screen=my-chores";
     }
