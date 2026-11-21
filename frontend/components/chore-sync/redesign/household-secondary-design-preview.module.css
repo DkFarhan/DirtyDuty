@@ -1789,6 +1789,11 @@
   padding-bottom: 0;
 }
 
+/* The chore form's titles use the Household serif, like Settings and Manage chores. */
+.choreForm {
+  --font-libre-baskerville: var(--font-household-serif);
+}
+
 .dark.adminPage > .liveContent + .liveContent {
   --line: #24454e;
   --surface: rgb(13 42 51 / 90%);

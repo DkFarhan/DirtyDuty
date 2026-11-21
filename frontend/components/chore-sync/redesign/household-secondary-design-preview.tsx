@@ -35,6 +35,8 @@ export function HouseholdLiveDesignHeader({
   heroTitle,
   heroDescription,
   heroIcon = "sparkles",
+  heroIconNode,
+  heroDetails,
   action,
 }: {
   eyebrow: string
@@ -43,8 +45,13 @@ export function HouseholdLiveDesignHeader({
   onBack: () => void
   heroEyebrow: string
   heroTitle: ReactNode
-  heroDescription: string
+  /** Omit when {@link heroDetails} says enough. */
+  heroDescription?: string
   heroIcon?: "house" | "sparkles" | "repeat"
+  /** Replaces the built-in hero icon, for example with a category icon. */
+  heroIconNode?: ReactNode
+  /** Extra hero content under the title, such as status chips. */
+  heroDetails?: ReactNode
   action?: ReactNode
 }) {
   return (
@@ -67,10 +74,13 @@ export function HouseholdLiveDesignHeader({
           <div className={styles.heroCopy}>
             <p className={styles.eyebrow}>{heroEyebrow}</p>
             <h2>{heroTitle}</h2>
-            <p>{heroDescription}</p>
+            {heroDetails}
+            {heroDescription && <p>{heroDescription}</p>}
           </div>
           <div aria-hidden="true" className={styles.heroOrb}>
-            {heroIcon === "house" ? (
+            {heroIconNode ? (
+              heroIconNode
+            ) : heroIcon === "house" ? (
               <House size={30} />
             ) : heroIcon === "repeat" ? (
               <Repeat2 size={30} />

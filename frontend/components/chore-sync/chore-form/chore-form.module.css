@@ -1,0 +1,1237 @@
+/* "Quick create" chore form. Page parts use the Household page tokens (--ink, --muted, --accent,
+   --line, --surface, --surface-strong, --surface-soft, --danger); sheet parts use the action
+   sheet tokens (--main-text, --secondary-text, --accent, --rule, --selected, --border). */
+
+.page {
+  --on-accent: #ffffff;
+  --accent-soft: color-mix(in srgb, var(--accent) 14%, var(--surface-strong));
+  padding-bottom: 0;
+}
+
+.page[data-theme="dark"] {
+  --on-accent: #061923;
+}
+
+.main {
+  padding-bottom: calc(112px + env(safe-area-inset-bottom));
+}
+
+.mainEditing {
+  padding-bottom: calc(148px + env(safe-area-inset-bottom));
+}
+
+.card {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow: 0 12px 30px rgb(3 23 30 / 9%);
+  color: var(--ink);
+}
+
+.fieldLabel {
+  display: block;
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.nameInput {
+  display: block;
+  width: 100%;
+  min-height: 56px;
+  padding: 0 16px;
+  border: 1.5px solid var(--line);
+  border-radius: 16px;
+  outline: none;
+  background: var(--surface-strong);
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 600;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.nameInput::placeholder {
+  color: var(--muted);
+  font-weight: 400;
+  opacity: 0.8;
+}
+
+/* Doubled class: outranks the page-wide .liveRoot input colours. */
+.nameInput.nameInput:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.nameInput.nameInput[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.counter {
+  margin: 6px 2px 0;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+.sectionLabel {
+  margin: 18px 0 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chip {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.chip svg {
+  color: var(--accent);
+}
+
+.chip:hover {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+}
+
+.suggestions {
+  margin: 0;
+  padding: 4px 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface-soft) 60%, var(--surface-strong));
+  list-style: none;
+}
+
+.suggestions li + li {
+  border-top: 1px solid var(--line);
+}
+
+.suggestion {
+  display: grid;
+  width: 100%;
+  min-height: 60px;
+  grid-template-columns: 36px minmax(0, 1fr) 24px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.suggestionTitle {
+  display: block;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.suggestionTitle strong {
+  font-weight: 750;
+}
+
+.suggestionHint {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.suggestion > svg:last-child {
+  color: var(--accent);
+}
+
+.summary {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: var(--accent-soft);
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.summary > svg {
+  flex: 0 0 auto;
+  margin-top: 3px;
+  color: var(--accent);
+}
+
+.summary strong {
+  color: var(--ink);
+  font-weight: 750;
+}
+
+.rows {
+  padding: 4px 14px;
+}
+
+.row {
+  display: grid;
+  width: 100%;
+  min-height: 60px;
+  grid-template-columns: 36px auto minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.rowWrap + .rowWrap {
+  border-top: 1px solid var(--line);
+}
+
+.tile {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 11px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 18px;
+}
+
+.rowLabel {
+  display: flex;
+  flex-direction: column;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.rowLabel small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.rowLabelAccent {
+  color: var(--accent);
+}
+
+.rowValue {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row > svg:last-child {
+  color: var(--muted);
+}
+
+.rowWrap .rowValue + svg {
+  justify-self: end;
+}
+
+.error {
+  margin: 0 0 10px 48px;
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.inputError {
+  margin: 8px 2px 0;
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.note {
+  margin: 0 0 10px 48px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* More options */
+.more {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.controlHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.controlHeader strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.segmented {
+  display: grid;
+  grid-template-columns: repeat(var(--segments, 4), minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-strong);
+}
+
+.segment {
+  min-height: 44px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.segment[aria-pressed="true"],
+.segment[aria-checked="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-weight: 750;
+}
+
+.effort {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.effortStep {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.effortStep span {
+  display: block;
+  width: 100%;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-soft);
+}
+
+.effortStep[data-filled="true"] span {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.stepper {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-strong);
+}
+
+.stepperButton {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 0;
+  border-radius: 11px;
+  background: var(--accent-soft);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.stepperButton:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.stepperValue {
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 750;
+  text-align: center;
+}
+
+.stepperValue small {
+  margin-left: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.notes {
+  display: block;
+  width: 100%;
+  min-height: 84px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  outline: none;
+  background: var(--surface-strong);
+  color: var(--ink);
+  font-size: 14px;
+  resize: vertical;
+}
+
+.notes:focus,
+.timeInput:focus,
+.dateInput:focus,
+.select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.toggleRow {
+  display: flex;
+  width: 100%;
+  min-height: 52px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.toggleRow strong {
+  display: block;
+  font-size: 14px;
+}
+
+.toggleRow small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.switch {
+  position: relative;
+  width: 46px;
+  height: 28px;
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  transition: background 0.15s;
+}
+
+.switch::after {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--muted);
+  content: "";
+  transition: transform 0.15s;
+}
+
+.toggleRow[aria-checked="true"] .switch {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.toggleRow[aria-checked="true"] .switch::after {
+  background: var(--on-accent);
+  transform: translateX(18px);
+}
+
+/* Edit hero */
+.heroChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 2px 0 8px;
+}
+
+.heroChip {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-strong);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.heroChipAccent {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.heroEmoji {
+  font-size: 30px;
+  transform: rotate(-7deg);
+}
+
+.archive {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  align-self: center;
+  gap: 6px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--danger);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* Footer */
+.footer {
+  position: fixed;
+  z-index: 40;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: 12px max(16px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-left));
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-strong) 95%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.footerInner {
+  width: min(100%, 1120px);
+  margin: 0 auto;
+}
+
+.footerNote {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.footerError {
+  margin: 0 0 8px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--danger) 14%, var(--surface-strong));
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.footerButtons {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 10px;
+}
+
+.secondaryButton,
+.primaryButton {
+  min-height: 52px;
+  border-radius: 16px;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 750;
+}
+
+.secondaryButton {
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+
+.primaryButton {
+  border: 0;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.primaryButton:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.page :global(button:focus-visible),
+.page :global(textarea:focus-visible),
+.sheetBody :global(button:focus-visible),
+.sheetBody :global(input:focus-visible),
+.sheetBody :global(select:focus-visible),
+.dialog :global(button:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Centred confirmation dialogs (discard, archive). */
+.dialogBackdrop {
+  position: fixed;
+  z-index: 60;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right))
+    calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
+  background: rgb(2 12 18 / 54%);
+}
+
+.dialog {
+  width: min(100%, 384px);
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--surface-strong);
+  box-shadow: 0 20px 70px rgb(0 10 16 / 32%);
+  color: var(--ink);
+}
+
+.dialog h2 {
+  margin: 0;
+  font-family: var(--font-household-serif), "Libre Baskerville", Georgia, serif;
+  font-size: 20px;
+  font-weight: 400;
+}
+
+.dialog p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.dialog .dialogError {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.dialogButtons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.dangerButton {
+  min-height: 48px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--danger);
+  color: var(--surface-strong);
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 750;
+}
+
+.dialogButtons .secondaryButton,
+.dialogButtons .primaryButton {
+  min-height: 48px;
+}
+
+/* ---------------------------------------------------------------- Sheets */
+
+.sheetBody {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.sheetHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 14px;
+}
+
+.sheetTitle {
+  flex: 1;
+  margin: 0;
+  color: var(--main-text);
+  font-family: var(--font-household-serif), "Libre Baskerville", Georgia, serif;
+  font-size: 24px;
+  font-weight: 400;
+  line-height: 1.25;
+}
+
+.roundButton {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 13%, var(--sheet-bg));
+  color: var(--main-text);
+  cursor: pointer;
+}
+
+.sheetIntro {
+  margin: -6px 0 12px;
+  color: var(--secondary-text);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.optionItem {
+  border: 1px solid transparent;
+  border-radius: 18px;
+}
+
+.optionItem[data-selected="true"] {
+  border-color: var(--accent);
+  background: var(--selected);
+}
+
+.option {
+  display: grid;
+  width: 100%;
+  min-height: 56px;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 18px;
+  background: transparent;
+  color: var(--main-text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.option:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.optionTile {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--accent) 13%, var(--sheet-bg));
+  color: var(--accent);
+  font-size: 18px;
+}
+
+.optionItem[data-selected="true"] .optionTile {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.optionTitle {
+  display: block;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.optionHint {
+  display: block;
+  margin-top: 1px;
+  color: var(--secondary-text);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.optionEnd {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--secondary-text);
+}
+
+.pill {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--sheet-bg));
+  color: var(--main-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.radio {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1.5px solid var(--rule);
+  border-radius: 999px;
+  color: var(--accent-text);
+}
+
+.optionItem[data-selected="true"] .radio {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.optionPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 12px 12px 60px;
+}
+
+.panelLabel {
+  margin: 0;
+  color: var(--secondary-text);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.eachTime {
+  display: grid;
+  gap: 6px;
+}
+
+.inlineControls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.sheetBody .stepper {
+  min-width: 0;
+  border-color: var(--border);
+  background: var(--field-bg);
+}
+
+.sheetBody .stepperButton {
+  background: color-mix(in srgb, var(--accent) 13%, var(--field-bg));
+  color: var(--main-text);
+}
+
+.sheetBody .stepperValue {
+  color: var(--main-text);
+}
+
+.sheetBody .stepperValue small {
+  color: var(--secondary-text);
+}
+
+/* The page tokens (--muted, --line, --surface-strong) aren't set inside sheets, which left an
+   unselected segment's text the colour of the sheet itself. */
+.sheetBody .segmented {
+  border-color: var(--border);
+  background: var(--field-bg);
+}
+
+.sheetBody .segment {
+  color: var(--secondary-text);
+}
+
+.timeInput,
+.dateInput,
+.select {
+  min-height: 52px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  outline: none;
+  background: var(--field-bg);
+  color: var(--main-text);
+  font-size: 15px;
+  font-weight: 650;
+  color-scheme: inherit;
+}
+
+.select {
+  width: 100%;
+}
+
+.linkButton {
+  min-height: 44px;
+  align-self: flex-start;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.sheetFooter {
+  position: sticky;
+  bottom: calc(-1 * max(23px, env(safe-area-inset-bottom)));
+  margin: 14px -18px calc(-1 * max(23px, env(safe-area-inset-bottom)));
+  padding: 12px 18px max(18px, env(safe-area-inset-bottom));
+  background: var(--sheet-bg);
+}
+
+.sheetPrimary {
+  width: 100%;
+  min-height: 52px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--accent);
+  color: var(--accent-text);
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 750;
+}
+
+.sheetError {
+  margin: 8px 0 0;
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sheetNote {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--sheet-bg));
+  color: var(--secondary-text);
+  font-size: 13px;
+}
+
+.people {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.avatars {
+  display: flex;
+}
+
+.avatar {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 2px solid var(--sheet-bg);
+  border-radius: 999px;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.avatars .avatar + .avatar {
+  margin-left: -8px;
+}
+
+.peopleNames {
+  flex: 1;
+  color: var(--secondary-text);
+  font-size: 13px;
+}
+
+.memberRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px 44px;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.memberRow:last-child {
+  border-bottom: 0;
+}
+
+.memberToggle {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--main-text);
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.checkbox {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1.5px solid var(--rule);
+  border-radius: 7px;
+  color: var(--accent-text);
+}
+
+.memberToggle[aria-checked="true"] .checkbox {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.memberToggle .radio {
+  width: 22px;
+  height: 22px;
+}
+
+.memberToggle[aria-checked="true"] .radio {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.order {
+  color: var(--secondary-text);
+  font-size: 12px;
+}
+
+.moveButton {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--main-text);
+  cursor: pointer;
+}
+
+.moveButton:disabled {
+  cursor: default;
+  opacity: 0.3;
+}
+
+/* "Custom…" editor */
+.customForm {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.customForm .segmented {
+  border-color: var(--border);
+  background: var(--field-bg);
+}
+
+.customForm .segment {
+  color: var(--secondary-text);
+}
+
+.customForm .segment[aria-pressed="true"] {
+  background: var(--selected);
+  color: var(--main-text);
+}
+
+.customField {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.customField > legend,
+.customField > span {
+  margin-bottom: 8px;
+  padding: 0;
+  color: var(--secondary-text);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.customGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.weekday {
+  position: relative;
+  aspect-ratio: 1;
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--field-bg);
+  color: var(--secondary-text);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* Extends the tap target to 44px without growing the circle. */
+.weekday::before {
+  position: absolute;
+  inset: -3px;
+  content: "";
+}
+
+.weekday[aria-pressed="true"],
+.month[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.months {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.month {
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--field-bg);
+  color: var(--secondary-text);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.hint {
+  margin: 0;
+  color: var(--secondary-text);
+  font-size: 12px;
+}
+
+.customSummary {
+  display: flex;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--selected);
+  color: var(--main-text);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.customSummary svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--accent);
+}
+
+.sheetBody .toggleRow {
+  color: var(--main-text);
+}
+
+.sheetBody .toggleRow small {
+  color: var(--secondary-text);
+}
+
+.sheetBody .switch {
+  border-color: var(--border);
+  background: var(--field-bg);
+}
+
+.sheetBody .switch::after {
+  background: var(--secondary-text);
+}
+
+.sheetBody .toggleRow[aria-checked="true"] .switch {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.sheetBody .toggleRow[aria-checked="true"] .switch::after {
+  background: var(--accent-text);
+}
+
+@media (max-width: 480px) {
+  .optionPanel {
+    padding-left: 12px;
+  }
+}
+
+@media (max-width: 380px) {
+  .row {
+    grid-template-columns: 36px auto minmax(0, 1fr) 16px;
+    gap: 8px;
+  }
+}
+
+/* app/globals.css restyles every [aria-pressed="true"] and [data-selected="true"] in dark mode
+   with !important; keep this form's own selected states (as the chore form did for its chips). */
+.options .optionItem[data-selected="true"] {
+  border-color: var(--accent) !important;
+  background-color: var(--selected) !important;
+  color: var(--main-text) !important;
+}
+
+.options .option[aria-pressed="true"] {
+  border-color: transparent !important;
+  background-color: transparent !important;
+  color: var(--main-text) !important;
+}
+
+.segmented .segment[aria-pressed="true"] {
+  border-color: var(--accent) !important;
+  background-color: var(--accent-soft, var(--selected)) !important;
+  color: var(--ink, var(--main-text)) !important;
+}
+
+.weekdays .weekday[aria-pressed="true"],
+.months .month[aria-pressed="true"] {
+  border-color: var(--accent) !important;
+  background-color: var(--accent) !important;
+  color: var(--accent-text) !important;
+}
+
+.effort .effortStep[aria-pressed="true"] {
+  border-color: transparent !important;
+  background-color: transparent !important;
+}

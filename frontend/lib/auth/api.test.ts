@@ -298,6 +298,43 @@ describe("auth API client", () => {
     ).rejects.toMatchObject({ message: "Please check your information and try again." })
   })
 
+  it("shows the chore form's schedule messages and a plain one for a member who left", async () => {
+    const failure = (message: string) =>
+      new Response(JSON.stringify({ message }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      })
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ token: "csrf-token", headerName: "X-CSRF-TOKEN" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        failure("This schedule never produces a date. Check its start date and active months."),
+      )
+      .mockResolvedValueOnce(
+        failure("Every selected participant must be an ACTIVE member of this household."),
+      )
+      .mockResolvedValueOnce(
+        failure("Rotation and random pools must contain at least People Needed members."),
+      )
+
+    await expect(api.post("/api/households/home-1/chores", { title: "x" })).rejects.toMatchObject({
+      message: "This schedule never produces a date. Check its start date and active months.",
+    })
+    await expect(
+      api.put("/api/households/home-1/chores/chore-1", { title: "x" }),
+    ).rejects.toMatchObject({
+      message: "Someone you picked is no longer in the household. Check Who and try again.",
+    })
+    await expect(api.post("/api/households/home-1/chores", { title: "x" })).rejects.toMatchObject({
+      message:
+        "Not enough people are picked for how many do it each time. Check Who and try again.",
+    })
+  })
+
   it("does not expose other chore-update validation messages", async () => {
     fetchMock
       .mockResolvedValueOnce(

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest"
 import { AppShell } from "./app-shell"
 import { clearCsrfToken } from "@/lib/auth/api"
 import type { AssignmentDTO, HouseholdDashboard } from "@/lib/household/chores"
@@ -252,15 +252,27 @@ describe("single-occurrence actions on Home and My Chores", () => {
   })
 
   it("shows the moved hint and offers More only where the viewer may act", async () => {
+    // "Moved from Mon" needs the move to be under a week, so pin today to Wed, Nov 11 2026.
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date("2026-11-11T12:00:00Z"))
+    onTestFinished(() => {
+      vi.useRealTimers()
+    })
+    const pinnedToday = "2026-11-11"
+    const onPinnedDay = { scheduledFor: pinnedToday, dueAt: `${pinnedToday}T23:00:00Z` }
     const moved = chore({
+      ...onPinnedDay,
       id: "moved",
       title: "Water plants",
       originalDate: "2026-11-09",
       moved: true,
-      actions: { ...allActions, canSkip: false, canReassign: false },
+      actions: { ...allActions, moveEarliest: pinnedToday, canSkip: false, canReassign: false },
     })
-    const locked = chore({ id: "locked", title: "Bins out", actions: undefined })
-    serve({ dashboard: dashboardWith([moved, locked]), upcoming: [moved, locked] })
+    const locked = chore({ ...onPinnedDay, id: "locked", title: "Bins out", actions: undefined })
+    serve({
+      dashboard: { ...dashboardWith([moved, locked]), today: [moved, locked] },
+      upcoming: [moved, locked],
+    })
     await startAtHome()
     expect(await screen.findByText("Moved from Mon")).toBeTruthy()
     expect(screen.queryByRole("button", { name: "More actions for Bins out" })).toBeNull()

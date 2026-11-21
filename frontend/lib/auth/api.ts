@@ -103,6 +103,9 @@ const CHORE_KIND_MESSAGES = new Set([
   "A When needed chore either rotates or has one fixed person.",
   "Choose who does this chore: one fixed person, random, or a rotation.",
   "This chore type is done by one person at a time.",
+  "This schedule never produces a date. Check its start date and active months.",
+  "Choose either an end date or a number of times, not both.",
+  "Schedule end date cannot be before its start date.",
 ])
 
 function messageFor(
@@ -122,6 +125,29 @@ function messageFor(
       "A recurring chore with existing assignment history cannot be converted to one-time. Create a separate one-time chore to preserve its history."
   ) {
     return "This chore has recurring assignment history and can't be changed to a one-time chore. Keep its recurring schedule or create a new one-time chore."
+  }
+  if (
+    status === 400 &&
+    (method === "POST" || method === "PUT") &&
+    /^\/api\/households\/[^/]+\/chores(\/[^/]+)?$/.test(path) &&
+    payload !== null &&
+    typeof payload === "object" &&
+    "message" in payload &&
+    payload.message === "Every selected participant must be an ACTIVE member of this household."
+  ) {
+    return "Someone you picked is no longer in the household. Check Who and try again."
+  }
+  if (
+    status === 400 &&
+    (method === "POST" || method === "PUT") &&
+    /^\/api\/households\/[^/]+\/chores(\/[^/]+)?$/.test(path) &&
+    payload !== null &&
+    typeof payload === "object" &&
+    "message" in payload &&
+    (payload.message === "FIXED assignment requires exactly People Needed distinct members." ||
+      payload.message === "Rotation and random pools must contain at least People Needed members.")
+  ) {
+    return "Not enough people are picked for how many do it each time. Check Who and try again."
   }
   if (
     (status === 400 || status === 404) &&
