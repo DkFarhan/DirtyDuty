@@ -1,8 +1,15 @@
 "use client"
 
+import { createContext, useContext } from "react"
 import styles from "./bottom-nav.module.css"
 
-export type NavKey = "dashboard" | "my-chores" | "household" | "profile"
+export type NavKey = "dashboard" | "my-chores" | "board" | "household" | "profile"
+
+/**
+ * Whether the viewer has unseen active board posts (the Board tab's dot). The app shell provides
+ * it; previews and tests without a provider get no dot.
+ */
+export const BoardUnseenContext = createContext(false)
 export type BottomNavigationTheme = "light" | "dark"
 
 interface BottomNavProps {
@@ -15,6 +22,7 @@ interface BottomNavProps {
 const tabs: Array<{ id: NavKey; label: string }> = [
   { id: "dashboard", label: "Home" },
   { id: "my-chores", label: "My Chores" },
+  { id: "board", label: "Board" },
   { id: "household", label: "Household" },
   { id: "profile", label: "Profile" },
 ]
@@ -73,6 +81,26 @@ function NavigationIcon({ destination }: { destination: NavKey }) {
           />
           <path
             d="M3.83333 18.2083H7.1875M10.8292 18.2083H19.7417"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="1.75"
+          />
+        </svg>
+      )
+    case "board":
+      // lucide "sticky-note", on its 24px grid.
+      return (
+        <svg aria-hidden="true" className={styles.icon} fill="none" viewBox="0 0 24 24">
+          <path
+            d="M21 9a2.4 2.4 0 0 0-.706-1.706l-3.588-3.588A2.4 2.4 0 0 0 15 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2z"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="1.75"
+          />
+          <path
+            d="M15 3v5a1 1 0 0 0 1 1h5"
             stroke="currentColor"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -141,23 +169,33 @@ export function BottomNav({
   theme,
   ariaLabel = "Primary navigation",
 }: BottomNavProps) {
+  const boardUnseen = useContext(BoardUnseenContext)
   return (
     <nav aria-label={ariaLabel} className={styles.navigation} data-theme={theme}>
       <div className={styles.capsule}>
-        <span aria-hidden="true" className={styles.activeIsland} data-active={active} />
+        <span
+          aria-hidden="true"
+          className={styles.activeIsland}
+          data-active={active}
+          style={{ ["--nav-index" as string]: tabs.findIndex((tab) => tab.id === active) }}
+        />
         <div className={styles.items}>
           {tabs.map(({ id, label }) => {
             const isActive = id === active
+            const dot = id === "board" && boardUnseen
             return (
               <button
                 key={id}
                 onClick={() => navigate(id)}
                 aria-current={isActive ? "page" : undefined}
-                aria-label={label}
+                aria-label={dot ? `${label}, new posts` : label}
                 className={styles.item}
                 type="button"
               >
-                <NavigationIcon destination={id} />
+                <span className={styles.iconWrap}>
+                  <NavigationIcon destination={id} />
+                  {dot && <span aria-hidden="true" className={styles.dot} />}
+                </span>
                 <span className={styles.label}>{label}</span>
               </button>
             )

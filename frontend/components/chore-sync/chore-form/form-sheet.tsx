@@ -23,6 +23,7 @@ export function FormSheet({
   footer,
   children,
   returnFocusTo,
+  titleClassName,
 }: {
   title: string
   intro?: ReactNode
@@ -33,6 +34,8 @@ export function FormSheet({
   children: ReactNode
   /** The control focus returns to when the sheet closes. */
   returnFocusTo?: () => HTMLElement | null
+  /** Extra class for the title, e.g. the Board's smaller sheet titles. */
+  titleClassName?: string
 }) {
   const dialogRef = useRef<HTMLElement | null>(null)
   const titleId = `${useId()}-title`
@@ -61,7 +64,12 @@ export function FormSheet({
               <ChevronLeft aria-hidden="true" size={20} />
             </button>
           )}
-          <h2 className={styles.sheetTitle} id={titleId}>
+          <h2
+            className={
+              titleClassName ? `${styles.sheetTitle} ${titleClassName}` : styles.sheetTitle
+            }
+            id={titleId}
+          >
             {title}
           </h2>
           <button aria-label="Close" className={styles.roundButton} onClick={onClose} type="button">

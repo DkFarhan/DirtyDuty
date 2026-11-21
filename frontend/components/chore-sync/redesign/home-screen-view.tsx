@@ -1,6 +1,6 @@
 "use client"
 
-import { Fragment, type CSSProperties } from "react"
+import { Fragment, type CSSProperties, type ReactNode } from "react"
 import type { HouseholdJobViewModel } from "@/lib/household/household-jobs"
 import { HouseholdJobCard } from "../household-job-card"
 import type { CardFeedbackView, CardSurface } from "@/lib/household/card-feedback"
@@ -10,7 +10,7 @@ import { BottomNav } from "../bottom-nav"
 import styles from "./home-screen-view.module.css"
 
 export type HomeVisualTheme = "dark" | "light"
-export type HomeNavigationDestination = "home" | "my-chores" | "household" | "profile"
+export type HomeNavigationDestination = "home" | "my-chores" | "board" | "household" | "profile"
 export type HomeViewStatus = "loading" | "loaded" | "error"
 
 export interface HomeChoreViewModel {
@@ -107,6 +107,8 @@ export interface HomeScreenViewProps {
   onPushAction?: () => void
   onOpenNotifications: () => void
   onNavigate: (destination: HomeNavigationDestination) => void
+  /** The Board section, shown at the very end of Home after every chore section. */
+  boardSection?: ReactNode
 }
 
 function percentage(completedCount: number, totalCount: number) {
@@ -238,6 +240,7 @@ export function HomeScreenView({
   onPushAction = onRetry,
   onOpenNotifications,
   onNavigate,
+  boardSection,
 }: HomeScreenViewProps) {
   const householdProgress = percentage(
     viewModel.householdWeek.completedCount,
@@ -603,6 +606,7 @@ export function HomeScreenView({
             </section>
           </>
         )}
+        {boardSection}
       </main>
 
       <BottomNav

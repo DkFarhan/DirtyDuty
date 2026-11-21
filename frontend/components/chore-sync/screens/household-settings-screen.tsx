@@ -383,9 +383,7 @@ export function HouseholdSettingsScreen({ theme = "light" }: { theme?: PreviewTh
         : "loading"
 
   return (
-    <div
-      className={`min-h-screen pb-8 ${`${designStyles.liveRoot} ${designStyles[theme]} ${designStyles.settingsPage}`}`}
-    >
+    <div className={`min-h-screen pb-8 ${designStyles.liveRoot} ${designStyles[theme]}`}>
       {
         <HouseholdLiveDesignHeader
           eyebrow="Household · Your home"

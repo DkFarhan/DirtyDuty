@@ -6,6 +6,26 @@ import { AppShell } from "./app-shell"
 import { clearCsrfToken } from "@/lib/auth/api"
 import { stubAuthFeatures } from "../../test/stub-auth-features"
 
+vi.mock("@/lib/board/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/board/api")>()
+  // The Board loads on its own requests; these tests script the chore and household ones.
+  return {
+    ...actual,
+    boardApi: {
+      ...actual.boardApi,
+      board: () =>
+        Promise.resolve({
+          posts: [],
+          pastCount: 0,
+          unseenCount: 0,
+          viewerIsAdmin: false,
+          members: [],
+        }),
+      unseen: () => Promise.resolve({ unseenCount: 0 }),
+    },
+  }
+})
+
 vi.mock("@/lib/notifications/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/notifications/api")>()
   return {

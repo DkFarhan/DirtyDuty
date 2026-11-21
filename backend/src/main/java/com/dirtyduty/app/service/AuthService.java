@@ -211,6 +211,11 @@ public class AuthService {
     }
 
     invalidatePersonalData(user.getId(), email);
+    // Board posts stay for the household, without saying who wrote or fixed them.
+    jdbcTemplate.update(
+        "UPDATE board_posts SET author_user_id=NULL WHERE author_user_id=?", user.getId());
+    jdbcTemplate.update(
+        "UPDATE board_posts SET fixed_by_user_id=NULL WHERE fixed_by_user_id=?", user.getId());
     String deletedEmail = "deleted-" + UUID.randomUUID() + "@deleted.local";
     user.setEmail(deletedEmail);
     user.setDisplayName("Deleted User");

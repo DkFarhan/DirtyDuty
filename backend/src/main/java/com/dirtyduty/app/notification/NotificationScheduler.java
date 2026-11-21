@@ -1,5 +1,6 @@
 package com.dirtyduty.app.notification;
 
+import com.dirtyduty.app.service.BoardPostService;
 import com.dirtyduty.app.service.MembershipExitCleanupService;
 import java.time.Duration;
 import java.time.OffsetDateTime;
@@ -55,6 +56,7 @@ public class NotificationScheduler {
   private final NotificationCooldownService cooldownService;
   private final NotificationTemplateResolver templateResolver;
   private final MembershipExitCleanupService membershipExitCleanupService;
+  private final BoardPostService boardPostService;
 
   public NotificationScheduler(
       JdbcTemplate jdbc,
@@ -62,13 +64,15 @@ public class NotificationScheduler {
       List<NotificationDeliveryProvider> providers,
       NotificationCooldownService cooldownService,
       NotificationTemplateResolver templateResolver,
-      MembershipExitCleanupService membershipExitCleanupService) {
+      MembershipExitCleanupService membershipExitCleanupService,
+      BoardPostService boardPostService) {
     this.jdbc = jdbc;
     this.eventService = eventService;
     this.providers = providers;
     this.cooldownService = cooldownService;
     this.templateResolver = templateResolver;
     this.membershipExitCleanupService = membershipExitCleanupService;
+    this.boardPostService = boardPostService;
   }
 
   @Scheduled(
@@ -427,6 +431,7 @@ public class NotificationScheduler {
       NotificationMessage message = item.toMessage();
       if (!isEnabled(item)
           || !isAssignmentActive(item)
+          || !isBoardReminderLive(item)
           || !membershipExitCleanupService.isRecipientActiveForNotification(item.id())) {
         cancelNotification(item.id());
         continue;
@@ -549,6 +554,7 @@ public class NotificationScheduler {
       NotificationMessage message = item.toMessage();
       if (!isEnabled(item)
           || !isAssignmentActive(item)
+          || !isBoardReminderLive(item)
           || !membershipExitCleanupService.isRecipientActiveForNotification(item.id())) {
         cancelNotification(item.id());
         continue;
@@ -623,6 +629,21 @@ public class NotificationScheduler {
             item.recipientUserId(),
             item.recipientUserId());
     return Boolean.TRUE.equals(assigned);
+  }
+
+  /** A board event reminder goes only while its post exists and is still active. */
+  private boolean isBoardReminderLive(PendingNotification item) {
+    if (!"BOARD_POST".equals(item.referenceType()) || !"BOARD_EVENT_REMINDER".equals(item.type())) {
+      return true;
+    }
+    return Boolean.TRUE.equals(
+        jdbc.queryForObject(
+            """
+                SELECT EXISTS(SELECT 1 FROM board_posts
+                              WHERE id=? AND type='EVENT' AND past_at IS NULL)
+                """,
+            Boolean.class,
+            item.referenceId()));
   }
 
   private boolean isChoreReminder(String type) {
@@ -737,6 +758,8 @@ public class NotificationScheduler {
   @Scheduled(cron = "${app.notifications.retention-cron:0 10 3 * * *}")
   @Transactional
   public void cleanupReadNotifications() {
+    // Board posts move to Past when their time is up and are deleted 30 days later.
+    boardPostService.runRetention();
     jdbc.update(
         """
                 DELETE FROM notifications

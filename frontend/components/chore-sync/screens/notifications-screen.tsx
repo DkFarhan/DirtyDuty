@@ -61,7 +61,7 @@ const notificationStyles: Array<[NotificationStyle, string]> = [
 ]
 
 export function NotificationsScreen({ theme = "light" }: { theme?: Exclude<Theme, "system"> }) {
-  const { returnFromNotifications } = useChoreSync()
+  const { returnFromNotifications, openBoardPost } = useChoreSync()
   const {
     state: pushHealth,
     refresh: refreshPushHealth,
@@ -485,6 +485,19 @@ export function NotificationsScreen({ theme = "light" }: { theme?: Exclude<Theme
                       <p className={profileStyles.notificationTimestamp}>
                         {dateLabel(item.deliveredAt ?? item.sentAt ?? item.createdAt)}
                       </p>
+                      {item.referenceType === "BOARD_POST" && item.referenceId && (
+                        <button
+                          aria-label={`Open post: ${item.title}`}
+                          className={profileStyles.notificationMarkRead}
+                          onClick={() => {
+                            if (!read) void markRead(item)
+                            openBoardPost(item.referenceId!, "notifications")
+                          }}
+                          type="button"
+                        >
+                          Open post
+                        </button>
+                      )}
                       {!read && (
                         <button
                           aria-label={`Mark ${item.title} as read`}

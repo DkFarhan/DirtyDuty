@@ -9,7 +9,8 @@ import { BottomNav } from "../bottom-nav"
 import styles from "./household-screen-view.module.css"
 
 export type HouseholdVisualTheme = "dark" | "light"
-export type HouseholdNavigationDestination = "dashboard" | "my-chores" | "household" | "profile"
+export type HouseholdNavigationDestination =
+  "dashboard" | "my-chores" | "board" | "household" | "profile"
 export type HouseholdViewStatus = "loading" | "loaded" | "error"
 export type HouseholdLeaveFlow = "closed" | "member-confirm" | "owner-select" | "owner-confirm"
 

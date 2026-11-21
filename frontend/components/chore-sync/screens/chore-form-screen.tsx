@@ -64,6 +64,7 @@ import {
   valuesFromChore,
   whoLabel,
   withField,
+  withOften,
   withTitle,
   type QuickContext,
   type QuickError,
@@ -138,7 +139,7 @@ function openOccurrence(
 }
 
 export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
-  const { state, screen, navigate, editingChoreId } = useChoreSync()
+  const { state, screen, navigate, editingChoreId, choreDraft, clearChoreDraft } = useChoreSync()
   const { activeHousehold: household } = useHouseholds()
   const isEditing = screen === "edit-chore"
   const viewerId = state.currentUser.id
@@ -209,6 +210,7 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
     let cancelled = false
     setLoading(true)
     setLoadError(null)
+    const draft = isEditing ? null : choreDraft
     const load = async () => {
       try {
         const editing = isEditing && editingChoreId
@@ -238,6 +240,16 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
           setOccurrence(dashboard ? openOccurrence(dashboard, loaded.id) : null)
         } else {
           nextValues = initialQuickValues(loadContext)
+          if (draft) {
+            // Started from the Board: its title, and for an event a one-time date and time.
+            nextValues = withTitle(nextValues, draft.title, nextOptions.categories)
+            if (draft.once) {
+              nextValues = withOften(nextValues, "ONCE", {
+                startsOn: draft.once.date,
+                dueTime: draft.once.time,
+              })
+            }
+          }
         }
         setOptions(nextOptions)
         setValues(nextValues)
@@ -258,6 +270,7 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
     return () => {
       cancelled = true
     }
+    // The draft is read once, when the form opens, so it isn't a dependency.
   }, [editingChoreId, householdId, isEditing, timezone, viewerId])
 
   // "What needs doing?" gets focus when a new chore's form appears.
@@ -266,13 +279,21 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
     if (ready && !isEditing) nameRef.current?.focus()
   }, [isEditing, ready])
 
+  /** Back to where the form was opened from: the Board for a draft, the chore list otherwise. */
+  const exit = useCallback(() => {
+    const returnTo = !isEditing ? choreDraft?.returnTo : undefined
+    clearChoreDraft()
+    if (returnTo) navigate(returnTo)
+    else navigate("admin", "chores")
+  }, [choreDraft, clearChoreDraft, isEditing, navigate])
+
   const leave = useCallback(() => {
     if (dirty) {
       setConfirmDiscard(true)
       return
     }
-    navigate("admin", "chores")
-  }, [dirty, navigate])
+    exit()
+  }, [dirty, exit])
 
   const update = (next: QuickValues) => {
     setValues(next)
@@ -300,7 +321,7 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
         await choreApi.create(householdId, result.request)
       }
       invalidateChores()
-      navigate("admin", "chores")
+      exit()
     } catch (cause) {
       setSaveError(
         cause instanceof ApiError ? cause.message : "Unable to save this chore. Please try again.",
@@ -893,11 +914,7 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
               >
                 Keep editing
               </button>
-              <button
-                className={styles.primaryButton}
-                onClick={() => navigate("admin", "chores")}
-                type="button"
-              >
+              <button className={styles.primaryButton} onClick={exit} type="button">
                 Discard
               </button>
             </div>

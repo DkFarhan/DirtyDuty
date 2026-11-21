@@ -42,9 +42,12 @@ import {
   type HomeVisualTheme,
 } from "../redesign/home-screen-view"
 import { createHomeApplicationViewModel } from "../redesign/home-application-adapter"
+import { homeBoardRows } from "@/lib/board/board-view"
+import { HomeBoardSection } from "../board/home-board-section"
+import { useBoard } from "../board/use-board"
 
 export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } = {}) {
-  const { state, navigate, openNotifications } = useChoreSync()
+  const { state, navigate, openNotifications, openBoardPost } = useChoreSync()
   const {
     state: pushHealth,
     refresh: refreshPushHealth,
@@ -433,6 +436,7 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
     flaggingIds,
     pushHealth,
   })
+  const { board } = useBoard(household?.id ?? null)
   const onNavigate = (destination: HomeNavigationDestination) =>
     navigate(destination === "home" ? "dashboard" : destination)
   const onPushAction = () => {
@@ -448,6 +452,17 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
     <>
       <HomeScreenView
         activeDestination="home"
+        boardSection={
+          board && (
+            <HomeBoardSection
+              onOpenBoard={() => navigate("board")}
+              onOpenPost={(postId) => openBoardPost(postId, "dashboard")}
+              rows={homeBoardRows(board.posts, household?.timezone ?? "UTC")}
+              theme={theme === "dark" ? "dark" : "light"}
+              unseenCount={board.unseenCount}
+            />
+          )
+        }
         onCompleteChore={(id, surface) => void completeAssignment(id, surface)}
         onOpenChoreActions={(id, surface = "card") => {
           setActionSurface(surface)

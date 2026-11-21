@@ -135,6 +135,7 @@ public class MembershipExitCleanupService {
     int pausedSchedules = reconcileSchedules(scheduleIds, userId);
     entityManager.flush();
     reconcileAssignments(householdId, userId);
+    cleanupBoard(householdId, userId);
     cancelMemberNotifications(householdId, userId);
     entityManager.flush();
     return pausedSchedules;
@@ -439,6 +440,34 @@ public class MembershipExitCleanupService {
             Boolean.class,
             householdId,
             userId));
+  }
+
+  /**
+   * Board posts stay (their author shows as "Former member"); the person's recipient and read rows
+   * go, and a problem they were handling has no handler again.
+   */
+  private void cleanupBoard(UUID householdId, UUID userId) {
+    jdbc.update(
+        """
+        DELETE FROM board_post_recipients r USING board_posts p
+        WHERE r.post_id=p.id AND p.household_id=? AND r.user_id=?
+        """,
+        householdId,
+        userId);
+    jdbc.update(
+        """
+        DELETE FROM board_post_reads r USING board_posts p
+        WHERE r.post_id=p.id AND p.household_id=? AND r.user_id=?
+        """,
+        householdId,
+        userId);
+    jdbc.update(
+        """
+        UPDATE board_posts SET handler_user_id=NULL, updated_at=NOW()
+        WHERE household_id=? AND handler_user_id=?
+        """,
+        householdId,
+        userId);
   }
 
   private void cancelMemberNotifications(UUID householdId, UUID userId) {

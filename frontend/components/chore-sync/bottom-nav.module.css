@@ -6,6 +6,8 @@
   --bottom-nav-active-text: #0d706c;
   --bottom-nav-inactive-text: #536f70;
   --bottom-nav-shadow: 0 10px 24px rgb(54 83 90 / 17%);
+  --bottom-nav-dot: #d9822b;
+  --bottom-nav-dot-ring: #eaf6f2;
   position: fixed;
   z-index: 50;
   right: 0;
@@ -28,6 +30,8 @@
   --bottom-nav-active-text: #b6fff5;
   --bottom-nav-inactive-text: #a5bdc0;
   --bottom-nav-shadow: 0 9px 21px -4px rgb(0 12 18 / 38%);
+  --bottom-nav-dot: #ffc98a;
+  --bottom-nav-dot-ring: #153843;
 }
 
 .capsule {
@@ -63,12 +67,14 @@
   display: none;
 }
 
+/* Five tabs; --nav-index (0–4) places the island under the active one. */
 .activeIsland {
+  --nav-index: 0;
   position: absolute;
   z-index: 0;
   top: 5px;
-  left: calc(1px + 2px);
-  width: min(87px, calc(25% - 4.5px));
+  left: calc(1px + (100% - 2px) / 5 * var(--nav-index) + 2px);
+  width: calc((100% - 2px) / 5 - 4px);
   height: 54px;
   box-sizing: border-box;
   border: 1px solid var(--bottom-nav-active-border);
@@ -78,24 +84,12 @@
   transition: left 180ms ease;
 }
 
-.activeIsland[data-active="my-chores"] {
-  left: calc(1px + (100% - 2px) / 4 + 2px);
-}
-
-.activeIsland[data-active="household"] {
-  left: calc(1px + (100% - 2px) / 4 * 2 + 2px);
-}
-
-.activeIsland[data-active="profile"] {
-  left: calc(1px + (100% - 2px) / 4 * 3 + 2px);
-}
-
 .items {
   position: relative;
   z-index: 1;
   display: grid;
   height: 100%;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   align-items: center;
   padding-inline: 1px;
 }
@@ -133,9 +127,28 @@
   flex: none;
 }
 
+.iconWrap {
+  position: relative;
+  display: block;
+  flex: none;
+}
+
+/* Unseen board posts. */
+.dot {
+  position: absolute;
+  top: -1px;
+  right: -3px;
+  width: 8px;
+  height: 8px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--bottom-nav-dot-ring);
+  border-radius: 999px;
+  background: var(--bottom-nav-dot);
+}
+
 .label {
   overflow: hidden;
-  max-width: 100%;
+  max-width: calc(100% - 4px);
   font-size: 10.5px;
   font-weight: 500;
   line-height: 13px;

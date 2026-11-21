@@ -47,6 +47,9 @@
 
 :root {
   color-scheme: light;
+  /* Screens ask for the Libre Baskerville serif by this name; next/font loads it as the
+     Household serif on <html>. Defined once here so every screen gets it. */
+  --font-libre-baskerville: var(--font-household-serif);
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
