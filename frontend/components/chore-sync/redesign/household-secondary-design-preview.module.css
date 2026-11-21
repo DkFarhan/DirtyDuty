@@ -174,9 +174,17 @@
 }
 
 .backButton {
+  position: relative;
   width: 42px;
   height: 42px;
   border-radius: 15px;
+}
+
+/* A larger tap area (at least 44x44 even at the 36px phone size) without changing the look. */
+.backButton::before {
+  position: absolute;
+  inset: -5px;
+  content: "";
 }
 
 .identity {
@@ -232,6 +240,7 @@
   min-height: 204px;
   align-items: center;
   justify-content: space-between;
+  gap: 20px;
   overflow: hidden;
   padding: 25px 28px;
   border: 1px solid var(--line);
@@ -251,7 +260,9 @@
 .heroCopy {
   position: relative;
   z-index: 1;
+  min-width: 0;
   max-width: 600px;
+  flex: 1 1 auto;
 }
 
 .heroCopy h2 {
@@ -1552,6 +1563,7 @@
 
   .heroCard {
     min-height: 167px;
+    gap: 14px;
     padding: 19px;
     border-radius: 20px;
   }
