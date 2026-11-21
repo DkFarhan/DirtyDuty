@@ -12,21 +12,88 @@ export type HouseholdJobViewModel = {
   category: string
   /** "Your turn" or "Sam's turn". */
   turnLabel: string
+  /** The first letter of whose turn it is, for the avatar; null on your turn or nobody's. */
+  turnInitial: string | null
   yourTurn: boolean
   /** "Last done 2 days ago by Sam", or "Not done yet". */
   lastDoneLabel: string
-  /** "Due by 8:00 PM today", "Due Sun, Nov 16 by 8:00 PM", or null without a deadline. */
+  /**
+   * "Due by 8:00 PM today", "Due Sun, Nov 16 by 8:00 PM", "Due now" while flagged, or null without
+   * a deadline.
+   */
   deadlineLabel: string | null
-  /** "Flagged 10 min ago by Sam", or null. */
+  /** "You asked 5 min ago" or "Sam asked 5 min ago", or null. */
   flagLabel: string | null
   flagged: boolean
+  /** When the open flag was raised (ISO), or null. */
+  flaggedAt: string | null
   overdue: boolean
-  /** "Done" for whoever's turn it is, "I did it" for others in the rotation, else null. */
+  /** "I did it" for anyone in the rotation who may complete it, else null. */
   completeLabel: string | null
   canFlag: boolean
+  /**
+   * The secondary button: "Needs doing", "Reminder sent" while the repeat window is open, or
+   * "Remind again" after it. Null for whoever's turn it is and for viewers who can't flag.
+   */
+  reminder: JobReminderView | null
   hasActions: boolean
   /** The result of the last action taken from this card. */
   feedback?: CardFeedbackView
+}
+
+/**
+ * How long after a flag nobody can flag the job again. Mirrors the backend's
+ * OccurrenceService.FLAG_REPEAT_WINDOW; keep the two in step.
+ */
+export const FLAG_REPEAT_WINDOW_MS = 2 * 60 * 60 * 1000
+
+export type JobReminderView =
+  | { state: "needs-doing" }
+  | {
+      state: "reminder-sent"
+      /** When the window ends (epoch ms). */
+      remindAgainAt: number
+      /** "You can remind again at 3:07 AM", in the household's time zone. */
+      remindAgainLabel: string
+    }
+  | { state: "remind-again" }
+
+function clockTime(at: number, timeZone: string) {
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone,
+    }).format(new Date(at))
+  } catch {
+    return new Date(at).toISOString().slice(11, 16)
+  }
+}
+
+/** The secondary button for a viewer who may flag, from when the job was last flagged. */
+export function jobReminder(
+  flaggedAt: string | null,
+  timeZone: string,
+  now: number = Date.now(),
+): JobReminderView {
+  const flagged = flaggedAt ? new Date(flaggedAt).getTime() : Number.NaN
+  if (Number.isNaN(flagged)) return { state: "needs-doing" }
+  const remindAgainAt = flagged + FLAG_REPEAT_WINDOW_MS
+  if (now >= remindAgainAt) return { state: "remind-again" }
+  return {
+    state: "reminder-sent",
+    remindAgainAt,
+    remindAgainLabel: `You can remind again at ${clockTime(remindAgainAt, timeZone)}`,
+  }
+}
+
+/**
+ * The card message for a failed "Needs doing". The server's 409 ("Already flagged at 3:10 PM.")
+ * reads as "Already asked at 3:10 PM." to match the card's wording.
+ */
+export function flagErrorWording(message: string) {
+  const repeat = /^Already flagged at (.+)$/.exec(message)
+  return repeat ? `Already asked at ${repeat[1]}` : message
 }
 
 export function isHouseholdJob(assignment: AssignmentDTO) {
@@ -117,31 +184,35 @@ export function householdJobView(
   const lastDone = assignment.lastDone ?? null
   const byName = (userId: string, name: string) => (userId === viewerId ? "you" : firstName(name))
   const overdue = open && assignment.overdue
+  const canFlag = open && Boolean(assignment.actions?.canFlag)
+  const turnName = turn ? firstName(turn.displayName) : null
   return {
     id: assignment.id,
     title: assignment.title,
     category: assignment.categoryName ?? "Household job",
-    turnLabel: !turn
-      ? "Nobody's turn yet"
-      : yourTurn
-        ? "Your turn"
-        : `${firstName(turn.displayName)}'s turn`,
+    turnLabel: !turn ? "Nobody's turn yet" : yourTurn ? "Your turn" : `${turnName}'s turn`,
+    turnInitial: turnName && !yourTurn ? turnName.charAt(0).toUpperCase() : null,
     yourTurn,
     lastDoneLabel: lastDone
       ? `Last done ${timeAgo(lastDone.at, now)} by ${byName(lastDone.byUserId, lastDone.byDisplayName)}`
       : "Not done yet",
-    // A flag pulls the deadline to now; the flag line says that better than "due now".
+    // A flag pulls the deadline to now.
     deadlineLabel:
-      open && assignment.dueAt && !flag
-        ? `${overdue ? "Was due" : "Due"} ${deadlineWords(assignment.dueAt, timeZone, now)}`
-        : null,
+      flag && !overdue
+        ? "Due now"
+        : open && assignment.dueAt
+          ? `${overdue ? "Was due" : "Due"} ${deadlineWords(assignment.dueAt, timeZone, now)}`
+          : null,
     flagLabel: flag
-      ? `Flagged ${timeAgo(flag.at, now)} by ${byName(flag.byUserId, flag.byDisplayName)}`
+      ? `${flag.byUserId === viewerId ? "You" : firstName(flag.byDisplayName)} asked ${timeAgo(flag.at, now)}`
       : null,
     flagged: Boolean(flag),
+    flaggedAt: flag?.at ?? null,
     overdue,
-    completeLabel: open && assignment.canComplete ? (yourTurn ? "Done" : "I did it") : null,
-    canFlag: open && Boolean(assignment.actions?.canFlag),
+    completeLabel: open && assignment.canComplete ? "I did it" : null,
+    canFlag,
+    // Whoever's turn it is never asks themselves; the backend allows one flag per window.
+    reminder: canFlag && !yourTurn ? jobReminder(flag?.at ?? null, timeZone, now) : null,
     hasActions: open && Boolean(assignment.actions?.canReassign),
   }
 }

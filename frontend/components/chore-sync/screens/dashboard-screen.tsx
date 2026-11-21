@@ -11,7 +11,7 @@ import {
   type CardFeedback,
   type CardSurface,
 } from "@/lib/household/card-feedback"
-import { optimisticFlag } from "@/lib/household/household-jobs"
+import { flagErrorWording, optimisticFlag } from "@/lib/household/household-jobs"
 import { useHouseholds } from "@/lib/household/household-context"
 import type { Household } from "@/lib/household/api"
 import { InviteHousemateDialog } from "../invite-housemate-dialog"
@@ -384,7 +384,7 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
           cardFeedback(
             previous,
             cause instanceof ApiError
-              ? cause.message
+              ? flagErrorWording(cause.message)
               : "Unable to flag this job. Please try again.",
             "error",
             "job",

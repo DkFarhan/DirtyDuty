@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest"
 import type { AssignmentDTO } from "./chores"
-import { deadlineWords, householdJobView, optimisticFlag, timeAgo } from "./household-jobs"
+import {
+  deadlineWords,
+  FLAG_REPEAT_WINDOW_MS,
+  flagErrorWording,
+  householdJobView,
+  optimisticFlag,
+  timeAgo,
+} from "./household-jobs"
 
 const now = Date.parse("2026-11-14T15:00:00Z")
 
@@ -46,7 +53,7 @@ describe("household job cards", () => {
     expect(householdJobView(job(), "sam", "UTC", now)).toMatchObject({
       turnLabel: "Your turn",
       yourTurn: true,
-      completeLabel: "Done",
+      completeLabel: "I did it",
       lastDoneLabel: "Not done yet",
       deadlineLabel: "Due Mon, Nov 16 by 8:00 PM",
       canFlag: true,
@@ -61,7 +68,7 @@ describe("household job cards", () => {
     )
   })
 
-  it("shows the last completion, the flag and no deadline line while flagged", () => {
+  it("shows the last completion, who asked and Due now while flagged", () => {
     const view = householdJobView(
       job({
         lastDone: {
@@ -76,8 +83,16 @@ describe("household job cards", () => {
       now,
     )
     expect(view.lastDoneLabel).toBe("Last done 2 days ago by Abubakar")
-    expect(view.flagLabel).toBe("Flagged 10 min ago by Rubayet")
-    expect(view.deadlineLabel).toBeNull()
+    expect(view.flagLabel).toBe("Rubayet asked 10 min ago")
+    expect(view.flaggedAt).toBe("2026-11-14T14:50:00Z")
+    expect(view.deadlineLabel).toBe("Due now")
+    const mine = householdJobView(
+      job({ flag: { at: "2026-11-14T14:55:00Z", byUserId: "ana", byDisplayName: "Ana" } }),
+      "ana",
+      "UTC",
+      now,
+    )
+    expect(mine.flagLabel).toBe("You asked 5 min ago")
   })
 
   it("has no deadline line without a backstop, and words overdue deadlines", () => {
@@ -107,6 +122,49 @@ describe("household job cards", () => {
       now,
     )
     expect(early.dueAt).toBe("2026-11-14T08:00:00Z")
+  })
+})
+
+describe("the Needs doing button and its 2-hour window", () => {
+  const flaggedAt = (minutesAgo: number) => new Date(now - minutesAgo * 60_000).toISOString()
+
+  it("offers Needs doing when it is someone else's turn and nobody has asked", () => {
+    expect(householdJobView(job(), "ana", "UTC", now).reminder).toEqual({ state: "needs-doing" })
+  })
+
+  it("shows Reminder sent with the remind-again time inside the window, in the household zone", () => {
+    const flagged = job({ flag: { at: flaggedAt(5), byUserId: "ana", byDisplayName: "Ana" } })
+    expect(householdJobView(flagged, "ana", "America/Halifax", now).reminder).toEqual({
+      state: "reminder-sent",
+      remindAgainAt: now - 5 * 60_000 + FLAG_REPEAT_WINDOW_MS,
+      remindAgainLabel: "You can remind again at 12:55 PM",
+    })
+    // Someone else's flag blocks a repeat too.
+    expect(householdJobView(flagged, "ben", "UTC", now).reminder?.state).toBe("reminder-sent")
+  })
+
+  it("offers Remind again once the window has ended", () => {
+    const flagged = job({ flag: { at: flaggedAt(120), byUserId: "ana", byDisplayName: "Ana" } })
+    expect(householdJobView(flagged, "ana", "UTC", now).reminder).toEqual({
+      state: "remind-again",
+    })
+  })
+
+  it("never offers a reminder to whoever's turn it is", () => {
+    expect(householdJobView(job(), "sam", "UTC", now).reminder).toBeNull()
+    expect(
+      householdJobView(
+        job({ flag: { at: flaggedAt(5), byUserId: "ana", byDisplayName: "Ana" } }),
+        "sam",
+        "UTC",
+        now,
+      ).reminder,
+    ).toBeNull()
+  })
+
+  it("words the server's repeat-flag conflict as Already asked", () => {
+    expect(flagErrorWording("Already flagged at 3:10 PM.")).toBe("Already asked at 3:10 PM.")
+    expect(flagErrorWording("This chore is already done.")).toBe("This chore is already done.")
   })
 })
 
