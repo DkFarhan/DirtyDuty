@@ -20,7 +20,18 @@ export function updateDashboardAssignment(
     today: replace(dashboard.today),
     thisWeek: replace(dashboard.thisWeek),
     overdue: replace(dashboard.overdue),
+    ...(dashboard.householdJobs ? { householdJobs: replace(dashboard.householdJobs) } : {}),
   }
+}
+
+/** Every occurrence on the dashboard, household jobs included. */
+function allDashboardAssignments(dashboard: HouseholdDashboard) {
+  return [
+    dashboard.today,
+    dashboard.thisWeek,
+    dashboard.overdue,
+    dashboard.householdJobs ?? [],
+  ].flat()
 }
 
 export function optimisticallyCompleteDashboardAssignment(
@@ -31,9 +42,9 @@ export function optimisticallyCompleteDashboardAssignment(
   previous: AssignmentDTO
   incrementedWeekSummary: boolean
 } | null {
-  const previous = [dashboard.today, dashboard.thisWeek, dashboard.overdue]
-    .flat()
-    .find((assignment) => assignment.id === assignmentId)
+  const previous = allDashboardAssignments(dashboard).find(
+    (assignment) => assignment.id === assignmentId,
+  )
   if (!previous || previous.status !== "PENDING" || !previous.canComplete) return null
 
   const incrementedWeekSummary =
@@ -142,9 +153,5 @@ export function replaceDashboardOccurrence(
 /** Finds an occurrence anywhere on the dashboard. */
 export function findDashboardAssignment(dashboard: HouseholdDashboard | null, id: string) {
   if (!dashboard) return null
-  return (
-    [dashboard.today, dashboard.thisWeek, dashboard.overdue]
-      .flat()
-      .find((assignment) => assignment.id === id) ?? null
-  )
+  return allDashboardAssignments(dashboard).find((assignment) => assignment.id === id) ?? null
 }

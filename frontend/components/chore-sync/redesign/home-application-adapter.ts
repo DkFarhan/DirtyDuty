@@ -1,4 +1,10 @@
 import type { AssignmentDTO, HouseholdDashboard } from "@/lib/household/chores"
+import {
+  feedbackFor,
+  unplacedFeedbackError,
+  type CardFeedback,
+} from "@/lib/household/card-feedback"
+import { categoryWithRepeat, householdJobView } from "@/lib/household/household-jobs"
 import { hasOccurrenceActions, movedFromLabel } from "@/lib/household/occurrence-actions"
 import type { PushHealthState } from "@/lib/notifications/push-health"
 import { assignmentAssigneeNames, assignmentDate, assignmentTime } from "../chore-card"
@@ -31,6 +37,10 @@ export interface HomeApplicationViewModelInput {
   actionError: string | null
   notificationCountError: string | null
   completingIds: ReadonlySet<string>
+  /** "Needs doing" requests in flight, by assignment id. */
+  flaggingIds?: ReadonlySet<string>
+  /** The result of the last card action, shown under that card. */
+  cardFeedback?: CardFeedback | null
   pushHealth: PushHealthState
   now?: Date
 }
@@ -98,7 +108,7 @@ function mapChore(
   return {
     id: assignment.id,
     title: assignment.title,
-    category: assignment.categoryName ?? "Chore",
+    category: categoryWithRepeat(assignment),
     scheduledLabel: assignmentDate(assignment, input.householdTimezone),
     durationLabel:
       assignment.estimatedMinutes !== null && assignment.estimatedMinutes > 0
@@ -106,7 +116,11 @@ function mapChore(
         : undefined,
     assignedTo: assignmentAssigneeNames(assignment, input.currentUserId),
     status: assignment.status,
-    movedFrom: movedFromLabel(assignment),
+    // A flagged household job says who asked for it instead of a "moved" hint.
+    movedFrom:
+      assignment.flag && assignment.status === "PENDING"
+        ? householdJobView(assignment, input.currentUserId, input.householdTimezone).flagLabel
+        : movedFromLabel(assignment),
     hasActions: hasOccurrenceActions(assignment),
     completedBy: assignment.completedByDisplayName,
     overdue: assignment.overdue && assignment.status === "PENDING",
@@ -115,6 +129,7 @@ function mapChore(
       assignment.canComplete &&
       assignment.assignees.some((assignee) => assignee.userId === input.currentUserId),
     completing: input.completingIds.has(operationKey),
+    feedback: feedbackFor(assignment, input.cardFeedback ?? null, "card"),
   }
 }
 
@@ -164,18 +179,24 @@ export function createHomeApplicationViewModel(
         status === "PENDING" ? 0 : status === "COMPLETED" ? 2 : 1
       return priority(left.status) - priority(right.status)
     })
+  const upcomingAssignments = getUpcomingAssignments(week, today, dateKey)
+  const jobAssignments = (dashboard?.householdJobs ?? []).filter(
+    (assignment) => assignment.status === "PENDING",
+  )
+  const feedback = input.cardFeedback ?? null
   const upcomingGroups: HomeUpcomingGroupViewModel[] = groupAssignmentsByDate(
-    getUpcomingAssignments(week, today, dateKey),
+    upcomingAssignments,
   ).map((group) => ({
     dateLabel: formatUpcomingDateLabel(group.dateKey, dateKey),
     chores: group.assignments.map((assignment) => ({
       id: assignment.id,
       title: assignment.title,
-      category: assignment.categoryName ?? "Chore",
+      category: categoryWithRepeat(assignment),
       timeLabel: assignmentTime(assignment, input.householdTimezone) ?? "",
       skipped: assignment.status === "SKIPPED",
       movedFrom: movedFromLabel(assignment),
       hasActions: hasOccurrenceActions(assignment),
+      feedback: feedbackFor(assignment, feedback, "card"),
     })),
   }))
   const overdueChores = overdueAssignments.map((assignment) => mapChore(assignment, input))
@@ -184,7 +205,20 @@ export function createHomeApplicationViewModel(
     status: input.status,
     errorMessage: input.errorMessage ?? undefined,
     refreshError: input.refreshError ?? undefined,
-    actionError: input.actionError ?? undefined,
+    // A card action's result goes under its card; the banner only takes one no card can show.
+    actionError:
+      input.actionError ??
+      unplacedFeedbackError(
+        [
+          {
+            surface: "card",
+            assignments: [...overdueAssignments, ...todayForDisplay, ...upcomingAssignments],
+          },
+          { surface: "job", assignments: jobAssignments },
+        ],
+        feedback,
+      ) ??
+      undefined,
     notificationCountError: input.notificationCountError ?? undefined,
     pushNotice: pushNoticeFor(input.pushHealth),
     displayName: input.displayName,
@@ -210,5 +244,13 @@ export function createHomeApplicationViewModel(
     upcomingDateLabel: upcomingGroups[0]?.dateLabel ?? "COMING UP THIS WEEK",
     upcomingChores: upcomingGroups.flatMap((group) => group.chores),
     upcomingGroups,
+    householdJobs: jobAssignments.map((assignment) => ({
+      ...householdJobView(assignment, input.currentUserId, input.householdTimezone, date.getTime()),
+      feedback: feedbackFor(assignment, feedback, "job"),
+    })),
+    flaggingIds: [...(input.flaggingIds ?? [])],
+    completingJobIds: (dashboard?.householdJobs ?? [])
+      .filter((assignment) => input.completingIds.has(`${input.householdId}:${assignment.id}`))
+      .map((assignment) => assignment.id),
   }
 }

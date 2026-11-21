@@ -213,11 +213,17 @@ describe("chore management", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Create a chore" }))
     await screen.findByRole("heading", { name: "Create a chore" })
-    fireEvent.change(screen.getByLabelText("Category"), { target: { value: "category-1" } })
-    fireEvent.change(screen.getByPlaceholderText("e.g. Clean Kitchen"), {
+    fireEvent.change(await screen.findByLabelText("What needs doing?"), {
       target: { value: "  Clean Kitchen  " },
     })
-    fireEvent.click(screen.getByRole("button", { name: "Create Chore" }))
+    // The name already guessed Kitchen; picking it keeps it whatever the name says.
+    fireEvent.click(screen.getByRole("button", { name: /^Category:/ }))
+    fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Category" })).getByRole("button", {
+        name: /Kitchen/,
+      }),
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Create chore" }))
 
     await screen.findByRole("heading", { name: "Manage chores" })
     const createRequest = fetchMock.mock.calls.find(
@@ -230,12 +236,13 @@ describe("chore management", () => {
       defaultPriority: "NORMAL",
       difficulty: 3,
       schedule: expect.objectContaining({
-        recurrenceRule: "FREQ=WEEKLY;BYDAY=MO",
+        recurrenceRule: expect.stringMatching(/^FREQ=WEEKLY;BYDAY=(MO|TU|WE|TH|FR|SA|SU)$/),
         timezone: "America/Sao_Paulo",
-        assignmentStrategy: "FIXED",
+        kind: "CALENDAR",
+        assignmentStrategy: "ROUND_ROBIN",
         peopleNeeded: 1,
-        fixedAssigneeUserId: "user-1",
-        participantUserIds: [],
+        fixedAssigneeUserId: null,
+        participantUserIds: ["user-1", "user-2"],
       }),
     })
     expect(new Headers(createRequest?.[1]?.headers).get("X-CSRF-TOKEN")).toBe("chore-csrf")
@@ -253,6 +260,7 @@ describe("chore management", () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse(options))
       .mockResolvedValueOnce(jsonResponse(savedChore))
+      .mockResolvedValueOnce(jsonResponse(dashboard))
       .mockResolvedValueOnce(jsonResponse({ token: "edit-csrf", headerName: "X-CSRF-TOKEN" }))
       .mockResolvedValueOnce(jsonResponse({ ...savedChore, title: "Wipe Kitchen" }))
       .mockResolvedValueOnce(jsonResponse([{ ...savedChore, title: "Wipe Kitchen" }]))
@@ -264,7 +272,7 @@ describe("chore management", () => {
     fireEvent.change(screen.getByDisplayValue("Clean Kitchen"), {
       target: { value: "Wipe Kitchen" },
     })
-    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }))
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
     expect(await screen.findByRole("heading", { name: "Wipe Kitchen" })).toBeTruthy()
 
     const updateRequest = fetchMock.mock.calls.find(
@@ -295,6 +303,7 @@ describe("chore management", () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse(options))
       .mockResolvedValueOnce(jsonResponse(savedChore))
+      .mockResolvedValueOnce(jsonResponse(dashboard))
       .mockResolvedValueOnce(jsonResponse({ token: "edit-csrf", headerName: "X-CSRF-TOKEN" }))
       .mockResolvedValueOnce(
         jsonResponse(
@@ -308,17 +317,17 @@ describe("chore management", () => {
     fireEvent.click(screen.getByRole("button", { name: "Edit" }))
 
     await screen.findByRole("heading", { name: "Edit a chore" })
-    fireEvent.click(screen.getByRole("button", { name: "One time" }))
-    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }))
+    fireEvent.click(await screen.findByRole("button", { name: /^How often:/ }))
+    fireEvent.click(screen.getByRole("button", { name: /Just once/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Done" }))
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
 
     expect(await screen.findByRole("alert")).toHaveProperty(
       "textContent",
       "This chore has recurring assignment history and can't be changed to a one-time chore. Keep its recurring schedule or create a new one-time chore.",
     )
     expect(screen.getByRole("heading", { name: "Edit a chore" })).toBeTruthy()
-    expect(screen.getByRole("button", { name: "One time" }).getAttribute("aria-pressed")).toBe(
-      "true",
-    )
+    expect(screen.getByRole("button", { name: /^How often:/ }).textContent).toContain("Just once")
     const updateRequest = fetchMock.mock.calls.find(
       ([url, request]) =>
         url === "http://localhost:8080/api/households/home-1/chores/chore-1" &&
@@ -369,7 +378,7 @@ describe("chore management", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create a chore" }))
     await screen.findByRole("heading", { name: "Create a chore" })
 
-    fireEvent.change(screen.getByPlaceholderText("e.g. Clean Kitchen"), {
+    fireEvent.change(await screen.findByLabelText("What needs doing?"), {
       target: { value: "New chore" },
     })
     fireEvent.click(screen.getByRole("button", { name: "Back" }))
@@ -380,89 +389,6 @@ describe("chore management", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back" }))
     fireEvent.click(screen.getByRole("button", { name: "Discard" }))
     expect(await screen.findByRole("heading", { name: "Manage chores" })).toBeTruthy()
-  })
-
-  it("requires exactly K fixed members and persists multi-person scheduling", async () => {
-    await openHousehold()
-    fetchMock.mockResolvedValueOnce(jsonResponse([])).mockResolvedValueOnce(jsonResponse(options))
-    await enterChores()
-    await screen.findByText("No shared chores yet.")
-
-    fetchMock.mockResolvedValueOnce(jsonResponse(options))
-    fireEvent.click(screen.getByRole("button", { name: "Create a chore" }))
-    await screen.findByRole("heading", { name: "Create a chore" })
-    fireEvent.change(screen.getByPlaceholderText("e.g. Clean Kitchen"), {
-      target: { value: "Move Sofa" },
-    })
-    fireEvent.change(screen.getByLabelText("People Needed"), { target: { value: "2" } })
-    expect(screen.getByText("Select exactly 2 members")).toBeTruthy()
-    expect(screen.queryByText("Require completion verification")).toBeNull()
-
-    fireEvent.click(screen.getByRole("button", { name: "Ahmed" }))
-    fireEvent.click(screen.getByRole("button", { name: "Create Chore" }))
-    expect(await screen.findByRole("alert")).toHaveProperty(
-      "textContent",
-      "Choose exactly 2 members for this chore.",
-    )
-    expect(
-      fetchMock.mock.calls.some(
-        ([url, request]) =>
-          url === "http://localhost:8080/api/households/home-1/chores" &&
-          request?.method === "POST",
-      ),
-    ).toBe(false)
-
-    fireEvent.click(screen.getByRole("button", { name: "Jahid" }))
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse({ token: "multi-csrf", headerName: "X-CSRF-TOKEN" }))
-      .mockResolvedValueOnce(jsonResponse({ id: "chore-multi" }, 201))
-      .mockResolvedValueOnce(jsonResponse([]))
-      .mockResolvedValueOnce(jsonResponse(options))
-    fireEvent.click(screen.getByRole("button", { name: "Create Chore" }))
-    await screen.findByRole("heading", { name: "Manage chores" })
-
-    const createRequest = fetchMock.mock.calls.find(
-      ([url, request]) =>
-        url === "http://localhost:8080/api/households/home-1/chores" && request?.method === "POST",
-    )
-    expect(JSON.parse(String(createRequest?.[1]?.body))).toMatchObject({
-      title: "Move Sofa",
-      schedule: {
-        assignmentStrategy: "FIXED",
-        peopleNeeded: 2,
-        fixedAssigneeUserId: null,
-        participantUserIds: expect.arrayContaining(["user-1", "user-2"]),
-      },
-    })
-  })
-
-  it("explains the fair rotation ratio and does not save when the eligible pool is too small", async () => {
-    await openHousehold()
-    fetchMock.mockResolvedValueOnce(jsonResponse([])).mockResolvedValueOnce(jsonResponse(options))
-    await enterChores()
-    await screen.findByText("No shared chores yet.")
-    fetchMock.mockResolvedValueOnce(jsonResponse(options))
-    fireEvent.click(screen.getByRole("button", { name: "Create a chore" }))
-    await screen.findByRole("heading", { name: "Create a chore" })
-
-    fireEvent.change(screen.getByPlaceholderText("e.g. Clean Kitchen"), {
-      target: { value: "Sweep Floor" },
-    })
-    fireEvent.click(screen.getByRole("button", { name: "Rotate" }))
-    expect(screen.getByText("Rotate 1/0 people fairly.")).toBeTruthy()
-    fireEvent.change(screen.getByLabelText("People Needed"), { target: { value: "2" } })
-    fireEvent.click(screen.getByRole("button", { name: "Create Chore" }))
-    expect(await screen.findByRole("alert")).toHaveProperty(
-      "textContent",
-      "People needed must be between 1 and the number of eligible members.",
-    )
-    expect(
-      fetchMock.mock.calls.some(
-        ([url, request]) =>
-          url === "http://localhost:8080/api/households/home-1/chores" &&
-          request?.method === "POST",
-      ),
-    ).toBe(false)
   })
 })
 
@@ -496,8 +422,7 @@ describe("chore recurrence form", () => {
     await screen.findByText("No shared chores yet.")
     fireEvent.click(screen.getByRole("button", { name: "Create a chore" }))
     await screen.findByRole("heading", { name: "Create a chore" })
-    fireEvent.change(screen.getByLabelText("Category"), { target: { value: "category-1" } })
-    fireEvent.change(screen.getByPlaceholderText("e.g. Clean Kitchen"), {
+    fireEvent.change(await screen.findByLabelText("What needs doing?"), {
       target: { value: "Recycling" },
     })
   }
@@ -524,6 +449,7 @@ describe("chore recurrence form", () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse(options))
       .mockResolvedValueOnce(jsonResponse(chore))
+      .mockResolvedValueOnce(jsonResponse(dashboard))
       .mockResolvedValueOnce(jsonResponse({ token: "edit-csrf", headerName: "X-CSRF-TOKEN" }))
       .mockResolvedValueOnce(jsonResponse(chore))
       .mockResolvedValueOnce(jsonResponse([chore]))
@@ -533,43 +459,43 @@ describe("chore recurrence form", () => {
     await screen.findByDisplayValue("Clean Kitchen")
   }
 
-  it("creates a monthly chore on the last Friday", async () => {
-    await openCreateForm()
+  const howOften = () => screen.getByRole("button", { name: /^How often:/ })
 
-    fireEvent.click(screen.getByRole("button", { name: "Monthly" }))
-    fireEvent.click(screen.getByRole("button", { name: "Weekday" }))
-    fireEvent.change(screen.getByLabelText("Which one"), { target: { value: "-1" } })
-    fireEvent.change(screen.getByLabelText("Weekday"), { target: { value: "FR" } })
-
-    expect(screen.getByRole("button", { name: "Monthly" }).getAttribute("aria-pressed")).toBe(
-      "true",
-    )
-    expect(screen.getByTestId("repeat-summary").textContent).toBe("Monthly on the last Friday")
-    fireEvent.click(screen.getByRole("button", { name: "Create Chore" }))
-
-    expect(await submittedSchedule("POST")).toMatchObject({
-      recurrenceRule: "FREQ=MONTHLY;BYDAY=-1FR",
-      endsOn: null,
-    })
-  })
+  function openCustom() {
+    fireEvent.click(howOften())
+    fireEvent.click(screen.getByRole("button", { name: /Custom…/ }))
+    return screen.getByRole("dialog", { name: "Custom schedule" })
+  }
 
   it("creates a seasonal weekly chore that ends after a number of times", async () => {
     await openCreateForm()
-
-    fireEvent.click(screen.getByRole("button", { name: "Thursday" }))
-    fireEvent.change(screen.getByLabelText("Repeat every"), { target: { value: "2" } })
-    fireEvent.click(screen.getByRole("button", { name: "All year" }))
-    for (const month of ["November", "December", "January", "February", "March"]) {
-      fireEvent.click(screen.getByRole("button", { name: month }))
+    const custom = openCustom()
+    for (const day of [
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday",
+      "Sunday",
+    ]) {
+      const button = within(custom).getByRole("button", { name: day })
+      if (button.getAttribute("aria-pressed") === "true") fireEvent.click(button)
     }
-    fireEvent.click(screen.getByRole("button", { name: "After" }))
-    expect((screen.getByLabelText("Number of times") as HTMLInputElement).value).toBe("10")
-
-    expect(screen.getByRole("button", { name: "March" }).getAttribute("aria-pressed")).toBe("true")
-    expect(screen.getByTestId("repeat-summary").textContent).toBe(
-      "Every 2 weeks on Mon and Thu, Nov to Mar, 10 times",
+    fireEvent.click(within(custom).getByRole("button", { name: "Monday" }))
+    fireEvent.click(within(custom).getByRole("button", { name: "Thursday" }))
+    fireEvent.click(within(custom).getByRole("button", { name: "More (Repeat every)" }))
+    fireEvent.click(within(custom).getByRole("switch", { name: /Active months/ }))
+    for (const month of ["November", "December", "January", "February", "March"]) {
+      fireEvent.click(within(custom).getByRole("button", { name: month }))
+    }
+    fireEvent.click(within(custom).getByRole("button", { name: "After N times" }))
+    expect(within(custom).getByTestId("custom-summary").textContent).toBe(
+      "Every 2 weeks on Mon and Thu, Nov to Mar, 10 times at 6 PM",
     )
-    fireEvent.click(screen.getByRole("button", { name: "Create Chore" }))
+    fireEvent.click(within(custom).getByRole("button", { name: "Use this schedule" }))
+    fireEvent.click(screen.getByRole("button", { name: "Done" }))
+    fireEvent.click(screen.getByRole("button", { name: "Create chore" }))
 
     expect(await submittedSchedule("POST")).toMatchObject({
       recurrenceRule: "FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,TH;BYMONTH=1,2,3,11,12;COUNT=10",
@@ -577,16 +503,30 @@ describe("chore recurrence form", () => {
     })
   })
 
-  it("edits a legacy custom every-3-weeks chore without changing its rule", async () => {
+  it("won't use a custom schedule without a weekday", async () => {
+    await openCreateForm()
+    const custom = openCustom()
+    for (const button of within(custom).getAllByRole("button", { pressed: true })) {
+      if (/day$/.test(button.getAttribute("aria-label") ?? "")) fireEvent.click(button)
+    }
+    fireEvent.click(within(custom).getByRole("button", { name: "Use this schedule" }))
+    expect(within(custom).getByRole("alert").textContent).toBe("Choose at least one day to repeat.")
+  })
+
+  it("edits a legacy every-3-weeks chore without changing its rule", async () => {
     await openEditForm("FREQ=WEEKLY;INTERVAL=3;BYDAY=WE")
 
-    expect(screen.getByRole("button", { name: "Weekly" }).getAttribute("aria-pressed")).toBe("true")
-    expect((screen.getByLabelText("Repeat every") as HTMLInputElement).value).toBe("3")
-    expect(screen.getByRole("button", { name: "Wednesday" }).getAttribute("aria-pressed")).toBe(
-      "true",
-    )
-    expect(screen.getByTestId("repeat-summary").textContent).toBe("Every 3 weeks on Wed")
-    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }))
+    expect(howOften().textContent).toContain("Custom · Every 3 weeks on Wed")
+    const custom = openCustom()
+    expect(
+      within(custom).getByRole("button", { name: "Weekly" }).getAttribute("aria-pressed"),
+    ).toBe("true")
+    expect(
+      within(custom).getByRole("button", { name: "Wednesday" }).getAttribute("aria-pressed"),
+    ).toBe("true")
+    fireEvent.click(within(custom).getByRole("button", { name: "Back" }))
+    fireEvent.click(screen.getByRole("button", { name: "Done" }))
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
 
     expect(await submittedSchedule("PUT")).toMatchObject({
       recurrenceRule: "FREQ=WEEKLY;INTERVAL=3;BYDAY=WE",
@@ -596,21 +536,24 @@ describe("chore recurrence form", () => {
   it("seeds a weekday when an edited monthly chore is switched to weekly", async () => {
     await openEditForm("FREQ=MONTHLY;BYMONTHDAY=31")
 
-    fireEvent.click(screen.getByRole("button", { name: "Weekly" }))
-
-    expect(screen.getByRole("button", { name: "Monday" }).getAttribute("aria-pressed")).toBe("true")
-    expect(screen.getByTestId("repeat-summary").textContent).toBe("Weekly on Mon")
+    expect(howOften().textContent).toContain("Every month · 31st")
+    const custom = openCustom()
+    fireEvent.click(within(custom).getByRole("button", { name: "Weekly" }))
+    expect(
+      within(custom).getByRole("button", { name: "Monday" }).getAttribute("aria-pressed"),
+    ).toBe("true")
+    expect(within(custom).getByTestId("custom-summary").textContent).toBe("Weekly on Mon at 6 PM")
   })
 
-  it("keeps a schedule it cannot represent and shows it as a custom schedule", async () => {
+  it("keeps a schedule it cannot represent and shows it as Custom", async () => {
     await openEditForm("FREQ=WEEKLY;BYDAY=MO;BYSETPOS=1")
 
-    expect(screen.getByRole("note").textContent).toContain("Custom schedule")
-    expect(screen.getByTestId("repeat-summary").textContent).toBe("Custom schedule")
-    for (const name of ["One time", "Daily", "Weekly", "Monthly", "Yearly"]) {
-      expect(screen.getByRole("button", { name }).getAttribute("aria-pressed")).toBe("false")
-    }
-    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }))
+    expect(howOften().textContent).toContain("Custom")
+    const custom = openCustom()
+    expect(within(custom).getByText(/current schedule can't be shown here/)).toBeTruthy()
+    fireEvent.click(within(custom).getByRole("button", { name: "Back" }))
+    fireEvent.click(screen.getByRole("button", { name: "Done" }))
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
 
     expect(await submittedSchedule("PUT")).toMatchObject({
       recurrenceRule: "FREQ=WEEKLY;BYDAY=MO;BYSETPOS=1",

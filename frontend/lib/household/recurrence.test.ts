@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  describeChoreSchedule,
   buildRecurrenceRule,
   defaultRecurrence,
   describeMonths,
@@ -129,5 +130,28 @@ describe("recurrence summaries", () => {
     expect(describeMonths([11, 12])).toBe("Nov and Dec")
     expect(describeMonths([1, 3, 6])).toBe("Jan, Mar and Jun")
     expect(describeMonths([])).toBe("")
+  })
+})
+
+describe("describeChoreSchedule", () => {
+  it("summarises the new chore types in one line", () => {
+    expect(
+      describeChoreSchedule({ kind: "AFTER_COMPLETION", intervalCount: 3, intervalUnit: "DAY" }),
+    ).toBe("Every 3 days after it's done")
+    expect(
+      describeChoreSchedule({ kind: "AFTER_COMPLETION", intervalCount: 1, intervalUnit: "WEEK" }),
+    ).toBe("Every week after it's done")
+    expect(describeChoreSchedule({ kind: "AS_NEEDED", backstopDays: 2, dueTime: "20:00:00" })).toBe(
+      "When needed · at least every 2 days by 8:00 PM",
+    )
+    expect(describeChoreSchedule({ kind: "AS_NEEDED", backstopDays: 1, dueTime: null })).toBe(
+      "When needed · at least every day",
+    )
+    expect(describeChoreSchedule({ kind: "AS_NEEDED", backstopDays: null })).toBe("When needed")
+  })
+
+  it("keeps calendar chores on the existing summary", () => {
+    expect(describeChoreSchedule({ kind: "CALENDAR", recurrenceRule: "FREQ=DAILY" })).toBe("Daily")
+    expect(describeChoreSchedule({ recurrenceRule: "FREQ=ONCE" })).toBe("One time")
   })
 })

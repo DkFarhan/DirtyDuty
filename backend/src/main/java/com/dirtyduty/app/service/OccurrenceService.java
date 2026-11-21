@@ -13,7 +13,10 @@ import com.dirtyduty.app.entity.enums.AccountStatus;
 import com.dirtyduty.app.entity.enums.AssignmentStrategy;
 import com.dirtyduty.app.entity.enums.ChorePriority;
 import com.dirtyduty.app.entity.enums.HouseholdRole;
+import com.dirtyduty.app.entity.enums.IntervalUnit;
 import com.dirtyduty.app.entity.enums.MembershipStatus;
+import com.dirtyduty.app.entity.enums.ScheduleKind;
+import com.dirtyduty.app.exception.DuplicateResourceException;
 import com.dirtyduty.app.exception.HouseholdAccessDeniedException;
 import com.dirtyduty.app.exception.InvalidHouseholdException;
 import com.dirtyduty.app.exception.ResourceNotFoundException;
@@ -99,9 +102,15 @@ public class OccurrenceService {
     lockHousehold(schedule.getHousehold().getId());
     jdbc.queryForObject(
         "SELECT id FROM chore_schedules WHERE id=? FOR UPDATE", UUID.class, schedule.getId());
+    if (schedule.getKind() != ScheduleKind.CALENDAR) {
+      synchronizeOpenCopySchedule(schedule, updatePendingAssignees, userInitiatedEdit);
+      return;
+    }
     Household household = schedule.getHousehold();
     ZoneId zone = ZoneId.of(schedule.getTimezone());
     LocalDate today = LocalDate.now(zone);
+    // An open copy left from an "After it's done" or "When needed" kind ends with the kind change.
+    cancelOtherKindOpenOccurrences(schedule, today);
     LocalDate limit = today.plusDays(horizonDays);
     if (schedule.getEndsOn() != null && schedule.getEndsOn().plusDays(1).isBefore(limit)) {
       limit = schedule.getEndsOn().plusDays(1);
@@ -173,7 +182,8 @@ public class OccurrenceService {
           schedule.getDueTime() == null ? null : dueAt(date, schedule.getDueTime(), zone);
       UUID occurrenceId =
           jdbc.query(
-              "SELECT id FROM chore_assignments WHERE schedule_id=? AND planned_for=?",
+              "SELECT id FROM chore_assignments WHERE schedule_id=? AND planned_for=? "
+                  + "AND kind_snapshot='CALENDAR'",
               rs -> rs.next() ? rs.getObject(1, UUID.class) : null,
               schedule.getId(),
               date);
@@ -188,7 +198,8 @@ public class OccurrenceService {
                              scheduled_for, planned_for, due_at, status, title_snapshot,
                              priority_snapshot, difficulty_snapshot, estimated_minutes_snapshot)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?)
-                        ON CONFLICT (schedule_id, planned_for) WHERE schedule_id IS NOT NULL DO NOTHING
+                        ON CONFLICT (schedule_id, planned_for)
+                    WHERE schedule_id IS NOT NULL AND kind_snapshot='CALENDAR' DO NOTHING
                         """,
                 occurrenceId,
                 household.getId(),
@@ -323,9 +334,17 @@ public class OccurrenceService {
   @Transactional
   public void validateScheduleFrequencyChange(
       ChoreSchedule schedule, String previousRule, String updatedRule) {
-    if ("FREQ=ONCE".equals(updatedRule)
-        && previousRule != null
-        && !"FREQ=ONCE".equals(previousRule)) {
+    validateScheduleFrequencyChange(schedule, ScheduleKind.CALENDAR, previousRule, updatedRule);
+  }
+
+  /** Rejects turning a chore with history into a one-time chore, whatever kind it was. */
+  @Transactional
+  public void validateScheduleFrequencyChange(
+      ChoreSchedule schedule, ScheduleKind previousKind, String previousRule, String updatedRule) {
+    boolean wasRepeating =
+        previousKind != ScheduleKind.CALENDAR
+            || (previousRule != null && !"FREQ=ONCE".equals(previousRule));
+    if ("FREQ=ONCE".equals(updatedRule) && schedule.getId() != null && wasRepeating) {
       boolean hasAssignmentHistory =
           jdbc.queryForObject(
               "SELECT EXISTS(SELECT 1 FROM chore_assignments WHERE schedule_id=?)",
@@ -354,7 +373,7 @@ public class OccurrenceService {
             """
                 SELECT id, scheduled_for, due_at, status
                 FROM chore_assignments
-                WHERE schedule_id=? AND household_id=?
+                WHERE schedule_id=? AND household_id=? AND kind_snapshot='CALENDAR'
                 ORDER BY scheduled_for, created_at, id
                 """,
             (rs, row) ->
@@ -525,7 +544,8 @@ public class OccurrenceService {
                      scheduled_for, planned_for, due_at, status, title_snapshot,
                      priority_snapshot, difficulty_snapshot, estimated_minutes_snapshot)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?)
-                ON CONFLICT (schedule_id, planned_for) WHERE schedule_id IS NOT NULL DO NOTHING
+                ON CONFLICT (schedule_id, planned_for)
+                    WHERE schedule_id IS NOT NULL AND kind_snapshot='CALENDAR' DO NOTHING
                 """,
             occurrenceId,
             household.getId(),
@@ -870,7 +890,13 @@ public class OccurrenceService {
       if (inserted == 1) {
         Map<String, String> variables = new LinkedHashMap<>();
         variables.put("chore_name", schedule.getChore().getTitle());
-        if (schedule.getAssignmentStrategy() == AssignmentStrategy.FIXED) {
+        if (schedule.getKind() == ScheduleKind.AS_NEEDED) {
+          variables.put("notification_title", "New shared job");
+          variables.put(
+              "notification_message",
+              schedule.getChore().getTitle()
+                  + " is now a shared household job. We'll let you know when it's your turn and it needs doing.");
+        } else if (schedule.getAssignmentStrategy() == AssignmentStrategy.FIXED) {
           variables.put("notification_title", fixedRecurringAnnouncementTitle(schedule));
           variables.put(
               "notification_message",
@@ -898,6 +924,9 @@ public class OccurrenceService {
   }
 
   private String fixedRecurringAnnouncementTitle(ChoreSchedule schedule) {
+    if (schedule.getKind() != ScheduleKind.CALENDAR) {
+      return "New repeating chore assigned";
+    }
     RecurrenceRule rule = RecurrenceRule.parse(schedule.getRecurrenceRule());
     if (rule.interval() == 1 && rule.frequency() == RecurrenceRule.Frequency.DAILY) {
       return "New daily chore assigned";
@@ -908,29 +937,608 @@ public class OccurrenceService {
     return "New recurring chore assigned";
   }
 
+  // ---- "After it's done" and "When needed": one open copy ------------------------------------
+  //
+  // An AFTER_COMPLETION or AS_NEEDED schedule has exactly one open occurrence (PENDING or
+  // SUBMITTED) while it is active, enforced by ux_schedule_single_open_occurrence. Nothing is
+  // generated ahead: completing (or, for AFTER_COMPLETION, skipping) the open one creates the next
+  // in the same transaction. Its planned day is the day it was done, in the schedule's time zone,
+  // plus the interval (or the backstop days); its deadline is that day at the due time, or 23:59
+  // local when no due time is set. A "When needed" chore with the backstop off has no deadline and
+  // so no reminders. Generation (on read, hourly, and on edits) only repairs a missing open copy
+  // and keeps the open one in step with the settings. The day the plan was counted from is kept in
+  // the row's metadata ("basedOn") so a settings edit can re-plan from the last completion.
+
+  /** Deadline used when an open-copy chore has no due time: the end of its day. */
+  static final java.time.LocalTime END_OF_DAY = java.time.LocalTime.of(23, 59);
+
+  static final String ALREADY_DONE_MESSAGE_PREFIX = "Already done by ";
+  static final java.time.Duration FLAG_REPEAT_WINDOW = java.time.Duration.ofHours(2);
+
+  /** Deadline of an open-copy occurrence planned for {@code day}. */
+  static OffsetDateTime openCopyDeadline(LocalDate day, java.time.LocalTime dueTime, ZoneId zone) {
+    return dueAt(day, dueTime == null ? END_OF_DAY : dueTime, zone);
+  }
+
+  private record OpenCopy(
+      UUID id,
+      String status,
+      LocalDate plannedFor,
+      OffsetDateTime dueAt,
+      boolean dateOverridden,
+      boolean assigneesOverridden,
+      OffsetDateTime flaggedAt,
+      LocalDate basedOn) {}
+
+  private record Plan(LocalDate day, OffsetDateTime dueAt, LocalDate basedOn) {}
+
+  private boolean scheduleEnabled(ChoreSchedule schedule) {
+    return schedule.isActive()
+        && schedule.getChore().isActive()
+        && schedule.getChore().getArchivedAt() == null;
+  }
+
+  private void synchronizeOpenCopySchedule(
+      ChoreSchedule schedule, boolean updatePendingAssignees, boolean userInitiatedEdit) {
+    ZoneId zone = ZoneId.of(schedule.getTimezone());
+    LocalDate today = LocalDate.now(zone);
+    cancelOtherKindOpenOccurrences(schedule, today);
+    OpenCopy open = lockOpenCopy(schedule);
+    if (!scheduleEnabled(schedule)) {
+      // Pause or archive: the open copy goes with its pending reminders and any flag.
+      if (open != null && "PENDING".equals(open.status())) {
+        jdbc.update(
+            """
+                UPDATE chore_assignments
+                SET status='CANCELLED', flagged_at=NULL, flagged_by_user_id=NULL, updated_at=NOW()
+                WHERE id=? AND status='PENDING'
+                """,
+            open.id());
+        cancelPendingOccurrenceReminders(open.id());
+      }
+      return;
+    }
+    if (open == null) {
+      // A user action (create, edit, activate) starts fresh; background generation repairs a
+      // copy lost to a member exit from where the series was.
+      Plan plan = userInitiatedEdit ? freshPlan(schedule, today) : repairPlan(schedule, today);
+      createOpenCopy(schedule, plan, null, null);
+      publishNewRecurringAssigneeAnnouncements(schedule, today);
+      return;
+    }
+    if (!"PENDING".equals(open.status())) {
+      return;
+    }
+    if (userInitiatedEdit) {
+      replanOpenCopy(schedule, open, today);
+    }
+    List<UUID> current = currentAssignees(open.id());
+    List<UUID> participants = activeParticipants(schedule);
+    boolean holderGone =
+        current.isEmpty()
+            || activeMembersOnly(schedule.getHousehold().getId(), current).size() != current.size();
+    boolean keepOverride = open.assigneesOverridden() && participants.containsAll(current);
+    if (holderGone || (updatePendingAssignees && !keepOverride)) {
+      List<UUID> turn = nextTurn(schedule);
+      if (!turn.isEmpty() && !Set.copyOf(turn).equals(Set.copyOf(current))) {
+        setOpenCopyAssignees(schedule, open.id(), current, turn, null);
+      }
+    }
+    publishNewRecurringAssigneeAnnouncements(schedule, today);
+  }
+
+  /** The open copy of the schedule's current kind, locked. */
+  private OpenCopy lockOpenCopy(ChoreSchedule schedule) {
+    List<OpenCopy> rows =
+        jdbc.query(
+            """
+                SELECT id, status, planned_for, due_at, date_overridden, assignees_overridden,
+                       flagged_at, metadata->>'basedOn' based_on
+                FROM chore_assignments
+                WHERE schedule_id=? AND kind_snapshot=? AND status IN ('PENDING','SUBMITTED')
+                ORDER BY created_at DESC, id
+                FOR UPDATE
+                """,
+            (rs, row) ->
+                new OpenCopy(
+                    rs.getObject("id", UUID.class),
+                    rs.getString("status"),
+                    rs.getObject("planned_for", LocalDate.class),
+                    rs.getObject("due_at", OffsetDateTime.class),
+                    rs.getBoolean("date_overridden"),
+                    rs.getBoolean("assignees_overridden"),
+                    rs.getObject("flagged_at", OffsetDateTime.class),
+                    rs.getString("based_on") == null
+                        ? null
+                        : LocalDate.parse(rs.getString("based_on"))),
+            schedule.getId(),
+            schedule.getKind().name());
+    return rows.isEmpty() ? null : rows.getFirst();
+  }
+
+  /**
+   * A kind change keeps history and ends what was still to do under the old kind: occurrences of
+   * another kind planned from today on (the usual series-edit rule), and any open copy of an
+   * open-copy kind whatever its date, since that copy was the whole series.
+   */
+  private void cancelOtherKindOpenOccurrences(ChoreSchedule schedule, LocalDate today) {
+    List<UUID> stale =
+        jdbc.queryForList(
+            """
+                SELECT id FROM chore_assignments
+                WHERE schedule_id=? AND kind_snapshot<>? AND status='PENDING'
+                  AND (planned_for>=? OR kind_snapshot<>'CALENDAR')
+                """,
+            UUID.class,
+            schedule.getId(),
+            schedule.getKind().name(),
+            today);
+    for (UUID id : stale) {
+      jdbc.update(
+          """
+              UPDATE chore_assignments
+              SET status='CANCELLED', flagged_at=NULL, flagged_by_user_id=NULL, updated_at=NOW()
+              WHERE id=? AND status='PENDING'
+              """,
+          id);
+      cancelPendingOccurrenceReminders(id);
+    }
+  }
+
+  /**
+   * Plan for an open copy counted from {@code basedOn}, the day the previous one was done or
+   * skipped. Without one: the first due date for AFTER_COMPLETION, and today for AS_NEEDED.
+   */
+  private Plan planFrom(ChoreSchedule schedule, LocalDate basedOn, LocalDate today) {
+    ZoneId zone = ZoneId.of(schedule.getTimezone());
+    if (schedule.getKind() == ScheduleKind.AFTER_COMPLETION) {
+      int count = schedule.getIntervalCount() == null ? 1 : schedule.getIntervalCount();
+      LocalDate day =
+          basedOn == null
+              ? schedule.getStartsOn()
+              : schedule.getIntervalUnit() == IntervalUnit.WEEK
+                  ? basedOn.plusWeeks(count)
+                  : basedOn.plusDays(count);
+      return new Plan(day, openCopyDeadline(day, schedule.getDueTime(), zone), basedOn);
+    }
+    LocalDate from = basedOn == null ? today : basedOn;
+    if (schedule.getBackstopDays() == null) {
+      return new Plan(from, null, from);
+    }
+    LocalDate day = from.plusDays(schedule.getBackstopDays());
+    return new Plan(day, openCopyDeadline(day, schedule.getDueTime(), zone), from);
+  }
+
+  /** A fresh start (create, kind change, activation): never due before today. */
+  private Plan freshPlan(ChoreSchedule schedule, LocalDate today) {
+    if (schedule.getKind() == ScheduleKind.AFTER_COMPLETION
+        && schedule.getStartsOn().isBefore(today)) {
+      ZoneId zone = ZoneId.of(schedule.getTimezone());
+      return new Plan(today, openCopyDeadline(today, schedule.getDueTime(), zone), null);
+    }
+    return planFrom(schedule, null, today);
+  }
+
+  /** Background repair: continue from the latest occurrence of the current kind. */
+  private Plan repairPlan(ChoreSchedule schedule, LocalDate today) {
+    ZoneId zone = ZoneId.of(schedule.getTimezone());
+    List<Map<String, Object>> latest =
+        jdbc.queryForList(
+            """
+                SELECT a.status, a.metadata->>'basedOn' based_on,
+                       (a.updated_at AT TIME ZONE ?)::date updated_on,
+                       (SELECT (MAX(c.completed_at) AT TIME ZONE ?)::date
+                        FROM chore_completions c WHERE c.assignment_id=a.id) done_on
+                FROM chore_assignments a
+                WHERE a.schedule_id=? AND a.kind_snapshot=?
+                  AND a.status IN ('COMPLETED','SKIPPED','CANCELLED')
+                ORDER BY a.created_at DESC, a.id
+                LIMIT 1
+                """,
+            zone.getId(),
+            zone.getId(),
+            schedule.getId(),
+            schedule.getKind().name());
+    if (latest.isEmpty()) {
+      return freshPlan(schedule, today);
+    }
+    Map<String, Object> row = latest.getFirst();
+    String status = (String) row.get("status");
+    LocalDate basedOn =
+        switch (status) {
+          case "COMPLETED" ->
+              row.get("done_on") == null
+                  ? toLocalDate(row.get("updated_on"))
+                  : toLocalDate(row.get("done_on"));
+          case "SKIPPED" -> toLocalDate(row.get("updated_on"));
+          default ->
+              row.get("based_on") == null ? null : LocalDate.parse((String) row.get("based_on"));
+        };
+    return planFrom(schedule, basedOn, today);
+  }
+
+  private static LocalDate toLocalDate(Object value) {
+    if (value instanceof java.sql.Date date) {
+      return date.toLocalDate();
+    }
+    return value instanceof LocalDate date ? date : null;
+  }
+
+  /**
+   * Keeps the open copy's deadline in step with the settings (interval, backstop, due time),
+   * counted from the same last completion. A move and a "Needs doing" flag are kept: the flag keeps
+   * whichever deadline is earlier.
+   */
+  private void replanOpenCopy(ChoreSchedule schedule, OpenCopy open, LocalDate today) {
+    if (open.dateOverridden() && open.flaggedAt() == null) {
+      return;
+    }
+    Plan plan = planFrom(schedule, open.basedOn(), today);
+    OffsetDateTime dueAt = plan.dueAt();
+    LocalDate day = plan.day();
+    if (open.flaggedAt() != null && (dueAt == null || open.flaggedAt().isBefore(dueAt))) {
+      dueAt = open.flaggedAt();
+      day = open.flaggedAt().atZoneSameInstant(ZoneId.of(schedule.getTimezone())).toLocalDate();
+    }
+    boolean dueChanged =
+        open.dueAt() == null ? dueAt != null : dueAt == null || !open.dueAt().isEqual(dueAt);
+    Chore chore = schedule.getChore();
+    jdbc.update(
+        """
+            UPDATE chore_assignments
+            SET planned_for=?, scheduled_for=?, due_at=?, title_snapshot=?, priority_snapshot=?,
+                difficulty_snapshot=?, estimated_minutes_snapshot=?, updated_at=NOW()
+            WHERE id=? AND status='PENDING'
+            """,
+        plan.day(),
+        day,
+        dueAt,
+        chore.getTitle(),
+        chore.getDefaultPriority().name(),
+        chore.getDifficulty(),
+        chore.getEstimatedMinutes(),
+        open.id());
+    if (dueChanged) {
+      // The scheduler plans reminders for the new deadline; delivered ones are never re-sent.
+      cancelPendingOccurrenceReminders(open.id());
+    }
+  }
+
+  /**
+   * Creates the open copy for {@code plan} with the turn from {@link #nextTurn}. A concurrent
+   * creator loses on the single-open index and nothing is inserted. {@code previousTurn} gets an
+   * in-app "your turn" line to whoever now has it, when it changed hands (never the actor).
+   */
+  private UUID createOpenCopy(
+      ChoreSchedule schedule, Plan plan, List<UUID> previousTurn, UUID actorId) {
+    List<UUID> turn = nextTurn(schedule);
+    if (turn.isEmpty()) {
+      log.warn(
+          "Schedule {} has no active participants; no open occurrence created", schedule.getId());
+      return null;
+    }
+    Chore chore = schedule.getChore();
+    Household household = schedule.getHousehold();
+    UUID occurrenceId = UUID.randomUUID();
+    int inserted =
+        jdbc.update(
+            """
+                INSERT INTO chore_assignments
+                    (id, household_id, chore_id, schedule_id, assigned_to_user_id,
+                     scheduled_for, planned_for, due_at, status, title_snapshot,
+                     priority_snapshot, difficulty_snapshot, estimated_minutes_snapshot,
+                     kind_snapshot, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?,
+                        CASE WHEN ?::text IS NULL THEN '{}'::jsonb
+                             ELSE jsonb_build_object('basedOn', ?::text) END)
+                ON CONFLICT (schedule_id)
+                    WHERE schedule_id IS NOT NULL AND kind_snapshot <> 'CALENDAR'
+                      AND status IN ('PENDING', 'SUBMITTED')
+                DO NOTHING
+                """,
+            occurrenceId,
+            household.getId(),
+            chore.getId(),
+            schedule.getId(),
+            turn.getFirst(),
+            plan.day(),
+            plan.day(),
+            plan.dueAt(),
+            chore.getTitle(),
+            chore.getDefaultPriority().name(),
+            chore.getDifficulty(),
+            chore.getEstimatedMinutes(),
+            schedule.getKind().name(),
+            plan.basedOn() == null ? null : plan.basedOn().toString(),
+            plan.basedOn() == null ? null : plan.basedOn().toString());
+    if (inserted == 0) {
+      return null;
+    }
+    insertAssignees(occurrenceId, household.getId(), turn);
+    if (previousTurn != null && !Set.copyOf(previousTurn).equals(Set.copyOf(turn))) {
+      announceTurn(household.getId(), occurrenceId, chore.getTitle(), actorId, turn);
+    }
+    return occurrenceId;
+  }
+
+  /** Gives the open copy to {@code turn}; removed people stop getting its reminders. */
+  private void setOpenCopyAssignees(
+      ChoreSchedule schedule,
+      UUID occurrenceId,
+      List<UUID> previous,
+      List<UUID> turn,
+      UUID actorId) {
+    jdbc.update("DELETE FROM chore_assignment_assignees WHERE assignment_id=?", occurrenceId);
+    jdbc.update(
+        "UPDATE chore_assignments SET assigned_to_user_id=?, assignees_overridden=FALSE, "
+            + "updated_at=NOW() WHERE id=? AND status='PENDING'",
+        turn.getFirst(),
+        occurrenceId);
+    insertAssignees(occurrenceId, schedule.getHousehold().getId(), turn);
+    cancelPendingRemindersFor(
+        occurrenceId, previous.stream().filter(userId -> !turn.contains(userId)).toList());
+    announceTurn(
+        schedule.getHousehold().getId(),
+        occurrenceId,
+        schedule.getChore().getTitle(),
+        actorId,
+        turn.stream().filter(userId -> !previous.contains(userId)).toList());
+  }
+
+  /**
+   * An in-app line telling people it is now their turn. Turn changes on these kinds never send a
+   * CHORE_ASSIGNED push; CHORE_TURN is in-app only (see WebPushNotificationProvider).
+   */
+  private void announceTurn(
+      UUID householdId, UUID occurrenceId, String title, UUID actorId, List<UUID> recipients) {
+    publishPerRecipient(
+        "CHORE_TURN",
+        actorId,
+        householdId,
+        occurrenceId,
+        Map.of(
+            "chore_name",
+            title,
+            "notification_title",
+            "Your turn",
+            "notification_message",
+            "It's your turn for " + title + "."),
+        recipients.stream().filter(userId -> !userId.equals(actorId)).toList());
+  }
+
+  /** Configured participants who are still active members, in rotation order. */
+  private List<UUID> activeParticipants(ChoreSchedule schedule) {
+    return activeMembersOnly(schedule.getHousehold().getId(), participantIds(schedule));
+  }
+
+  /**
+   * Whose turn the next open copy is. FIXED: the fixed person. RANDOM: anyone in the pool. Rotate:
+   * the participant with the fewest completions of this chore (plus their baseline offset), ties
+   * broken by rotation order. Credit goes to whoever completed, so covering for someone leaves the
+   * turn with them.
+   */
+  List<UUID> nextTurn(ChoreSchedule schedule) {
+    List<UUID> participants = activeParticipants(schedule);
+    if (participants.isEmpty()) {
+      return List.of();
+    }
+    if (schedule.getAssignmentStrategy() == AssignmentStrategy.FIXED) {
+      UUID fixed = schedule.getFixedAssignee() == null ? null : schedule.getFixedAssignee().getId();
+      return List.of(participants.contains(fixed) ? fixed : participants.getFirst());
+    }
+    if (schedule.getAssignmentStrategy() == AssignmentStrategy.RANDOM) {
+      return List.of(participants.get(RANDOM.nextInt(participants.size())));
+    }
+    Map<UUID, Integer> counts = completionCounts(schedule.getId());
+    Map<UUID, Integer> offsets = turnOffsets(schedule.getStrategyConfig());
+    return List.of(pickTurn(participants, counts, offsets));
+  }
+
+  /** Fewest completions plus offset; the earlier participant in rotation order wins a tie. */
+  static UUID pickTurn(
+      List<UUID> participants, Map<UUID, Integer> counts, Map<UUID, Integer> offsets) {
+    UUID best = null;
+    int bestScore = Integer.MAX_VALUE;
+    for (UUID participant : participants) {
+      int score = counts.getOrDefault(participant, 0) + offsets.getOrDefault(participant, 0);
+      if (score < bestScore) {
+        best = participant;
+        bestScore = score;
+      }
+    }
+    return best;
+  }
+
+  /** Completions of this schedule's occurrences, credited to whoever completed each one. */
+  private Map<UUID, Integer> completionCounts(UUID scheduleId) {
+    Map<UUID, Integer> counts = new java.util.HashMap<>();
+    if (scheduleId == null) {
+      return counts;
+    }
+    jdbc.query(
+        """
+            SELECT last.completed_by_user_id, COUNT(*) n
+            FROM chore_assignments a
+            JOIN LATERAL (SELECT completed_by_user_id FROM chore_completions c
+                          WHERE c.assignment_id=a.id
+                          ORDER BY c.completed_at DESC, c.attempt_number DESC LIMIT 1) last ON TRUE
+            WHERE a.schedule_id=? AND a.status='COMPLETED'
+            GROUP BY last.completed_by_user_id
+            """,
+        rs -> {
+          counts.put(rs.getObject(1, UUID.class), rs.getInt(2));
+        },
+        scheduleId);
+    return counts;
+  }
+
+  static final String TURN_OFFSETS = "turnOffsets";
+
+  static Map<UUID, Integer> turnOffsets(Map<String, Object> config) {
+    Map<UUID, Integer> offsets = new java.util.HashMap<>();
+    Object value = config == null ? null : config.get(TURN_OFFSETS);
+    if (value instanceof Map<?, ?> map) {
+      map.forEach(
+          (key, offset) -> {
+            if (offset instanceof Number number) {
+              try {
+                offsets.put(UUID.fromString(String.valueOf(key)), number.intValue());
+              } catch (IllegalArgumentException ignored) {
+                // A malformed key is ignored; the person simply has no offset.
+              }
+            }
+          });
+    }
+    return offsets;
+  }
+
+  /**
+   * Baseline offsets for the rotation after an edit, stored in strategy_config as {@value
+   * #TURN_OFFSETS}: {"userId": offset}. Someone who joins the rotation later starts level with the
+   * current lowest (completions plus offset) of the people already in it, so they do not get a
+   * burst of turns. On a fresh start (new chore or kind change) everyone starts level at zero.
+   * People who leave are dropped. Existing people keep their offsets.
+   */
+  @Transactional(readOnly = true)
+  public Map<String, Integer> rebaseTurnOffsets(
+      ChoreSchedule schedule, List<UUID> participants, boolean freshStart) {
+    Map<UUID, Integer> counts = completionCounts(schedule.getId());
+    Map<UUID, Integer> previous = freshStart ? Map.of() : turnOffsets(schedule.getStrategyConfig());
+    List<UUID> previousParticipants = freshStart ? List.of() : participantIds(schedule);
+    List<UUID> staying = participants.stream().filter(previousParticipants::contains).toList();
+    int floor =
+        staying.stream()
+            .mapToInt(userId -> counts.getOrDefault(userId, 0) + previous.getOrDefault(userId, 0))
+            .min()
+            .orElse(0);
+    Map<String, Integer> result = new LinkedHashMap<>();
+    for (UUID userId : participants) {
+      int offset =
+          staying.contains(userId)
+              ? previous.getOrDefault(userId, 0)
+              : floor - counts.getOrDefault(userId, 0);
+      result.put(userId.toString(), offset);
+    }
+    return result;
+  }
+
+  /** Creates the next open copy after the current one was completed or skipped on {@code day}. */
+  private void continueOpenCopySeries(
+      ChoreSchedule schedule, LocalDate day, List<UUID> previousTurn, UUID actorId) {
+    if (schedule == null || !scheduleEnabled(schedule)) {
+      return;
+    }
+    LocalDate today = LocalDate.now(ZoneId.of(schedule.getTimezone()));
+    createOpenCopy(schedule, planFrom(schedule, day, today), previousTurn, actorId);
+  }
+
+  /**
+   * "Needs doing" on a When-needed chore's open occurrence: any active member may press it. The
+   * person whose turn it is gets an immediate notification (in-app and push, by their preferences),
+   * and the deadline is pulled to now when that is earlier, so the usual overdue reminders follow.
+   * Pressing again within two hours changes nothing.
+   */
+  @Transactional
+  public AssignmentResponse flag(
+      UUID householdId, UUID assignmentId, Authentication authentication) {
+    ActionContext context = lockForAction(householdId, assignmentId, authentication);
+    LockedOccurrence occurrence = context.occurrence();
+    if (!"AS_NEEDED".equals(occurrence.kind())) {
+      throw new InvalidHouseholdException("Only a When needed chore can be flagged.");
+    }
+    if (!"PENDING".equals(occurrence.status()) && !"SUBMITTED".equals(occurrence.status())) {
+      throw new InvalidHouseholdException("This chore is already done.");
+    }
+    OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+    if (occurrence.flaggedAt() != null
+        && occurrence.flaggedAt().isAfter(now.minus(FLAG_REPEAT_WINDOW))) {
+      throw new DuplicateResourceException(
+          "Already flagged at "
+              + TIME_FORMAT.format(occurrence.flaggedAt().atZoneSameInstant(context.zone()))
+              + ".");
+    }
+    boolean pullForward = occurrence.dueAt() == null || now.isBefore(occurrence.dueAt());
+    jdbc.update(
+        """
+            UPDATE chore_assignments
+            SET flagged_at=?, flagged_by_user_id=?,
+                due_at=CASE WHEN ? THEN ? ELSE due_at END,
+                scheduled_for=CASE WHEN ? THEN ? ELSE scheduled_for END,
+                updated_at=NOW()
+            WHERE id=? AND status IN ('PENDING','SUBMITTED')
+            """,
+        now,
+        context.actorId(),
+        pullForward,
+        now,
+        pullForward,
+        context.today(),
+        occurrence.id());
+    recordAction(occurrence.id(), "FLAG", context.actorId());
+    if (pullForward) {
+      // Pending reminders for the old deadline go; the scheduler plans the overdue ones for the
+      // new deadline. Reminders already delivered are never sent again.
+      cancelPendingOccurrenceReminders(occurrence.id());
+    }
+    publishPerRecipient(
+        "CHORE_NEEDS_DOING",
+        context.actorId(),
+        householdId,
+        occurrence.id(),
+        Map.of(
+            "chore_name",
+            occurrence.title(),
+            "notification_title",
+            occurrence.title() + " needs doing",
+            "notification_message",
+            occurrence.title() + " needs doing. It's your turn."),
+        context.assignees().stream().filter(userId -> !userId.equals(context.actorId())).toList());
+    return assignmentResponse(occurrence.id(), context.actorId());
+  }
+
   @Transactional
   public List<AssignmentResponse> myChores(
       UUID householdId, String status, Authentication authentication) {
     HouseholdMembership actor = requireActiveMember(householdId, authentication);
     generateHousehold(householdId);
+    // Besides their own occurrences, everyone in a "When needed" rotation sees its open copy (so
+    // they can do it when it is someone else's turn). For the open-copy kinds, Completed lists
+    // what the viewer actually did: credit goes to whoever completed it.
     String predicate =
         switch (status == null ? "UPCOMING" : status) {
-          case "UPCOMING" -> "a.status IN ('PENDING','SUBMITTED')";
-          case "COMPLETED" -> "a.status='COMPLETED'";
+          case "UPCOMING" ->
+              """
+              a.status IN ('PENDING','SUBMITTED')
+              AND (EXISTS (SELECT 1 FROM chore_assignment_assignees aa
+                           WHERE aa.assignment_id=a.id AND aa.user_id=?)
+                   OR (a.kind_snapshot='AS_NEEDED' AND EXISTS (
+                           SELECT 1 FROM chore_schedules s
+                           WHERE s.id=a.schedule_id AND s.is_active
+                             AND jsonb_exists(s.strategy_config->'participantUserIds', ?::text))))
+              """;
+          case "COMPLETED" ->
+              """
+              a.status='COMPLETED'
+              AND ((a.kind_snapshot='CALENDAR'
+                    AND EXISTS (SELECT 1 FROM chore_assignment_assignees aa
+                                WHERE aa.assignment_id=a.id AND aa.user_id=?))
+                   OR EXISTS (SELECT 1 FROM chore_completions c
+                              WHERE c.assignment_id=a.id AND c.completed_by_user_id=?::uuid))
+              """;
           default -> throw new InvalidHouseholdException("Status must be UPCOMING or COMPLETED.");
         };
+    UUID viewerId = actor.getUser().getId();
     return jdbc.query(
         """
                 SELECT a.id FROM chore_assignments a
-                JOIN chore_assignment_assignees aa ON aa.assignment_id=a.id
-                WHERE a.household_id=? AND aa.user_id=? AND a.status <> 'CANCELLED'
-                  AND %s
+                WHERE a.household_id=? AND %s
                 ORDER BY a.scheduled_for, a.due_at NULLS LAST, a.id
                 """
             .formatted(predicate),
-        (rs, row) -> assignmentResponse(rs.getObject("id", UUID.class), actor.getUser().getId()),
+        (rs, row) -> assignmentResponse(rs.getObject("id", UUID.class), viewerId),
         householdId,
-        actor.getUser().getId());
+        viewerId,
+        viewerId.toString());
   }
 
   @Transactional
@@ -947,12 +1555,18 @@ public class OccurrenceService {
         assignmentList(householdId, actor.getUser().getId(), monday, nextMonday);
     List<AssignmentResponse> overdueAssignments =
         overdueAssignmentList(householdId, actor.getUser().getId());
+    List<AssignmentResponse> householdJobs = householdJobs(householdId, actor.getUser().getId());
+    // Week totals count by due day. An open "When needed" copy with no deadline does not count
+    // until it is done; it is then dated on the day it was done (see complete), so it counts as
+    // both assigned and completed and never lowers the percentage.
     long total =
         jdbc.queryForObject(
             """
                 SELECT COUNT(*) FROM chore_assignments
                 WHERE household_id=? AND scheduled_for>=? AND scheduled_for<?
                   AND status NOT IN ('CANCELLED','SKIPPED')
+                  AND NOT (kind_snapshot='AS_NEEDED' AND due_at IS NULL
+                           AND status IN ('PENDING','SUBMITTED'))
                 """,
             Long.class,
             householdId,
@@ -973,7 +1587,24 @@ public class OccurrenceService {
         new DashboardResponse.WeekSummary(completed, total, percentage),
         todayAssignments,
         weekAssignments,
-        overdueAssignments);
+        overdueAssignments,
+        householdJobs);
+  }
+
+  /** Open copies of the household's active "When needed" chores, for every member. */
+  private List<AssignmentResponse> householdJobs(UUID householdId, UUID viewerId) {
+    List<UUID> ids =
+        jdbc.queryForList(
+            """
+                SELECT a.id FROM chore_assignments a
+                JOIN chore_schedules s ON s.id=a.schedule_id AND s.kind='AS_NEEDED' AND s.is_active
+                WHERE a.household_id=? AND a.kind_snapshot='AS_NEEDED'
+                  AND a.status IN ('PENDING','SUBMITTED')
+                ORDER BY a.flagged_at IS NULL, a.due_at NULLS LAST, LOWER(a.title_snapshot), a.id
+                """,
+            UUID.class,
+            householdId);
+    return ids.stream().map(id -> assignmentResponse(id, viewerId)).toList();
   }
 
   @Transactional(readOnly = true)
@@ -1020,16 +1651,52 @@ public class OccurrenceService {
       UUID householdId, UUID assignmentId, Authentication authentication) {
     lockHousehold(householdId);
     HouseholdMembership actor = requireActiveMember(householdId, authentication);
-    List<String> rows =
+    // Lock order: household, schedule, occurrence (as in lockForAction).
+    List<UUID> scheduleIds =
         jdbc.query(
-            "SELECT status FROM chore_assignments WHERE id=? AND household_id=? FOR UPDATE",
-            (rs, row) -> rs.getString("status"),
+            "SELECT schedule_id FROM chore_assignments WHERE id=? AND household_id=?",
+            (rs, row) -> rs.getObject("schedule_id", UUID.class),
             assignmentId,
             householdId);
-    if (rows.isEmpty()) {
+    if (scheduleIds.isEmpty()) {
       throw new ResourceNotFoundException("Assignment was not found in this household.");
     }
-    String status = rows.getFirst();
+    ChoreSchedule schedule = null;
+    if (scheduleIds.getFirst() != null) {
+      schedule = scheduleRepository.findByIdForUpdate(scheduleIds.getFirst()).orElse(null);
+      if (schedule != null) {
+        entityManager.refresh(schedule, LockModeType.PESSIMISTIC_WRITE);
+      }
+    }
+    List<String[]> rows =
+        jdbc.query(
+            "SELECT status, kind_snapshot FROM chore_assignments "
+                + "WHERE id=? AND household_id=? FOR UPDATE",
+            (rs, row) -> new String[] {rs.getString("status"), rs.getString("kind_snapshot")},
+            assignmentId,
+            householdId);
+    String status = rows.getFirst()[0];
+    String kind = rows.getFirst()[1];
+    boolean openCopyKind = !"CALENDAR".equals(kind);
+    UUID actorId = actor.getUser().getId();
+    if (openCopyKind && "COMPLETED".equals(status)) {
+      // One completion wins; a double tap by the same person is answered with the result.
+      List<Map<String, Object>> done =
+          jdbc.queryForList(
+              """
+                  SELECT c.completed_by_user_id, u.display_name FROM chore_completions c
+                  JOIN users u ON u.id=c.completed_by_user_id
+                  WHERE c.assignment_id=? ORDER BY c.completed_at DESC LIMIT 1
+                  """,
+              assignmentId);
+      if (!done.isEmpty() && !actorId.equals(done.getFirst().get("completed_by_user_id"))) {
+        throw new DuplicateResourceException(
+            ALREADY_DONE_MESSAGE_PREFIX + done.getFirst().get("display_name") + ".");
+      }
+      return assignmentResponse(assignmentId, actorId);
+    }
+    boolean participant =
+        "AS_NEEDED".equals(kind) && schedule != null && participantIds(schedule).contains(actorId);
     Boolean assigned =
         jdbc.queryForObject(
             """
@@ -1040,10 +1707,13 @@ public class OccurrenceService {
             assignmentId,
             householdId,
             actor.getUser().getId());
-    if (!Boolean.TRUE.equals(assigned)) {
+    if (!Boolean.TRUE.equals(assigned) && !participant) {
       throw new HouseholdAccessDeniedException(
-          "Only an assigned household member may complete this chore.");
+          "AS_NEEDED".equals(kind)
+              ? "Only people in this chore's rotation can complete it."
+              : "Only an assigned household member may complete this chore.");
     }
+    List<UUID> previousTurn = currentAssignees(assignmentId);
     if (!"COMPLETED".equals(status)) {
       if (!"PENDING".equals(status) && !"SUBMITTED".equals(status)) {
         throw new InvalidHouseholdException("This assignment cannot be completed.");
@@ -1071,6 +1741,19 @@ public class OccurrenceService {
           assignmentId,
           householdId);
       cancelPendingNotifications(assignmentId);
+      if (openCopyKind && schedule != null) {
+        ZoneId zone = ZoneId.of(schedule.getTimezone());
+        LocalDate doneOn = now.atZoneSameInstant(zone).toLocalDate();
+        // A "When needed" copy without a deadline is dated on the day it was done (week totals).
+        jdbc.update(
+            "UPDATE chore_assignments SET scheduled_for=? WHERE id=? AND due_at IS NULL "
+                + "AND kind_snapshot='AS_NEEDED'",
+            doneOn,
+            assignmentId);
+        if (kind.equals(schedule.getKind().name())) {
+          continueOpenCopySeries(schedule, doneOn, previousTurn, actorId);
+        }
+      }
       String title =
           jdbc.queryForObject(
               "SELECT title_snapshot FROM chore_assignments WHERE id=? AND household_id=?",
@@ -1137,6 +1820,9 @@ public class OccurrenceService {
     if (!context.admin() && !context.assigned()) {
       throw new InvalidHouseholdException("You can only move chores that are assigned to you.");
     }
+    if ("AS_NEEDED".equals(occurrence.kind())) {
+      throw new InvalidHouseholdException("A When needed chore can't be moved.");
+    }
     requirePending(occurrence, "moved");
     if (date == null) {
       throw new InvalidHouseholdException("Choose a day to move this chore to.");
@@ -1155,7 +1841,7 @@ public class OccurrenceService {
       throw new InvalidHouseholdException(
           "You can move your chore up to 7 days before or after its original day.");
     }
-    if (dayTaken(context, date)) {
+    if (!"AFTER_COMPLETION".equals(occurrence.kind()) && dayTaken(context, date)) {
       throw new InvalidHouseholdException(OCCUPIED_DAY_MESSAGE);
     }
 
@@ -1267,6 +1953,9 @@ public class OccurrenceService {
     ActionContext context = lockForAction(householdId, assignmentId, authentication);
     requireAdmin(context, "skip");
     LockedOccurrence occurrence = context.occurrence();
+    if ("AS_NEEDED".equals(occurrence.kind())) {
+      throw new InvalidHouseholdException("A When needed chore can't be skipped.");
+    }
     requirePending(occurrence, "skipped");
     jdbc.update(
         "UPDATE chore_assignments SET status='SKIPPED', updated_at=NOW() "
@@ -1274,6 +1963,13 @@ public class OccurrenceService {
         occurrence.id());
     recordAction(occurrence.id(), "SKIP", context.actorId());
     cancelPendingOccurrenceReminders(occurrence.id());
+    if ("AFTER_COMPLETION".equals(occurrence.kind())
+        && context.schedule() != null
+        && context.schedule().getKind() == ScheduleKind.AFTER_COMPLETION) {
+      // The next one is counted from the day of the skip.
+      continueOpenCopySeries(
+          context.schedule(), context.today(), context.assignees(), context.actorId());
+    }
     String day = DAY_FORMAT.format(occurrence.scheduledFor());
     notifyAssignees(
         context,
@@ -1299,6 +1995,10 @@ public class OccurrenceService {
     LockedOccurrence occurrence = context.occurrence();
     if (!"SKIPPED".equals(occurrence.status())) {
       throw new InvalidHouseholdException("Only a skipped chore can be restored.");
+    }
+    if (!"CALENDAR".equals(occurrence.kind())) {
+      throw new InvalidHouseholdException(
+          "This chore has already moved on to its next one, so the skip can't be undone.");
     }
     if (occurrence.scheduledFor().isBefore(context.today())) {
       throw new InvalidHouseholdException("This day has passed, so the skip can't be undone.");
@@ -1348,6 +2048,11 @@ public class OccurrenceService {
       throw new InvalidHouseholdException(
           "Everyone you choose must be a current household member.");
     }
+    if ("AS_NEEDED".equals(occurrence.kind())
+        && context.schedule() != null
+        && !participantIds(context.schedule()).containsAll(chosen)) {
+      throw new InvalidHouseholdException("Choose someone in this chore's rotation.");
+    }
     List<UUID> previous = context.assignees();
     if (Set.copyOf(previous).equals(Set.copyOf(chosen))) {
       return assignmentResponse(occurrence.id(), context.actorId());
@@ -1368,6 +2073,16 @@ public class OccurrenceService {
     // Removed people stop getting reminders now; the scheduler plans the new people's reminders.
     cancelPendingRemindersFor(
         occurrence.id(), previous.stream().filter(userId -> !chosen.contains(userId)).toList());
+    if (!"CALENDAR".equals(occurrence.kind())) {
+      // A turn change: an in-app line only, and nobody's completion count changes.
+      announceTurn(
+          householdId,
+          occurrence.id(),
+          occurrence.title(),
+          context.actorId(),
+          chosen.stream().filter(userId -> !previous.contains(userId)).toList());
+      return assignmentResponse(occurrence.id(), context.actorId());
+    }
     announceOccurrenceAssignment(
         householdId,
         occurrence.id(),
@@ -1521,7 +2236,7 @@ public class OccurrenceService {
         jdbc.queryForObject(
             """
                 SELECT id, status, scheduled_for, planned_for, due_at, title_snapshot,
-                       metadata->>'movedFrom' moved_from
+                       metadata->>'movedFrom' moved_from, kind_snapshot, flagged_at
                 FROM chore_assignments WHERE id=? AND household_id=? FOR UPDATE
                 """,
             (rs, row) ->
@@ -1534,7 +2249,9 @@ public class OccurrenceService {
                     rs.getString("title_snapshot"),
                     rs.getString("moved_from") == null
                         ? null
-                        : LocalDate.parse(rs.getString("moved_from"))),
+                        : LocalDate.parse(rs.getString("moved_from")),
+                    rs.getString("kind_snapshot"),
+                    rs.getObject("flagged_at", OffsetDateTime.class)),
             assignmentId,
             householdId);
     UUID actorId = actor.getUser().getId();
@@ -1722,7 +2439,9 @@ public class OccurrenceService {
       LocalDate plannedFor,
       OffsetDateTime dueAt,
       String title,
-      LocalDate movedFrom) {}
+      LocalDate movedFrom,
+      String kind,
+      OffsetDateTime flaggedAt) {}
 
   private record ActionContext(
       UUID actorId,
@@ -1769,6 +2488,11 @@ public class OccurrenceService {
   }
 
   private static boolean hasSupportedRule(ChoreSchedule schedule) {
+    if (schedule.getKind() != ScheduleKind.CALENDAR) {
+      // "After it's done" and "When needed" have no rule; their settings are checked by the
+      // database (ck_schedule_kind_settings).
+      return true;
+    }
     try {
       RecurrenceRule.parse(schedule.getRecurrenceRule());
       return true;
@@ -1799,7 +2523,7 @@ public class OccurrenceService {
             """
                 SELECT a.id FROM chore_assignments a
                 WHERE a.household_id=? AND a.scheduled_for>=? AND a.scheduled_for<?
-                  AND a.status<>'CANCELLED'
+                  AND a.status<>'CANCELLED' AND a.kind_snapshot<>'AS_NEEDED'
                 ORDER BY a.scheduled_for, a.due_at NULLS LAST, a.id
                 """,
             (rs, row) -> rs.getObject("id", UUID.class),
@@ -1865,7 +2589,14 @@ public class OccurrenceService {
                        s.recurrence_rule='FREQ=ONCE' one_time, s.strategy_config->'peopleNeeded'
                            people_needed,
                        (NOW() AT TIME ZONE h.timezone)::date household_today,
-                       vm.role viewer_role
+                       vm.role viewer_role,
+                       a.kind_snapshot, a.flagged_at, a.flagged_by_user_id,
+                       fu.display_name flagged_by, s.interval_count, s.interval_unit,
+                       s.backstop_days, s.due_time schedule_due_time,
+                       COALESCE(jsonb_exists(s.strategy_config->'participantUserIds', ?::text), FALSE)
+                           viewer_participant,
+                       ld.completed_at last_done_at, ld.completed_by_user_id last_done_by_id,
+                       ld.display_name last_done_by
                 FROM chore_assignments a
                 JOIN chores ch ON ch.id=a.chore_id
                 JOIN households h ON h.id=a.household_id
@@ -1877,9 +2608,22 @@ public class OccurrenceService {
                                    FROM chore_completions WHERE assignment_id=a.id
                                    ORDER BY completed_at DESC LIMIT 1) cc ON TRUE
                 LEFT JOIN users cu ON cu.id=cc.completed_by_user_id
+                LEFT JOIN users fu ON fu.id=a.flagged_by_user_id
+                LEFT JOIN LATERAL (
+                    SELECT c2.completed_at, c2.completed_by_user_id, u2.display_name
+                    FROM chore_assignments a2
+                    JOIN chore_completions c2 ON c2.assignment_id=a2.id
+                    JOIN users u2 ON u2.id=c2.completed_by_user_id
+                    WHERE a2.schedule_id=a.schedule_id AND a2.status='COMPLETED' AND a2.id<>a.id
+                      -- Before this one when it is done; any time while it is open (no NOW():
+                      -- completion times come from the app's clock, not the database's).
+                      AND (cc.completed_at IS NULL OR c2.completed_at <= cc.completed_at)
+                    ORDER BY c2.completed_at DESC LIMIT 1) ld
+                    ON a.kind_snapshot<>'CALENDAR' AND a.schedule_id IS NOT NULL
                 WHERE a.id=?
                 """,
         (rs, row) -> mapAssignment(rs, viewerId),
+        viewerId.toString(),
         viewerId,
         id);
   }
@@ -1904,7 +2648,16 @@ public class OccurrenceService {
     OffsetDateTime dueAt = rs.getObject("due_at", OffsetDateTime.class);
     String dbStatus = rs.getString("status");
     boolean pending = "PENDING".equals(dbStatus) || "SUBMITTED".equals(dbStatus);
-    boolean canComplete = pending && assignees.stream().anyMatch(a -> a.userId().equals(viewerId));
+    String kind = rs.getString("kind_snapshot");
+    boolean openCopyKind = !"CALENDAR".equals(kind);
+    boolean viewerMember = rs.getString("viewer_role") != null;
+    // "When needed": anyone in the rotation may do it, and credit goes to whoever does.
+    boolean canComplete =
+        pending
+            && (assignees.stream().anyMatch(a -> a.userId().equals(viewerId))
+                || ("AS_NEEDED".equals(kind)
+                    && viewerMember
+                    && rs.getBoolean("viewer_participant")));
     boolean overdue = pending && dueAt != null && dueAt.isBefore(OffsetDateTime.now());
     LocalDate scheduledFor = rs.getObject("scheduled_for", LocalDate.class);
     LocalDate original = originalDate(rs, scheduledFor);
@@ -1918,7 +2671,41 @@ public class OccurrenceService {
             rs.getObject("household_today", LocalDate.class),
             scheduledFor,
             original == null ? rs.getObject("planned_for", LocalDate.class) : original,
-            peopleNeeded(rs.getString("people_needed")));
+            peopleNeeded(rs.getString("people_needed")),
+            kind,
+            viewerMember);
+    AssignmentResponse.Person turn =
+        openCopyKind && pending && !assignees.isEmpty()
+            ? new AssignmentResponse.Person(
+                assignees.getFirst().userId(), assignees.getFirst().displayName())
+            : null;
+    AssignmentResponse.LastDone lastDone =
+        openCopyKind && rs.getObject("last_done_at") != null
+            ? new AssignmentResponse.LastDone(
+                rs.getObject("last_done_at", OffsetDateTime.class),
+                rs.getObject("last_done_by_id", UUID.class),
+                rs.getString("last_done_by"))
+            : null;
+    AssignmentResponse.Flag flag =
+        pending && rs.getObject("flagged_at") != null
+            ? new AssignmentResponse.Flag(
+                rs.getObject("flagged_at", OffsetDateTime.class),
+                rs.getObject("flagged_by_user_id", UUID.class),
+                rs.getString("flagged_by"))
+            : null;
+    java.sql.Time scheduleDueTime = rs.getTime("schedule_due_time");
+    AssignmentResponse.Repeat repeat =
+        openCopyKind
+            ? new AssignmentResponse.Repeat(
+                (Integer) rs.getObject("interval_count"),
+                rs.getString("interval_unit"),
+                (Integer) rs.getObject("backstop_days"),
+                scheduleDueTime == null
+                    ? null
+                    : scheduleDueTime
+                        .toLocalTime()
+                        .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")))
+            : null;
     return new AssignmentResponse(
         id,
         householdId,
@@ -1943,7 +2730,12 @@ public class OccurrenceService {
         original,
         rs.getBoolean("date_overridden"),
         rs.getBoolean("assignees_overridden"),
-        actions);
+        actions,
+        kind,
+        turn,
+        lastDone,
+        flag,
+        repeat);
   }
 
   /**
@@ -1952,6 +2744,10 @@ public class OccurrenceService {
    * due date, so the day before its first move is kept in metadata.
    */
   private static LocalDate originalDate(ResultSet rs, LocalDate scheduledFor) throws SQLException {
+    if ("AS_NEEDED".equals(rs.getString("kind_snapshot"))) {
+      // A When needed chore is never moved; a "Needs doing" flag brings its day forward.
+      return null;
+    }
     LocalDate original =
         rs.getBoolean("one_time")
             ? (rs.getString("moved_from") == null
@@ -1974,6 +2770,30 @@ public class OccurrenceService {
       LocalDate scheduledFor,
       LocalDate anchor,
       int peopleNeeded) {
+    return actionsFor(
+        status, admin, assigned, today, scheduledFor, anchor, peopleNeeded, "CALENDAR", true);
+  }
+
+  /**
+   * Per kind: AFTER_COMPLETION allows move, skip and reassign on the open copy, never unskip (the
+   * series has moved on). AS_NEEDED allows reassign (whose turn it is) and "Needs doing" only.
+   */
+  static AssignmentResponse.Actions actionsFor(
+      String status,
+      boolean admin,
+      boolean assigned,
+      LocalDate today,
+      LocalDate scheduledFor,
+      LocalDate anchor,
+      int peopleNeeded,
+      String kind,
+      boolean member) {
+    boolean open = "PENDING".equals(status) || "SUBMITTED".equals(status);
+    if ("AS_NEEDED".equals(kind)) {
+      return new AssignmentResponse.Actions(
+          false, false, false, "PENDING".equals(status) && admin, null, null, 1, open && member);
+    }
+    boolean calendar = !"AFTER_COMPLETION".equals(kind);
     boolean pending = "PENDING".equals(status);
     LocalDate earliest = null;
     LocalDate latest = null;
@@ -1994,11 +2814,12 @@ public class OccurrenceService {
     return new AssignmentResponse.Actions(
         canMove,
         pending && admin,
-        admin && "SKIPPED".equals(status) && !scheduledFor.isBefore(today),
+        calendar && admin && "SKIPPED".equals(status) && !scheduledFor.isBefore(today),
         pending && admin,
         earliest,
         latest,
-        peopleNeeded);
+        peopleNeeded,
+        false);
   }
 
   private static int peopleNeeded(String value) {

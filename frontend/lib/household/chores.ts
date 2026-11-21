@@ -2,6 +2,13 @@ import { api } from "@/lib/auth/api"
 
 export type ChorePriority = "LOW" | "NORMAL" | "HIGH" | "URGENT"
 export type AssignmentStrategy = "FIXED" | "ROUND_ROBIN" | "RANDOM"
+/**
+ * How a chore repeats. CALENDAR follows its recurrence rule (one-time chores included).
+ * AFTER_COMPLETION is due an interval after it was last done. AS_NEEDED is done by anyone in the
+ * rotation when needed, with an optional "at least every N days" deadline.
+ */
+export type ScheduleKind = "CALENDAR" | "AFTER_COMPLETION" | "AS_NEEDED"
+export type IntervalUnit = "DAY" | "WEEK"
 
 export type ChoreCategory = {
   id: string
@@ -26,7 +33,8 @@ export type ChoreManagementOptions = {
 }
 
 export type ChoreSchedule = {
-  recurrenceRule: string
+  /** Null for "After it's done" and "When needed" chores. */
+  recurrenceRule: string | null
   timezone: string
   startsOn: string
   endsOn: string | null
@@ -36,6 +44,12 @@ export type ChoreSchedule = {
   fixedAssigneeUserId: string | null
   participantUserIds: string[]
   active: boolean
+  /** Absent from older responses, which are always CALENDAR. */
+  kind?: ScheduleKind
+  intervalCount?: number | null
+  intervalUnit?: IntervalUnit | null
+  /** "Do at least every N days", or null when that deadline is off. */
+  backstopDays?: number | null
 }
 
 export type Chore = {
@@ -63,7 +77,7 @@ export type ChoreRequest = {
   difficulty: number
   estimatedMinutes: number | null
   requiresVerification: boolean
-  schedule: Omit<ChoreSchedule, "active">
+  schedule: Omit<ChoreSchedule, "active"> & { backstopEnabled?: boolean | null }
 }
 
 export type AssignmentDTO = {
@@ -92,6 +106,21 @@ export type AssignmentDTO = {
   reassigned?: boolean
   /** What the viewer may do with this occurrence, decided by the server. */
   actions?: OccurrenceActions
+  /** The chore's kind when this occurrence was created; absent means CALENDAR. */
+  kind?: ScheduleKind
+  /** Whose turn the open occurrence is ("After it's done" and "When needed"). */
+  turn?: { userId: string; displayName: string } | null
+  /** The latest completion before this one. */
+  lastDone?: { at: string; byUserId: string; byDisplayName: string } | null
+  /** "Needs doing" flag on an open "When needed" occurrence. */
+  flag?: { at: string; byUserId: string; byDisplayName: string } | null
+  repeat?: {
+    intervalCount: number | null
+    intervalUnit: IntervalUnit | null
+    backstopDays: number | null
+    /** "HH:mm" or null. */
+    dueTime: string | null
+  } | null
 }
 
 export type OccurrenceActions = {
@@ -104,6 +133,8 @@ export type OccurrenceActions = {
   /** Last day the viewer may move it to, or null for no limit. */
   moveLatest: string | null
   maxAssignees: number
+  /** "Needs doing": any member, on an open "When needed" occurrence. */
+  canFlag?: boolean
 }
 
 export type HouseholdDashboard = {
@@ -115,6 +146,8 @@ export type HouseholdDashboard = {
   today: AssignmentDTO[]
   thisWeek: AssignmentDTO[]
   overdue: AssignmentDTO[]
+  /** Open "When needed" chores, for every member. Absent from older responses. */
+  householdJobs?: AssignmentDTO[]
 }
 
 export { categoryIcon } from "./category-icons"
@@ -159,6 +192,10 @@ export const choreApi = {
   unskip: (householdId: string, assignmentId: string) =>
     api.post<AssignmentDTO>(
       `${householdPath(householdId)}/assignments/${encodeURIComponent(assignmentId)}/unskip`,
+    ),
+  flag: (householdId: string, assignmentId: string) =>
+    api.post<AssignmentDTO>(
+      `${householdPath(householdId)}/assignments/${encodeURIComponent(assignmentId)}/flag`,
     ),
   reassign: (householdId: string, assignmentId: string, userIds: string[]) =>
     api.put<AssignmentDTO>(

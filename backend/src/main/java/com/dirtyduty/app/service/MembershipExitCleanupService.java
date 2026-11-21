@@ -109,7 +109,8 @@ public class MembershipExitCleanupService {
                     SELECT a.schedule_id
                     FROM chore_assignments a
                     WHERE a.household_id=? AND a.schedule_id IS NOT NULL
-                      AND a.scheduled_for >= CURRENT_DATE AND a.status='PENDING'
+                      AND (a.scheduled_for >= CURRENT_DATE OR a.kind_snapshot <> 'CALENDAR')
+                      AND a.status='PENDING'
                       AND (
                         a.assigned_to_user_id=?
                         OR EXISTS (
@@ -303,6 +304,11 @@ public class MembershipExitCleanupService {
       List<UUID> remaining =
           remainingIds.stream().sorted(Comparator.comparing(UUID::toString)).toList();
       config.put("participantUserIds", configuredParticipants);
+      if (config.get("turnOffsets") instanceof Map<?, ?> offsets) {
+        Map<Object, Object> remainingOffsets = new LinkedHashMap<>(offsets);
+        remainingOffsets.remove(departingUserId.toString());
+        config.put("turnOffsets", remainingOffsets);
+      }
       schedule.setStrategyConfig(config);
 
       if (fixedStrategy) {
@@ -334,7 +340,9 @@ public class MembershipExitCleanupService {
             SELECT a.id
             FROM chore_assignments a
             WHERE a.household_id=?
-              AND a.scheduled_for >= CURRENT_DATE
+              -- An "After it's done" or "When needed" open copy is the live occurrence even when
+              -- overdue; the next generation pass repairs it if it ends up cancelled here.
+              AND (a.scheduled_for >= CURRENT_DATE OR a.kind_snapshot <> 'CALENDAR')
               AND a.status='PENDING'
               AND (
                 a.assigned_to_user_id=?

@@ -106,10 +106,24 @@ export function OccurrenceActionSheet({
   useEffect(() => {
     if (panel !== "reassign" || members) return
     let cancelled = false
-    choreApi
-      .options(householdId)
-      .then((options) => {
-        if (!cancelled) setMembers(options.activeMembers)
+    // A "When needed" chore's turn can only go to someone in its rotation, in rotation order.
+    const rotationOnly = assignment.kind === "AS_NEEDED"
+    Promise.all([
+      choreApi.options(householdId),
+      rotationOnly ? choreApi.get(householdId, assignment.choreId) : Promise.resolve(null),
+    ])
+      .then(([options, chore]) => {
+        if (cancelled) return
+        if (!rotationOnly) {
+          setMembers(options.activeMembers)
+          return
+        }
+        const rotation = chore?.schedule?.participantUserIds ?? []
+        setMembers(
+          rotation.flatMap((userId) =>
+            options.activeMembers.filter((member) => member.userId === userId),
+          ),
+        )
       })
       .catch((cause) => {
         if (!cancelled) {
@@ -121,7 +135,7 @@ export function OccurrenceActionSheet({
     return () => {
       cancelled = true
     }
-  }, [householdId, members, panel])
+  }, [assignment.choreId, assignment.kind, householdId, members, panel])
 
   if (!actions) return null
   const names = assignment.assignees
@@ -330,9 +344,11 @@ export function OccurrenceActionSheet({
         {panel === "reassign" && (
           <div>
             <p className={styles.hint}>
-              {maxPeople === 1
-                ? "Choose who does it on this day."
-                : `Choose up to ${maxPeople} people for this day.`}
+              {assignment.kind === "AS_NEEDED"
+                ? "Choose whose turn it is. Only people in this chore's rotation are listed."
+                : maxPeople === 1
+                  ? "Choose who does it on this day."
+                  : `Choose up to ${maxPeople} people for this day.`}
             </p>
             {membersError && (
               <p className={styles.error} role="alert">
@@ -342,7 +358,9 @@ export function OccurrenceActionSheet({
             {!members && !membersError && <p className={styles.hint}>Loading members…</p>}
             {members && (
               <div
-                aria-label="Household members"
+                aria-label={
+                  assignment.kind === "AS_NEEDED" ? "Rotation members" : "Household members"
+                }
                 className={styles.members}
                 role={maxPeople === 1 ? "radiogroup" : "group"}
               >

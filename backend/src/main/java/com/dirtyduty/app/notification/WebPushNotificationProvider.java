@@ -23,6 +23,11 @@ import org.springframework.stereotype.Component;
 public class WebPushNotificationProvider implements NotificationDeliveryProvider {
   private static final Logger logger = LoggerFactory.getLogger(WebPushNotificationProvider.class);
 
+  /**
+   * Turn changes on "After it's done" and "When needed" chores are an in-app line, never a push.
+   */
+  static final java.util.Set<String> IN_APP_ONLY_TYPES = java.util.Set.of("CHORE_TURN");
+
   private final JdbcTemplate jdbc;
   private final NotificationCooldownService cooldownService;
   private final WebPushClient webPushClient;
@@ -62,6 +67,9 @@ public class WebPushNotificationProvider implements NotificationDeliveryProvider
 
   @Override
   public void deliver(NotificationMessage notification, UUID eventId) {
+    if (IN_APP_ONLY_TYPES.contains(notification.type())) {
+      return;
+    }
     jdbc.update(
         """
                 INSERT INTO notification_deliveries (notification_id, channel, status)

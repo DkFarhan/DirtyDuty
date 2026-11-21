@@ -1202,3 +1202,21 @@
   color: var(--secondary-text);
   font-weight: 600;
 }
+
+/* "When needed" household jobs, for every member. */
+.jobsSection {
+  position: relative;
+  z-index: 1;
+  margin: 24px 25px 0;
+}
+
+.jobsList {
+  display: grid;
+  gap: 12px;
+  padding-block: 16px;
+}
+
+/* Inline action result under an Up next row. */
+.upcomingFeedback {
+  margin: 4px 0 8px;
+}

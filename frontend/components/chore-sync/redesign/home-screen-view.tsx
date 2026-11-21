@@ -1,6 +1,10 @@
 "use client"
 
-import type { CSSProperties } from "react"
+import { Fragment, type CSSProperties } from "react"
+import type { HouseholdJobViewModel } from "@/lib/household/household-jobs"
+import { HouseholdJobCard } from "../household-job-card"
+import type { CardFeedbackView, CardSurface } from "@/lib/household/card-feedback"
+import { CardFeedbackMessage } from "../card-feedback"
 import { OccurrenceMoreButton } from "../occurrence-action-sheet"
 import { BottomNav } from "../bottom-nav"
 import styles from "./home-screen-view.module.css"
@@ -25,6 +29,8 @@ export interface HomeChoreViewModel {
   overdue?: boolean
   canComplete?: boolean
   completing?: boolean
+  /** The result of the last action taken from this card, shown under it. */
+  feedback?: CardFeedbackView
 }
 
 export interface HomeUpcomingChoreViewModel {
@@ -35,6 +41,7 @@ export interface HomeUpcomingChoreViewModel {
   skipped?: boolean
   movedFrom?: string | null
   hasActions?: boolean
+  feedback?: CardFeedbackView
 }
 
 export interface HomeUpcomingGroupViewModel {
@@ -78,15 +85,23 @@ export interface HomeScreenViewModel {
   upcomingDateLabel: string
   upcomingChores: HomeUpcomingChoreViewModel[]
   upcomingGroups?: HomeUpcomingGroupViewModel[]
+  /** The household's "When needed" chores, for every member. Hidden when empty. */
+  householdJobs?: HouseholdJobViewModel[]
+  /** Jobs with a "Needs doing" request in flight. */
+  flaggingIds?: string[]
+  /** Jobs being marked done. */
+  completingJobIds?: string[]
 }
 
 export interface HomeScreenViewProps {
   theme: HomeVisualTheme
   viewModel: HomeScreenViewModel
   activeDestination: HomeNavigationDestination
-  onCompleteChore: (choreId: string) => void
+  onCompleteChore: (choreId: string, surface?: CardSurface) => void
   /** Opens the move, skip and reassign sheet for one occurrence. */
-  onOpenChoreActions?: (choreId: string) => void
+  onOpenChoreActions?: (choreId: string, surface?: CardSurface) => void
+  /** "Needs doing" on a household job. */
+  onFlagJob?: (choreId: string) => void
   onRetry: () => void
   onRetryNotificationCount?: () => void
   onPushAction?: () => void
@@ -105,12 +120,14 @@ function paddedCount(value: number) {
 
 function ChoreCard({
   chore,
+  theme,
   onComplete,
   onOpenActions,
   attention = false,
   today = false,
 }: {
   chore: HomeChoreViewModel
+  theme: HomeVisualTheme
   onComplete: (choreId: string) => void
   onOpenActions?: (choreId: string) => void
   attention?: boolean
@@ -134,54 +151,57 @@ function ChoreCard({
     .filter(Boolean)
     .join(" ")
   return (
-    <article className={cardClassName} data-chore-id={chore.id} data-occurrence-card={chore.id}>
-      {showBadge && <span className={styles.overdueBadge}>OVERDUE</span>}
-      <h3 className={styles.choreTitle}>{chore.title}</h3>
-      <p className={styles.choreMeta}>
-        {chore.category}
-        <span aria-hidden="true"> · </span>
-        {chore.scheduledLabel}
-        {chore.movedFrom && (
-          <>
-            <span aria-hidden="true"> · </span>
-            <span className={styles.movedHint}>{chore.movedFrom}</span>
-          </>
+    <>
+      <article className={cardClassName} data-chore-id={chore.id} data-occurrence-card={chore.id}>
+        {showBadge && <span className={styles.overdueBadge}>OVERDUE</span>}
+        <h3 className={styles.choreTitle}>{chore.title}</h3>
+        <p className={styles.choreMeta}>
+          {chore.category}
+          <span aria-hidden="true"> · </span>
+          {chore.scheduledLabel}
+          {chore.movedFrom && (
+            <>
+              <span aria-hidden="true"> · </span>
+              <span className={styles.movedHint}>{chore.movedFrom}</span>
+            </>
+          )}
+        </p>
+        {showActions && (
+          <OccurrenceMoreButton
+            className={styles.cardMoreButton}
+            onClick={() => onOpenActions?.(chore.id)}
+            title={chore.title}
+          />
         )}
-      </p>
-      {showActions && (
-        <OccurrenceMoreButton
-          className={styles.cardMoreButton}
-          onClick={() => onOpenActions?.(chore.id)}
-          title={chore.title}
-        />
-      )}
-      {chore.durationLabel && (
-        <p className={styles.duration}>
-          <span aria-hidden="true" className={styles.durationClock} />
-          {chore.durationLabel}
-        </p>
-      )}
-      <p className={styles.assignedTo}>Assigned to {chore.assignedTo}</p>
-      {chore.status === "COMPLETED" && (
-        <p className={styles.choreStatus}>
-          Completed{chore.completedBy ? ` by ${chore.completedBy}` : ""}
-        </p>
-      )}
-      {chore.status === "CANCELLED" && <p className={styles.choreStatus}>Cancelled</p>}
-      {chore.status === "SKIPPED" && <p className={styles.choreStatus}>Skipped</p>}
-      {canComplete && (
-        <button
-          aria-busy={chore.completing}
-          className={styles.completeButton}
-          disabled={chore.completing}
-          onClick={() => onComplete(chore.id)}
-          type="button"
-        >
-          {!chore.completing && <span aria-hidden="true" className={styles.completeIcon} />}
-          {chore.completing ? "Completing..." : "Mark complete"}
-        </button>
-      )}
-    </article>
+        {chore.durationLabel && (
+          <p className={styles.duration}>
+            <span aria-hidden="true" className={styles.durationClock} />
+            {chore.durationLabel}
+          </p>
+        )}
+        <p className={styles.assignedTo}>Assigned to {chore.assignedTo}</p>
+        {chore.status === "COMPLETED" && (
+          <p className={styles.choreStatus}>
+            Completed{chore.completedBy ? ` by ${chore.completedBy}` : ""}
+          </p>
+        )}
+        {chore.status === "CANCELLED" && <p className={styles.choreStatus}>Cancelled</p>}
+        {chore.status === "SKIPPED" && <p className={styles.choreStatus}>Skipped</p>}
+        {canComplete && (
+          <button
+            aria-busy={chore.completing}
+            className={styles.completeButton}
+            disabled={chore.completing}
+            onClick={() => onComplete(chore.id)}
+            type="button"
+          >
+            {!chore.completing && <span aria-hidden="true" className={styles.completeIcon} />}
+            {chore.completing ? "Completing..." : "Mark complete"}
+          </button>
+        )}
+      </article>
+      <CardFeedbackMessage feedback={chore.feedback} theme={theme} />
+    </>
   )
 }
 
@@ -212,6 +232,7 @@ export function HomeScreenView({
   activeDestination,
   onCompleteChore,
   onOpenChoreActions,
+  onFlagJob,
   onRetry,
   onRetryNotificationCount = onRetry,
   onPushAction = onRetry,
@@ -444,6 +465,7 @@ export function HomeScreenView({
                 <div className={styles.attentionList}>
                   {attentionChores.map((chore) => (
                     <ChoreCard
+                      theme={theme}
                       attention
                       chore={chore}
                       key={chore.id}
@@ -474,6 +496,7 @@ export function HomeScreenView({
                 <div className={styles.todayList}>
                   {viewModel.todayChores.map((chore) => (
                     <ChoreCard
+                      theme={theme}
                       chore={chore}
                       key={chore.id}
                       onComplete={onCompleteChore}
@@ -484,6 +507,29 @@ export function HomeScreenView({
                 </div>
               )}
             </section>
+
+            {(viewModel.householdJobs?.length ?? 0) > 0 && (
+              <section aria-labelledby="household-jobs-title" className={styles.jobsSection}>
+                <div className={styles.listSectionHeading}>
+                  <h2 id="household-jobs-title">Household jobs</h2>
+                  <span>WHEN NEEDED</span>
+                </div>
+                <div className={styles.jobsList}>
+                  {viewModel.householdJobs?.map((job) => (
+                    <HouseholdJobCard
+                      completing={viewModel.completingJobIds?.includes(job.id)}
+                      flagging={viewModel.flaggingIds?.includes(job.id)}
+                      job={job}
+                      key={job.id}
+                      onComplete={(id) => onCompleteChore(id, "job")}
+                      onFlag={onFlagJob}
+                      onOpenActions={onOpenChoreActions && ((id) => onOpenChoreActions(id, "job"))}
+                      theme={theme}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
 
             <section aria-labelledby="up-next-title" className={styles.upcomingSection}>
               <SectionHeading
@@ -500,44 +546,52 @@ export function HomeScreenView({
                     <div className={styles.upcomingList} key={group.dateLabel}>
                       <p className={styles.upcomingDate}>{group.dateLabel}</p>
                       {group.chores.map((chore, index) => (
-                        <article
-                          className={`${styles.upcomingItem} ${chore.skipped ? styles.skippedItem : ""}`}
-                          data-occurrence-card={chore.id}
-                          key={chore.id}
-                        >
-                          <span aria-hidden="true" className={styles.timelineStop}>
-                            <span className={styles.timelineStopCore} />
-                          </span>
-                          <div className={styles.upcomingCopy}>
-                            <h3>{chore.title}</h3>
-                            <p>
-                              {chore.category}
-                              {chore.skipped && (
-                                <>
-                                  <span aria-hidden="true"> · </span>
-                                  <span className={styles.skippedLabel}>Skipped</span>
-                                </>
-                              )}
-                              {chore.movedFrom && (
-                                <>
-                                  <span aria-hidden="true"> · </span>
-                                  <span className={styles.movedHint}>{chore.movedFrom}</span>
-                                </>
-                              )}
-                            </p>
-                          </div>
-                          <time className={styles.upcomingTime}>{chore.timeLabel}</time>
-                          {chore.hasActions && onOpenChoreActions && (
-                            <OccurrenceMoreButton
-                              className={styles.upcomingMoreButton}
-                              onClick={() => onOpenChoreActions(chore.id)}
-                              title={chore.title}
+                        <Fragment key={chore.id}>
+                          <article
+                            className={`${styles.upcomingItem} ${chore.skipped ? styles.skippedItem : ""}`}
+                            data-occurrence-card={chore.id}
+                          >
+                            <span aria-hidden="true" className={styles.timelineStop}>
+                              <span className={styles.timelineStopCore} />
+                            </span>
+                            <div className={styles.upcomingCopy}>
+                              <h3>{chore.title}</h3>
+                              <p>
+                                {chore.category}
+                                {chore.skipped && (
+                                  <>
+                                    <span aria-hidden="true"> · </span>
+                                    <span className={styles.skippedLabel}>Skipped</span>
+                                  </>
+                                )}
+                                {chore.movedFrom && (
+                                  <>
+                                    <span aria-hidden="true"> · </span>
+                                    <span className={styles.movedHint}>{chore.movedFrom}</span>
+                                  </>
+                                )}
+                              </p>
+                            </div>
+                            <time className={styles.upcomingTime}>{chore.timeLabel}</time>
+                            {chore.hasActions && onOpenChoreActions && (
+                              <OccurrenceMoreButton
+                                className={styles.upcomingMoreButton}
+                                onClick={() => onOpenChoreActions(chore.id)}
+                                title={chore.title}
+                              />
+                            )}
+                            {index < group.chores.length - 1 && (
+                              <span aria-hidden="true" className={styles.timelineDivider} />
+                            )}
+                          </article>
+                          {chore.feedback && (
+                            <CardFeedbackMessage
+                              className={styles.upcomingFeedback}
+                              feedback={chore.feedback}
+                              theme={theme}
                             />
                           )}
-                          {index < group.chores.length - 1 && (
-                            <span aria-hidden="true" className={styles.timelineDivider} />
-                          )}
-                        </article>
+                        </Fragment>
                       ))}
                     </div>
                   ))}

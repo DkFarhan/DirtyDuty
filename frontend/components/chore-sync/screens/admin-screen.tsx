@@ -14,7 +14,7 @@ import { useHouseholds } from "@/lib/household/household-context"
 import { householdChoreResource, useDataSync } from "@/lib/data-sync/data-sync-context"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { describeRecurrenceRule } from "@/lib/household/recurrence"
+import { describeChoreSchedule } from "@/lib/household/recurrence"
 import { useDialogFocus } from "../use-dialog-focus"
 import {
   HouseholdLiveDesignHeader,
@@ -325,14 +325,12 @@ export function AdminScreen({
                       : null
               const scheduleDescription = chore.schedule
                 ? [
-                    chore.schedule.recurrenceRule
-                      ? describeRecurrenceRule(
-                          chore.schedule.recurrenceRule,
-                          chore.schedule.startsOn,
-                          chore.schedule.endsOn,
-                        )
+                    chore.schedule.recurrenceRule ||
+                    (chore.schedule.kind ?? "CALENDAR") !== "CALENDAR"
+                      ? describeChoreSchedule(chore.schedule)
                       : null,
-                    formatTime(chore.schedule.dueTime),
+                    // "When needed" already says "by 8:00 PM" when it has a deadline.
+                    chore.schedule.kind === "AS_NEEDED" ? null : formatTime(chore.schedule.dueTime),
                   ]
                     .filter(Boolean)
                     .join(" · ")

@@ -50,6 +50,15 @@ public class ChoreController {
     return occurrenceService.complete(householdId, assignmentId, authentication);
   }
 
+  /** "Needs doing" on a When needed chore's open occurrence. */
+  @PostMapping("/assignments/{assignmentId}/flag")
+  public AssignmentResponse flagAssignment(
+      @PathVariable UUID householdId,
+      @PathVariable UUID assignmentId,
+      Authentication authentication) {
+    return occurrenceService.flag(householdId, assignmentId, authentication);
+  }
+
   @PostMapping("/assignments/{assignmentId}/move")
   public AssignmentResponse moveAssignment(
       @PathVariable UUID householdId,
