@@ -940,7 +940,8 @@ function capitalize(text: string) {
 
 /**
  * The live summary under the name, as text parts with the key ones bold: "When it's needed, at
- * least every 2 days by 8 PM. Turns between you, Rubayet and Abubakar."
+ * least 2 days after it was last done. Turns between you, Rubayet and Abubakar." A "When needed"
+ * deadline rolls from each completion, so its clock time isn't mentioned.
  */
 export function summaryParts(
   values: QuickValues,
@@ -991,8 +992,9 @@ export function summaryParts(
       const days = values.backstopDays === 1 ? "1 day" : `${values.backstopDays} days`
       when = [
         strong("When it's needed"),
-        plain(", at least every "),
-        strong(time ? `${days} by ${time}` : days),
+        plain(", at least "),
+        strong(days),
+        plain(" after it was last done"),
       ]
       break
     }

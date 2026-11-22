@@ -142,7 +142,7 @@ describe("describeChoreSchedule", () => {
       describeChoreSchedule({ kind: "AFTER_COMPLETION", intervalCount: 1, intervalUnit: "WEEK" }),
     ).toBe("Every week after it's done")
     expect(describeChoreSchedule({ kind: "AS_NEEDED", backstopDays: 2, dueTime: "20:00:00" })).toBe(
-      "When needed · at least every 2 days by 8:00 PM",
+      "When needed · at least every 2 days",
     )
     expect(describeChoreSchedule({ kind: "AS_NEEDED", backstopDays: 1, dueTime: null })).toBe(
       "When needed · at least every day",

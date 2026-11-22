@@ -144,7 +144,7 @@ describe("ChoreFormScreen · quick create", () => {
 
     expect(nameInput().value).toBe("Take out garbage")
     expect(screen.getByTestId("chore-summary").textContent).toBe(
-      "When it's needed, at least every 2 days by 8 PM. Turns between you, Rubayet and Abubakar.",
+      "When it's needed, at least 2 days after it was last done. Turns between you, Rubayet and Abubakar.",
     )
     expect(row("How often").textContent).toContain("When needed · 2 days")
     expect(row("Category").textContent).toContain("Trash")
@@ -268,6 +268,9 @@ describe("ChoreFormScreen · quick create", () => {
       within(sheet).getByRole("group", { name: "Interval after it's done" }).textContent,
     ).toContain("4days")
     fireEvent.click(within(sheet).getByRole("button", { name: /When it's needed/ }))
+    // On create the time is for the first one only; later deadlines roll from each completion.
+    expect(within(sheet).getByLabelText("First one due by")).toBeTruthy()
+    expect(within(sheet).queryByLabelText("Next one due by")).toBeNull()
     fireEvent.click(within(sheet).getByRole("button", { name: "No deadline" }))
     fireEvent.click(within(sheet).getByRole("button", { name: "Done" }))
 
@@ -627,6 +630,27 @@ describe("ChoreFormScreen · quick create", () => {
           }),
         }),
       )
+    })
+
+    it("labels a When needed time as the next deadline when editing", async () => {
+      mocks.get.mockResolvedValue({
+        ...savedChore,
+        schedule: {
+          ...savedChore.schedule,
+          kind: "AS_NEEDED",
+          recurrenceRule: null,
+          backstopDays: 2,
+          intervalCount: null,
+          intervalUnit: null,
+          participantUserIds: ["user-1", "user-2"],
+        },
+      })
+      await renderForm()
+      expect(row("How often").textContent).toContain("When needed · 2 days")
+      fireEvent.click(row("How often"))
+      const sheet = screen.getByRole("dialog", { name: "How often?" })
+      expect(within(sheet).getByLabelText("Next one due by")).toBeTruthy()
+      expect(within(sheet).queryByLabelText("First one due by")).toBeNull()
     })
 
     it("prefills a two-person rotation and saves it unchanged", async () => {

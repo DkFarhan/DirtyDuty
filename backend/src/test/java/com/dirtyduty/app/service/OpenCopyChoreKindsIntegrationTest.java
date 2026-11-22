@@ -19,6 +19,7 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
@@ -86,6 +87,7 @@ class OpenCopyChoreKindsIntegrationTest {
 
   @AfterEach
   void cleanFixtures() {
+    occurrenceService.useClock(null);
     for (UUID householdId : householdIds) {
       String notificationIds =
           """
@@ -757,10 +759,12 @@ class OpenCopyChoreKindsIntegrationTest {
     assertThat(pendingReminders(open)).isZero();
 
     UUID garbage = whenNeeded("Garbage", 2, EIGHT_PM, List.of(home.owner(), home.ana()));
+    OffsetDateTime doneAt = pinCompletion(today.plusDays(1), LocalTime.of(9, 15));
     complete(openOf(garbage), home.owner());
     UUID next = openOf(garbage);
     updateWhenNeeded(garbage, 4, EIGHT_PM, List.of(home.owner(), home.ana()));
-    assertThat(dueAt(next)).isEqualTo(at(today.plusDays(4), EIGHT_PM));
+    // "When needed" re-plans from the completion instant, not the due time.
+    assertThat(dueAt(next)).isEqualTo(doneAt.plusDays(4));
     updateWhenNeeded(garbage, null, EIGHT_PM, List.of(home.owner(), home.ana()));
     assertThat(dueAt(next)).isNull();
   }
@@ -844,6 +848,126 @@ class OpenCopyChoreKindsIntegrationTest {
   }
 
   // ---- Helpers ---------------------------------------------------------------------------------
+
+  // ---- When needed: rolling deadline from the completion ---------------------------------------
+
+  @Test
+  void whenNeededDueIsTheCompletionInstantPlusTheBackstopDays() {
+    UUID chore = whenNeeded("Garbage", 2, EIGHT_PM, List.of(home.owner(), home.ana()));
+    // The first one keeps the chosen time.
+    assertThat(dueAt(openOf(chore))).isEqualTo(at(today.plusDays(2), EIGHT_PM));
+
+    OffsetDateTime lateNight = pinCompletion(today.plusDays(1), LocalTime.of(23, 50));
+    complete(openOf(chore), home.owner());
+    UUID second = openOf(chore);
+    assertThat(dueAt(second)).isEqualTo(lateNight.plusDays(2));
+    assertThat(column(second, "planned_for", LocalDate.class)).isEqualTo(today.plusDays(3));
+
+    OffsetDateTime afternoon = pinCompletion(today.plusDays(2), LocalTime.of(17, 0));
+    complete(second, home.ana());
+    UUID third = openOf(chore);
+    assertThat(dueAt(third)).isEqualTo(afternoon.plusDays(2));
+    assertThat(column(third, "planned_for", LocalDate.class)).isEqualTo(today.plusDays(4));
+  }
+
+  @Test
+  void whenNeededKeepsTheWallClockTimeAcrossADaylightSavingChange() {
+    jdbc.update("UPDATE households SET timezone='America/Halifax' WHERE id=?", home.householdId());
+    UUID chore = whenNeeded("Recycling", 2, EIGHT_PM, List.of(home.owner(), home.ana()));
+    ZoneId halifax = ZoneId.of("America/Halifax");
+    // Clocks spring forward in Halifax at 2 AM on Sunday, March 14 2027.
+    java.time.ZonedDateTime done = LocalDate.of(2027, 3, 13).atTime(23, 50).atZone(halifax);
+    occurrenceService.useClock(java.time.Clock.fixed(done.toInstant(), ZoneOffset.UTC));
+    complete(openOf(chore), home.owner());
+
+    UUID next = openOf(chore);
+    java.time.ZonedDateTime due = dueAt(next).atZoneSameInstant(halifax);
+    assertThat(due.toLocalDateTime()).isEqualTo(LocalDate.of(2027, 3, 15).atTime(23, 50));
+    assertThat(column(next, "planned_for", LocalDate.class)).isEqualTo(LocalDate.of(2027, 3, 15));
+    // Two calendar days, one of them 23 hours long.
+    assertThat(java.time.Duration.between(done, due)).isEqualTo(java.time.Duration.ofHours(47));
+  }
+
+  @Test
+  void editingWhenNeededReplansFromTheLastCompletionOrMovesOnlyTheOpenDeadline() {
+    List<UUID> rotation = List.of(home.owner(), home.ana());
+    UUID chore = whenNeeded("Dishwasher", 2, EIGHT_PM, rotation);
+    OffsetDateTime doneAt = pinCompletion(today.plusDays(1), LocalTime.of(7, 30));
+    complete(openOf(chore), home.owner());
+    UUID open = openOf(chore);
+    notificationScheduler.run();
+    assertThat(pendingReminders(open)).isPositive();
+
+    // A new backstop counts again from the completion instant; old reminders go, new ones come.
+    updateWhenNeeded(chore, 3, EIGHT_PM, rotation);
+    assertThat(openOf(chore)).isEqualTo(open);
+    assertThat(dueAt(open)).isEqualTo(doneAt.plusDays(3));
+    assertThat(pendingReminders(open)).isZero();
+    notificationScheduler.run();
+    assertThat(pendingReminders(open)).isPositive();
+
+    // A new due time is the user's choice for this one: that time on its planned day.
+    updateWhenNeeded(chore, 3, LocalTime.of(18, 0), rotation);
+    assertThat(dueAt(open)).isEqualTo(at(today.plusDays(4), LocalTime.of(18, 0)));
+    // An unrelated edit leaves it alone.
+    updateWhenNeeded(chore, 3, LocalTime.of(18, 0), List.of(home.ana(), home.owner()));
+    assertThat(dueAt(open)).isEqualTo(at(today.plusDays(4), LocalTime.of(18, 0)));
+
+    // The next completion rolls again: no clock time from the settings.
+    OffsetDateTime later = pinCompletion(today.plusDays(2), LocalTime.of(21, 5));
+    complete(open, home.ana());
+    assertThat(dueAt(openOf(chore))).isEqualTo(later.plusDays(3));
+  }
+
+  @Test
+  void anExistingOpenCopyKeepsItsDeadlineUntilItIsCompleted() {
+    List<UUID> rotation = List.of(home.owner(), home.ana());
+    UUID chore = whenNeeded("Bins", 2, EIGHT_PM, rotation);
+    complete(openOf(chore), home.owner());
+    UUID open = openOf(chore);
+    // An open copy from before the rule: dated at the due time, with only "basedOn" stored.
+    OffsetDateTime legacyDue = at(today.plusDays(2), EIGHT_PM);
+    jdbc.update(
+        """
+            UPDATE chore_assignments
+            SET due_at=?, planned_for=?, scheduled_for=?,
+                metadata=jsonb_build_object('basedOn', ?::text)
+            WHERE id=?
+            """,
+        legacyDue,
+        today.plusDays(2),
+        today.plusDays(2),
+        today.toString(),
+        open);
+
+    generationScheduler.run();
+    updateWhenNeeded(chore, 2, EIGHT_PM, List.of(home.ana(), home.owner()));
+    assertThat(dueAt(open)).isEqualTo(legacyDue);
+
+    OffsetDateTime doneAt = pinCompletion(today.plusDays(1), LocalTime.of(23, 50));
+    complete(open, home.ana());
+    assertThat(dueAt(openOf(chore))).isEqualTo(doneAt.plusDays(2));
+  }
+
+  @Test
+  void afterItsDoneStillUsesTheDoneDayAndDueTimeForCompletionsAndSkips() {
+    UUID chore =
+        afterChore("Vacuum", 3, IntervalUnit.DAY, today.plusDays(1), EIGHT_PM, fixed(), anaOnly());
+    pinCompletion(today.plusDays(1), LocalTime.of(23, 50));
+    complete(openOf(chore), home.ana());
+    UUID next = openOf(chore);
+    assertThat(dueAt(next)).isEqualTo(at(today.plusDays(4), EIGHT_PM));
+
+    occurrenceService.skip(home.householdId(), next, auth(home.owner()));
+    assertThat(dueAt(openOf(chore))).isEqualTo(at(today.plusDays(3), EIGHT_PM));
+  }
+
+  /** Completions happen at this UTC day and time (the household is in UTC). */
+  private OffsetDateTime pinCompletion(LocalDate day, LocalTime time) {
+    OffsetDateTime instant = day.atTime(time).atOffset(ZoneOffset.UTC);
+    occurrenceService.useClock(java.time.Clock.fixed(instant.toInstant(), ZoneOffset.UTC));
+    return instant;
+  }
 
   private void assertRejected(ChoreScheduleRequest schedule, String message) {
     assertThatThrownBy(

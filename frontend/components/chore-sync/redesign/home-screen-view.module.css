@@ -344,6 +344,8 @@
 .householdHero {
   position: relative;
   box-sizing: border-box;
+  /* The progress number sizes against the card's width (see .heroFigure). */
+  container-type: inline-size;
   height: 282px;
   margin: 0 16px;
   overflow: hidden;
@@ -398,22 +400,35 @@
   inset: 0;
 }
 
-.heroValue {
+/* The number and its % sit in one row, so the % follows the digits whatever their count. */
+.heroFigure {
+  --hero-size: 91px;
   position: absolute;
   top: 65px;
   left: 18px;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* "100" is about 2.08 em wide; on narrow cards it shrinks so "100%" stays clear of the ring (which
+   starts 106px from the card's right edge) with 12px to spare. */
+.heroFigure[data-digits="3"] {
+  --hero-size: min(91px, calc((100cqi - 165px) * 0.48));
+}
+
+.heroValue {
   color: var(--hero-number);
   font-family: var(--font-libre-baskerville), "Libre Baskerville", Georgia, serif;
-  font-size: 91px;
+  font-size: var(--hero-size);
   font-weight: 400;
   letter-spacing: 0.5px;
   line-height: 1.05;
 }
 
 .heroPercent {
-  position: absolute;
-  top: 107px;
-  left: 170px;
+  /* 42px below the top of a 91px number, scaled with it. */
+  margin-top: calc(var(--hero-size) * 0.4615);
   color: var(--hero-accent);
   font-size: 27px;
   font-weight: 500;

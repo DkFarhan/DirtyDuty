@@ -105,6 +105,10 @@ describe("household job cards", () => {
 
   it("words times in the household's time zone", () => {
     expect(deadlineWords("2026-11-15T01:00:00Z", "America/Halifax", now)).toBe("by 9:00 PM today")
+    // "When needed" deadlines roll from the completion instant, seconds and all.
+    expect(deadlineWords("2026-11-15T21:05:42.318Z", "America/Halifax", now)).toBe(
+      "by 5:05 PM tomorrow",
+    )
     expect(timeAgo("2026-11-14T14:59:40Z", now)).toBe("just now")
     expect(timeAgo("2026-11-13T15:00:00Z", now)).toBe("yesterday")
   })

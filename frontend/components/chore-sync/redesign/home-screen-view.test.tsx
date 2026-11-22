@@ -107,6 +107,28 @@ describe("HomeScreenView", () => {
     expect(container.querySelectorAll(`.${navigationStyles.icon}`)).toHaveLength(5)
   })
 
+  it("keeps the % right after the number at 100% and marks three digits for the narrow layout", () => {
+    for (const [completedCount, expected] of [
+      [4, "100"],
+      [3, "75"],
+      [0, "0"],
+    ] as const) {
+      const { unmount } = renderHome({
+        viewModel: {
+          ...homePreviewFixture,
+          householdWeek: { ...homePreviewFixture.householdWeek, completedCount, totalCount: 4 },
+        },
+      })
+      const figure = screen.getByTestId("hero-figure")
+      // The number and its % share one row, in that order, instead of a fixed % offset.
+      expect(figure.className).toBe(styles.heroFigure)
+      expect([...figure.children].map((child) => child.textContent)).toEqual([expected, "%"])
+      expect(figure.children[1].className).toBe(styles.heroPercent)
+      expect(figure.getAttribute("data-digits")).toBe(String(expected.length))
+      unmount()
+    }
+  })
+
   it("renders loading and recoverable error states", () => {
     const loading = { ...homePreviewFixture, status: "loading" as const }
     const { rerender } = renderHome({ viewModel: loading })

@@ -303,14 +303,6 @@ export function describeRecurrence(recurrence: Recurrence, endsOn?: string | nul
   return parts.join(", ")
 }
 
-function formatTime(time: string) {
-  const [hour, minute] = time.split(":").map(Number)
-  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return time
-  const suffix = hour < 12 ? "AM" : "PM"
-  const twelve = hour % 12 === 0 ? 12 : hour % 12
-  return `${twelve}:${String(minute).padStart(2, "0")} ${suffix}`
-}
-
 export type ChoreKindSummary = {
   kind?: "CALENDAR" | "AFTER_COMPLETION" | "AS_NEEDED" | null
   recurrenceRule?: string | null
@@ -325,7 +317,8 @@ export type ChoreKindSummary = {
 
 /**
  * One line for any kind of chore, shared by the form and the admin list: "Every 3 days after it's
- * done", "When needed · at least every 2 days by 8:00 PM", "When needed", or the calendar summary.
+ * done", "When needed · at least every 2 days", "When needed", or the calendar summary. A "When
+ * needed" deadline rolls from each completion, so no clock time is shown for it.
  */
 export function describeChoreSchedule(schedule: ChoreKindSummary): string {
   if (schedule.kind === "AFTER_COMPLETION") {
@@ -338,8 +331,7 @@ export function describeChoreSchedule(schedule: ChoreKindSummary): string {
   if (schedule.kind === "AS_NEEDED") {
     if (!schedule.backstopDays) return "When needed"
     const every = schedule.backstopDays === 1 ? "every day" : `every ${schedule.backstopDays} days`
-    const by = schedule.dueTime ? ` by ${formatTime(schedule.dueTime.slice(0, 5))}` : ""
-    return `When needed · at least ${every}${by}`
+    return `When needed · at least ${every}`
   }
   return describeRecurrenceRule(
     schedule.recurrenceRule,
