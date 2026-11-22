@@ -365,8 +365,14 @@ export function HomeScreenView({
           <span aria-hidden="true" className={styles.householdAmbient} />
           <p className={styles.heroEyebrow}>EVERYONE AT HOME&nbsp;&nbsp; / &nbsp;&nbsp;THIS WEEK</p>
           <div className={styles.heroMetric}>
-            <span className={styles.heroValue}>{householdProgress}</span>
-            <span className={styles.heroPercent}>%</span>
+            <span
+              className={styles.heroFigure}
+              data-digits={String(householdProgress).length}
+              data-testid="hero-figure"
+            >
+              <span className={styles.heroValue}>{householdProgress}</span>
+              <span className={styles.heroPercent}>%</span>
+            </span>
             <span
               aria-label={`${householdProgress}% complete`}
               className={styles.progressOrbit}

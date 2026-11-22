@@ -87,12 +87,15 @@ export function HowOftenSheet({
   onChange,
   onClose,
   returnFocusTo,
+  editing = false,
 }: {
   values: QuickValues
   theme: FormTheme
   onChange: (values: QuickValues) => void
   onClose: () => void
   returnFocusTo: () => HTMLElement | null
+  /** Editing a saved chore: a "When needed" time sets the next deadline, not the first. */
+  editing?: boolean
 }) {
   const [draft, setDraft] = useState<CustomDraft | null>(null)
   const [draftError, setDraftError] = useState<string | null>(null)
@@ -299,14 +302,21 @@ export function HowOftenSheet({
                     unit={values.backstopDays === 1 ? "day" : "days"}
                     value={values.backstopDays}
                   />
+                </div>
+                {/* Later deadlines roll from each completion; this time sets the first (or, when
+                    editing, the next) one. */}
+                <label className={styles.inlineControls}>
+                  <span className={styles.panelLabel}>
+                    {editing ? "Next one due by" : "First one due by"}
+                  </span>
                   <input
-                    aria-label="Deadline time"
+                    aria-label={editing ? "Next one due by" : "First one due by"}
                     className={styles.timeInput}
                     onChange={(event) => set({ dueTime: event.target.value })}
                     type="time"
                     value={values.dueTime}
                   />
-                </div>
+                </label>
                 <button
                   className={styles.linkButton}
                   onClick={() => set({ backstopEnabled: false })}

@@ -66,6 +66,9 @@ public class OccurrenceService {
   private final NotificationEventService notificationEventService;
   private final int horizonDays;
 
+  /** The completion instant comes from this clock; tests pin it. */
+  private java.time.Clock clock = java.time.Clock.systemUTC();
+
   public OccurrenceService(
       JdbcTemplate jdbc,
       EntityManager entityManager,
@@ -948,6 +951,14 @@ public class OccurrenceService {
   // so no reminders. Generation (on read, hourly, and on edits) only repairs a missing open copy
   // and keeps the open one in step with the settings. The day the plan was counted from is kept in
   // the row's metadata ("basedOn") so a settings edit can re-plan from the last completion.
+  //
+  // "When needed" rolls instead after a completion: the next deadline is the exact completion
+  // instant plus the backstop days, added in the schedule's time zone (the wall-clock time is kept
+  // across DST), and the due time is not used. Such a copy also stores the instant ("basedOnAt")
+  // and the settings it was planned with ("plannedBackstop", "plannedDueTime"), so an edit can
+  // tell a backstop change (re-plan from the instant) from a due-time change (the new time on the
+  // copy's planned day). The first copy, and copies created before this rule (no "basedOnAt"),
+  // keep the date-and-due-time plan until their next completion.
 
   /** Deadline used when an open-copy chore has no due time: the end of its day. */
   static final java.time.LocalTime END_OF_DAY = java.time.LocalTime.of(23, 59);
@@ -968,9 +979,24 @@ public class OccurrenceService {
       boolean dateOverridden,
       boolean assigneesOverridden,
       OffsetDateTime flaggedAt,
-      LocalDate basedOn) {}
+      LocalDate basedOn,
+      /** A rolling "When needed" copy: the completion it counts from and the settings it used. */
+      OffsetDateTime basedOnAt,
+      Integer plannedBackstop,
+      java.time.LocalTime plannedDueTime) {}
 
-  private record Plan(LocalDate day, OffsetDateTime dueAt, LocalDate basedOn) {}
+  /** {@code basedOnAt} is set only for a rolling "When needed" plan. */
+  private record Plan(
+      LocalDate day, OffsetDateTime dueAt, LocalDate basedOn, OffsetDateTime basedOnAt) {
+    Plan(LocalDate day, OffsetDateTime dueAt, LocalDate basedOn) {
+      this(day, dueAt, basedOn, null);
+    }
+  }
+
+  /** Tests pin the completion clock; {@code null} restores the system clock. */
+  void useClock(java.time.Clock testClock) {
+    this.clock = testClock == null ? java.time.Clock.systemUTC() : testClock;
+  }
 
   private boolean scheduleEnabled(ChoreSchedule schedule) {
     return schedule.isActive()
@@ -1033,7 +1059,10 @@ public class OccurrenceService {
         jdbc.query(
             """
                 SELECT id, status, planned_for, due_at, date_overridden, assignees_overridden,
-                       flagged_at, metadata->>'basedOn' based_on
+                       flagged_at, metadata->>'basedOn' based_on,
+                       metadata->>'basedOnAt' based_on_at,
+                       metadata->>'plannedBackstop' planned_backstop,
+                       metadata->>'plannedDueTime' planned_due_time
                 FROM chore_assignments
                 WHERE schedule_id=? AND kind_snapshot=? AND status IN ('PENDING','SUBMITTED')
                 ORDER BY created_at DESC, id
@@ -1050,7 +1079,16 @@ public class OccurrenceService {
                     rs.getObject("flagged_at", OffsetDateTime.class),
                     rs.getString("based_on") == null
                         ? null
-                        : LocalDate.parse(rs.getString("based_on"))),
+                        : LocalDate.parse(rs.getString("based_on")),
+                    rs.getString("based_on_at") == null
+                        ? null
+                        : OffsetDateTime.parse(rs.getString("based_on_at")),
+                    rs.getString("planned_backstop") == null
+                        ? null
+                        : Integer.valueOf(rs.getString("planned_backstop")),
+                    rs.getString("planned_due_time") == null
+                        ? null
+                        : java.time.LocalTime.parse(rs.getString("planned_due_time"))),
             schedule.getId(),
             schedule.getKind().name());
     return rows.isEmpty() ? null : rows.getFirst();
@@ -1090,7 +1128,30 @@ public class OccurrenceService {
    * skipped. Without one: the first due date for AFTER_COMPLETION, and today for AS_NEEDED.
    */
   private Plan planFrom(ChoreSchedule schedule, LocalDate basedOn, LocalDate today) {
+    return planFrom(schedule, basedOn, null, today);
+  }
+
+  /**
+   * As above; for "When needed", a {@code basedOnAt} completion instant gives the rolling plan:
+   * that instant plus the backstop days in the schedule's zone, planned on the deadline's local
+   * day.
+   */
+  private Plan planFrom(
+      ChoreSchedule schedule, LocalDate basedOn, OffsetDateTime basedOnAt, LocalDate today) {
     ZoneId zone = ZoneId.of(schedule.getTimezone());
+    if (schedule.getKind() == ScheduleKind.AS_NEEDED && basedOnAt != null) {
+      LocalDate doneOn = basedOnAt.atZoneSameInstant(zone).toLocalDate();
+      if (schedule.getBackstopDays() == null) {
+        return new Plan(doneOn, null, doneOn, basedOnAt);
+      }
+      OffsetDateTime due =
+          basedOnAt
+              .atZoneSameInstant(zone)
+              .plusDays(schedule.getBackstopDays())
+              .toOffsetDateTime()
+              .withOffsetSameInstant(ZoneOffset.UTC);
+      return new Plan(due.atZoneSameInstant(zone).toLocalDate(), due, doneOn, basedOnAt);
+    }
     if (schedule.getKind() == ScheduleKind.AFTER_COMPLETION) {
       int count = schedule.getIntervalCount() == null ? 1 : schedule.getIntervalCount();
       LocalDate day =
@@ -1126,9 +1187,12 @@ public class OccurrenceService {
         jdbc.queryForList(
             """
                 SELECT a.status, a.metadata->>'basedOn' based_on,
+                       a.metadata->>'basedOnAt' based_on_at,
                        (a.updated_at AT TIME ZONE ?)::date updated_on,
                        (SELECT (MAX(c.completed_at) AT TIME ZONE ?)::date
-                        FROM chore_completions c WHERE c.assignment_id=a.id) done_on
+                        FROM chore_completions c WHERE c.assignment_id=a.id) done_on,
+                       (SELECT MAX(c.completed_at)
+                        FROM chore_completions c WHERE c.assignment_id=a.id) done_at
                 FROM chore_assignments a
                 WHERE a.schedule_id=? AND a.kind_snapshot=?
                   AND a.status IN ('COMPLETED','SKIPPED','CANCELLED')
@@ -1154,7 +1218,27 @@ public class OccurrenceService {
           default ->
               row.get("based_on") == null ? null : LocalDate.parse((String) row.get("based_on"));
         };
-    return planFrom(schedule, basedOn, today);
+    // "When needed" rolls from the completion instant (or the cancelled copy's own).
+    OffsetDateTime basedOnAt =
+        switch (status) {
+          case "COMPLETED" -> toOffsetDateTime(row.get("done_at"));
+          case "CANCELLED" ->
+              row.get("based_on_at") == null
+                  ? null
+                  : OffsetDateTime.parse((String) row.get("based_on_at"));
+          default -> null;
+        };
+    return planFrom(schedule, basedOn, basedOnAt, today);
+  }
+
+  private static OffsetDateTime toOffsetDateTime(Object value) {
+    if (value instanceof OffsetDateTime instant) {
+      return instant;
+    }
+    if (value instanceof java.sql.Timestamp timestamp) {
+      return timestamp.toInstant().atOffset(ZoneOffset.UTC);
+    }
+    return value instanceof java.time.Instant instant ? instant.atOffset(ZoneOffset.UTC) : null;
   }
 
   private static LocalDate toLocalDate(Object value) {
@@ -1173,7 +1257,10 @@ public class OccurrenceService {
     if (open.dateOverridden() && open.flaggedAt() == null) {
       return;
     }
-    Plan plan = planFrom(schedule, open.basedOn(), today);
+    Plan plan =
+        schedule.getKind() == ScheduleKind.AS_NEEDED && open.basedOnAt() != null
+            ? rollingReplan(schedule, open)
+            : planFrom(schedule, open.basedOn(), today);
     OffsetDateTime dueAt = plan.dueAt();
     LocalDate day = plan.day();
     if (open.flaggedAt() != null && (dueAt == null || open.flaggedAt().isBefore(dueAt))) {
@@ -1198,10 +1285,68 @@ public class OccurrenceService {
         chore.getDifficulty(),
         chore.getEstimatedMinutes(),
         open.id());
+    if (plan.basedOnAt() != null) {
+      // The settings this copy is now planned with, so the next edit compares against them.
+      jdbc.update(
+          "UPDATE chore_assignments SET metadata=metadata || ?::jsonb WHERE id=?",
+          openCopyMetadata(plan, schedule),
+          open.id());
+    }
     if (dueChanged) {
       // The scheduler plans reminders for the new deadline; delivered ones are never re-sent.
       cancelPendingOccurrenceReminders(open.id());
     }
+  }
+
+  /**
+   * A rolling "When needed" copy after an edit. A backstop change re-plans from the completion
+   * instant; a due-time change puts the deadline at the new time on the (re-)planned day, the
+   * user's explicit choice for this one; anything else keeps the deadline. Turning the backstop off
+   * removes it. A flagged copy's own deadline is counted again from the completion (the caller
+   * keeps the earlier of that and the flag).
+   */
+  private Plan rollingReplan(ChoreSchedule schedule, OpenCopy open) {
+    ZoneId zone = ZoneId.of(schedule.getTimezone());
+    Integer backstop = schedule.getBackstopDays();
+    if (backstop == null) {
+      return planFrom(schedule, open.basedOn(), open.basedOnAt(), null);
+    }
+    boolean backstopChanged = !backstop.equals(open.plannedBackstop());
+    boolean timeChanged = !java.util.Objects.equals(schedule.getDueTime(), open.plannedDueTime());
+    LocalDate doneOn = open.basedOnAt().atZoneSameInstant(zone).toLocalDate();
+    Plan plan;
+    if (backstopChanged || open.dueAt() == null || open.flaggedAt() != null) {
+      plan = planFrom(schedule, open.basedOn(), open.basedOnAt(), null);
+    } else {
+      plan = new Plan(open.plannedFor(), open.dueAt(), doneOn, open.basedOnAt());
+    }
+    if (timeChanged) {
+      plan =
+          new Plan(
+              plan.day(),
+              openCopyDeadline(plan.day(), schedule.getDueTime(), zone),
+              doneOn,
+              open.basedOnAt());
+    }
+    return plan;
+  }
+
+  /** The metadata of an open copy planned by {@code plan}. */
+  private static String openCopyMetadata(Plan plan, ChoreSchedule schedule) {
+    if (plan.basedOn() == null) {
+      return "{}";
+    }
+    StringBuilder json = new StringBuilder("{\"basedOn\":\"").append(plan.basedOn()).append('"');
+    if (plan.basedOnAt() != null) {
+      json.append(",\"basedOnAt\":\"")
+          .append(plan.basedOnAt().withOffsetSameInstant(ZoneOffset.UTC))
+          .append('"')
+          .append(",\"plannedBackstop\":")
+          .append(schedule.getBackstopDays() == null ? "null" : schedule.getBackstopDays())
+          .append(",\"plannedDueTime\":")
+          .append(schedule.getDueTime() == null ? "null" : "\"" + schedule.getDueTime() + "\"");
+    }
+    return json.append('}').toString();
   }
 
   /**
@@ -1228,9 +1373,7 @@ public class OccurrenceService {
                      scheduled_for, planned_for, due_at, status, title_snapshot,
                      priority_snapshot, difficulty_snapshot, estimated_minutes_snapshot,
                      kind_snapshot, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?,
-                        CASE WHEN ?::text IS NULL THEN '{}'::jsonb
-                             ELSE jsonb_build_object('basedOn', ?::text) END)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?::jsonb)
                 ON CONFLICT (schedule_id)
                     WHERE schedule_id IS NOT NULL AND kind_snapshot <> 'CALENDAR'
                       AND status IN ('PENDING', 'SUBMITTED')
@@ -1249,8 +1392,7 @@ public class OccurrenceService {
             chore.getDifficulty(),
             chore.getEstimatedMinutes(),
             schedule.getKind().name(),
-            plan.basedOn() == null ? null : plan.basedOn().toString(),
-            plan.basedOn() == null ? null : plan.basedOn().toString());
+            openCopyMetadata(plan, schedule));
     if (inserted == 0) {
       return null;
     }
@@ -1422,14 +1564,21 @@ public class OccurrenceService {
     return result;
   }
 
-  /** Creates the next open copy after the current one was completed or skipped on {@code day}. */
+  /**
+   * Creates the next open copy after the current one was completed or skipped on {@code day};
+   * {@code doneAt} is the completion instant (null for a skip), which "When needed" rolls from.
+   */
   private void continueOpenCopySeries(
-      ChoreSchedule schedule, LocalDate day, List<UUID> previousTurn, UUID actorId) {
+      ChoreSchedule schedule,
+      LocalDate day,
+      OffsetDateTime doneAt,
+      List<UUID> previousTurn,
+      UUID actorId) {
     if (schedule == null || !scheduleEnabled(schedule)) {
       return;
     }
     LocalDate today = LocalDate.now(ZoneId.of(schedule.getTimezone()));
-    createOpenCopy(schedule, planFrom(schedule, day, today), previousTurn, actorId);
+    createOpenCopy(schedule, planFrom(schedule, day, doneAt, today), previousTurn, actorId);
   }
 
   /**
@@ -1502,8 +1651,8 @@ public class OccurrenceService {
     HouseholdMembership actor = requireActiveMember(householdId, authentication);
     generateHousehold(householdId);
     // Besides their own occurrences, everyone in a "When needed" rotation sees its open copy (so
-    // they can do it when it is someone else's turn). For the open-copy kinds, Completed lists
-    // what the viewer actually did: credit goes to whoever completed it.
+    // they can do it when it is someone else's turn). Completed lists what the viewer actually
+    // did, whatever the kind: credit goes to whoever completed it, not to the assignees.
     String predicate =
         switch (status == null ? "UPCOMING" : status) {
           case "UPCOMING" ->
@@ -1519,11 +1668,8 @@ public class OccurrenceService {
           case "COMPLETED" ->
               """
               a.status='COMPLETED'
-              AND ((a.kind_snapshot='CALENDAR'
-                    AND EXISTS (SELECT 1 FROM chore_assignment_assignees aa
-                                WHERE aa.assignment_id=a.id AND aa.user_id=?))
-                   OR EXISTS (SELECT 1 FROM chore_completions c
-                              WHERE c.assignment_id=a.id AND c.completed_by_user_id=?::uuid))
+              AND EXISTS (SELECT 1 FROM chore_completions c
+                          WHERE c.assignment_id=a.id AND c.completed_by_user_id=?::uuid)
               """;
           default -> throw new InvalidHouseholdException("Status must be UPCOMING or COMPLETED.");
         };
@@ -1536,9 +1682,9 @@ public class OccurrenceService {
                 """
             .formatted(predicate),
         (rs, row) -> assignmentResponse(rs.getObject("id", UUID.class), viewerId),
-        householdId,
-        viewerId,
-        viewerId.toString());
+        "COMPLETED".equals(status)
+            ? new Object[] {householdId, viewerId.toString()}
+            : new Object[] {householdId, viewerId, viewerId.toString()});
   }
 
   @Transactional
@@ -1546,7 +1692,7 @@ public class OccurrenceService {
     HouseholdMembership actor = requireActiveMember(householdId, authentication);
     generateHousehold(householdId);
     ZoneId zone = ZoneId.of(actor.getHousehold().getTimezone());
-    LocalDate today = LocalDate.now(zone);
+    LocalDate today = LocalDate.now(clock.withZone(zone));
     LocalDate monday = today.with(DayOfWeek.MONDAY);
     LocalDate nextMonday = monday.plusDays(7);
     List<AssignmentResponse> todayAssignments =
@@ -1556,35 +1702,37 @@ public class OccurrenceService {
     List<AssignmentResponse> overdueAssignments =
         overdueAssignmentList(householdId, actor.getUser().getId());
     List<AssignmentResponse> householdJobs = householdJobs(householdId, actor.getUser().getId());
-    // Week totals count by due day. An open "When needed" copy with no deadline does not count
-    // until it is done; it is then dated on the day it was done (see complete), so it counts as
-    // both assigned and completed and never lowers the percentage.
-    long total =
-        jdbc.queryForObject(
-            """
-                SELECT COUNT(*) FROM chore_assignments
-                WHERE household_id=? AND scheduled_for>=? AND scheduled_for<?
-                  AND status NOT IN ('CANCELLED','SKIPPED')
-                  AND NOT (kind_snapshot='AS_NEEDED' AND due_at IS NULL
-                           AND status IN ('PENDING','SUBMITTED'))
+    WeekWindow week = new WeekWindow(monday, zone);
+    Map<String, Object> household =
+        jdbc.queryForMap(
+            WEEK_CREDIT
+                + """
+                SELECT (SELECT COUNT(*) FROM done_this_week) completed,
+                       (SELECT COUNT(*) FROM (SELECT id FROM planned
+                                              UNION SELECT assignment_id FROM done_this_week) w) total
                 """,
-            Long.class,
-            householdId,
-            monday,
-            nextMonday);
-    long completed =
-        jdbc.queryForObject(
-            """
-                SELECT COUNT(*) FROM chore_assignments
-                WHERE household_id=? AND scheduled_for>=? AND scheduled_for<? AND status='COMPLETED'
-                """,
-            Long.class,
-            householdId,
-            monday,
-            nextMonday);
+            week.parameters(householdId));
+    long completed = ((Number) household.get("completed")).longValue();
+    long total = ((Number) household.get("total")).longValue();
     double percentage = total == 0 ? 0 : Math.round(completed * 1000.0 / total) / 10.0;
+    UUID viewerId = actor.getUser().getId();
+    Map<String, Object> personal =
+        jdbc.queryForMap(
+            WEEK_CREDIT
+                + """
+                SELECT (SELECT COUNT(*) FROM done_this_week WHERE completed_by_user_id=?) completed,
+                       (SELECT COUNT(*) FROM (
+                          SELECT p.id FROM planned p
+                          JOIN chore_assignment_assignees aa ON aa.assignment_id=p.id AND aa.user_id=?
+                          UNION
+                          SELECT assignment_id FROM done_this_week WHERE completed_by_user_id=?) w) assigned
+                """,
+            week.parameters(householdId, viewerId, viewerId, viewerId));
     return new DashboardResponse(
         new DashboardResponse.WeekSummary(completed, total, percentage),
+        new DashboardResponse.PersonalWeek(
+            ((Number) personal.get("assigned")).longValue(),
+            ((Number) personal.get("completed")).longValue()),
         todayAssignments,
         weekAssignments,
         overdueAssignments,
@@ -1612,21 +1760,21 @@ public class OccurrenceService {
       UUID householdId, Authentication authentication) {
     HouseholdMembership actor = requireActiveMember(householdId, authentication);
     ZoneId zone = ZoneId.of(actor.getHousehold().getTimezone());
-    LocalDate today = LocalDate.now(zone);
-    LocalDate monday = today.with(DayOfWeek.MONDAY);
-    LocalDate nextMonday = monday.plusDays(7);
+    LocalDate monday = LocalDate.now(clock.withZone(zone)).with(DayOfWeek.MONDAY);
+    WeekWindow week = new WeekWindow(monday, zone);
     return jdbc.query(
-        """
+        WEEK_CREDIT
+            + """
                 SELECT m.user_id, u.display_name, m.role, m.joined_at,
-                    (SELECT COUNT(*) FROM chore_assignment_assignees aa
-                     JOIN chore_assignments a ON a.id=aa.assignment_id
-                     WHERE aa.household_id=m.household_id AND aa.user_id=m.user_id
-                       AND a.scheduled_for>=? AND a.scheduled_for<? AND a.status<>'CANCELLED') assigned_count,
-                    (SELECT COUNT(DISTINCT a.id) FROM chore_assignment_assignees aa
-                     JOIN chore_assignments a ON a.id=aa.assignment_id
-                     JOIN chore_completions cc ON cc.assignment_id=a.id
-                     WHERE aa.household_id=m.household_id AND aa.user_id=m.user_id
-                        AND a.scheduled_for>=? AND a.scheduled_for<? AND a.status='COMPLETED') completed_count
+                    (SELECT COUNT(*) FROM (
+                       SELECT p.id FROM planned p
+                       JOIN chore_assignment_assignees aa
+                         ON aa.assignment_id=p.id AND aa.user_id=m.user_id
+                       UNION
+                       SELECT d.assignment_id FROM done_this_week d
+                       WHERE d.completed_by_user_id=m.user_id) w) assigned_count,
+                    (SELECT COUNT(*) FROM done_this_week d
+                     WHERE d.completed_by_user_id=m.user_id) completed_count
                 FROM household_memberships m JOIN users u ON u.id=m.user_id
                 WHERE m.household_id=? AND m.status='ACTIVE'
                 ORDER BY m.joined_at, u.display_name
@@ -1639,11 +1787,63 @@ public class OccurrenceService {
                 rs.getObject("joined_at", OffsetDateTime.class),
                 rs.getLong("assigned_count"),
                 rs.getLong("completed_count")),
-        monday,
-        nextMonday,
-        monday,
-        nextMonday,
-        householdId);
+        week.parameters(householdId, householdId));
+  }
+
+  /**
+   * Week credit, in the household's time zone from Monday to Sunday. {@code done_this_week} holds
+   * the occurrences completed this week with whoever completed them (the latest completion of a
+   * completed occurrence). {@code planned} holds the occurrences planned this week: not cancelled
+   * or skipped, not completed in another week, and not an open copy of an "After it's done" or
+   * "When needed" chore that is still waiting with no deadline this week. A member's assigned count
+   * is their planned occurrences plus what they completed this week; completion credit goes to the
+   * completer alone, so completed never exceeds assigned.
+   */
+  private static final String WEEK_CREDIT =
+      """
+      WITH done AS (
+        SELECT DISTINCT ON (c.assignment_id)
+               c.assignment_id, c.completed_by_user_id, c.completed_at
+        FROM chore_completions c
+        JOIN chore_assignments a ON a.id=c.assignment_id AND a.status='COMPLETED'
+        WHERE c.household_id=?
+        ORDER BY c.assignment_id, c.completed_at DESC, c.attempt_number DESC
+      ),
+      done_this_week AS (
+        SELECT assignment_id, completed_by_user_id FROM done
+        WHERE completed_at>=? AND completed_at<?
+      ),
+      planned AS (
+        SELECT a.id FROM chore_assignments a
+        LEFT JOIN done d ON d.assignment_id=a.id
+        WHERE a.household_id=? AND a.scheduled_for>=? AND a.scheduled_for<?
+          AND a.status NOT IN ('CANCELLED','SKIPPED')
+          AND NOT (a.kind_snapshot<>'CALENDAR' AND a.status IN ('PENDING','SUBMITTED')
+                   AND (a.due_at IS NULL OR a.due_at>=?))
+          AND (d.completed_at IS NULL OR (d.completed_at>=? AND d.completed_at<?))
+      )
+      """;
+
+  /** This week, Monday to Sunday in the household's zone, as the bind values for WEEK_CREDIT. */
+  private record WeekWindow(LocalDate monday, ZoneId zone) {
+    Object[] parameters(UUID householdId, Object... more) {
+      OffsetDateTime start = monday.atStartOfDay(zone).toOffsetDateTime();
+      OffsetDateTime end = monday.plusDays(7).atStartOfDay(zone).toOffsetDateTime();
+      List<Object> values =
+          new ArrayList<>(
+              List.of(
+                  householdId,
+                  start,
+                  end,
+                  householdId,
+                  monday,
+                  monday.plusDays(7),
+                  end,
+                  start,
+                  end));
+      values.addAll(List.of(more));
+      return values.toArray();
+    }
   }
 
   @Transactional
@@ -1718,7 +1918,7 @@ public class OccurrenceService {
       if (!"PENDING".equals(status) && !"SUBMITTED".equals(status)) {
         throw new InvalidHouseholdException("This assignment cannot be completed.");
       }
-      OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+      OffsetDateTime now = OffsetDateTime.now(clock).withOffsetSameInstant(ZoneOffset.UTC);
       Integer attempt =
           jdbc.queryForObject(
               "SELECT COALESCE(MAX(attempt_number), 0) + 1 FROM chore_completions WHERE assignment_id=?",
@@ -1751,7 +1951,7 @@ public class OccurrenceService {
             doneOn,
             assignmentId);
         if (kind.equals(schedule.getKind().name())) {
-          continueOpenCopySeries(schedule, doneOn, previousTurn, actorId);
+          continueOpenCopySeries(schedule, doneOn, now, previousTurn, actorId);
         }
       }
       String title =
@@ -1968,7 +2168,7 @@ public class OccurrenceService {
         && context.schedule().getKind() == ScheduleKind.AFTER_COMPLETION) {
       // The next one is counted from the day of the skip.
       continueOpenCopySeries(
-          context.schedule(), context.today(), context.assignees(), context.actorId());
+          context.schedule(), context.today(), null, context.assignees(), context.actorId());
     }
     String day = DAY_FORMAT.format(occurrence.scheduledFor());
     notifyAssignees(

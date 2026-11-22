@@ -98,6 +98,52 @@ describe("Home application adapter", () => {
     expect(viewModel.notificationCount).toBe(7)
   })
 
+  it("takes the week's Assigned and Completed from the server's completer-based credit", () => {
+    // Alex's chore that someone else did: listed for Alex this week, but the credit is theirs.
+    const doneByOther = assignment("done-by-ben", "2026-10-27T18:00:00Z", {
+      status: "COMPLETED",
+      canComplete: false,
+      completedByDisplayName: "Ben",
+    })
+    const overdue = assignment("late", "2026-10-26T18:00:00Z", { overdue: true })
+    const dueToday = assignment("today", "2026-10-28T18:00:00Z")
+    const dashboard: HouseholdDashboard = {
+      weekSummary: { completedCount: 3, totalCount: 5, completionPercentage: 60 },
+      // The server counts what Alex completed this week, whoever it was planned for.
+      personalWeek: { assignedCount: 5, completedCount: 2 },
+      today: [dueToday],
+      thisWeek: [doneByOther, overdue, dueToday],
+      overdue: [overdue],
+    }
+
+    const viewModel = createHomeApplicationViewModel({
+      dashboard,
+      householdId: "household-1",
+      householdName: "The Common Room",
+      householdTimezone: "UTC",
+      currentUserId: userId,
+      displayName: "Alex",
+      notificationCount: 0,
+      status: "loaded",
+      errorMessage: null,
+      refreshError: null,
+      actionError: null,
+      notificationCountError: null,
+      completingIds: new Set(),
+      pushHealth,
+      now: new Date("2026-10-28T15:00:00Z"),
+    })
+
+    expect(viewModel.personalWeek).toMatchObject({
+      assignedCount: 5,
+      completedCount: 2,
+      // Due today and Overdue still follow deadlines.
+      dueTodayCount: 1,
+      overdueCount: 1,
+    })
+    expect(viewModel.householdWeek).toEqual({ completedCount: 3, totalCount: 5 })
+  })
+
   it("keeps unavailable dashboards empty and maps push actions without changing API state", () => {
     const viewModel = createHomeApplicationViewModel({
       dashboard: null,

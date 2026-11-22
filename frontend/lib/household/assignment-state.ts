@@ -34,6 +34,47 @@ function allDashboardAssignments(dashboard: HouseholdDashboard) {
   ].flat()
 }
 
+function withWeekCounts(
+  dashboard: HouseholdDashboard,
+  completedDelta: number,
+  totalDelta: number,
+): HouseholdDashboard {
+  const totalCount = Math.max(0, dashboard.weekSummary.totalCount + totalDelta)
+  const completedCount = Math.min(
+    totalCount,
+    Math.max(0, dashboard.weekSummary.completedCount + completedDelta),
+  )
+  const personal = dashboard.personalWeek
+  const personalAssigned = personal ? Math.max(0, personal.assignedCount + totalDelta) : 0
+  return {
+    ...dashboard,
+    weekSummary: {
+      ...dashboard.weekSummary,
+      completedCount,
+      totalCount,
+      completionPercentage: totalCount === 0 ? 0 : Math.round((completedCount / totalCount) * 100),
+    },
+    ...(personal
+      ? {
+          personalWeek: {
+            assignedCount: personalAssigned,
+            completedCount: Math.min(
+              personalAssigned,
+              Math.max(0, personal.completedCount + completedDelta),
+            ),
+          },
+        }
+      : {}),
+  }
+}
+
+/**
+ * Completes an occurrence on the dashboard before the server answers. The viewer is the one
+ * completing it, and credit goes to the week it is done in: completed goes up by one for the
+ * household and the viewer, and an occurrence not already in this week's list (a household job, or
+ * one overdue from an earlier week) also joins the week's total and the viewer's assigned count.
+ * The server's numbers replace these on the next load.
+ */
 export function optimisticallyCompleteDashboardAssignment(
   dashboard: HouseholdDashboard,
   assignmentId: string,
@@ -41,37 +82,21 @@ export function optimisticallyCompleteDashboardAssignment(
   dashboard: HouseholdDashboard
   previous: AssignmentDTO
   incrementedWeekSummary: boolean
+  addedToWeek: boolean
 } | null {
   const previous = allDashboardAssignments(dashboard).find(
     (assignment) => assignment.id === assignmentId,
   )
   if (!previous || previous.status !== "PENDING" || !previous.canComplete) return null
 
-  const incrementedWeekSummary =
-    dashboard.weekSummary.completedCount < dashboard.weekSummary.totalCount &&
-    dashboard.thisWeek.some((assignment) => assignment.id === assignmentId)
+  const addedToWeek = !dashboard.thisWeek.some((assignment) => assignment.id === assignmentId)
   const optimistic = optimisticAssignmentCompletion(previous)
   const next = updateDashboardAssignment(dashboard, optimistic)
-  if (!incrementedWeekSummary) return { dashboard: next, previous, incrementedWeekSummary }
-
-  const completedCount = Math.min(
-    dashboard.weekSummary.totalCount,
-    dashboard.weekSummary.completedCount + 1,
-  )
   return {
-    dashboard: {
-      ...next,
-      weekSummary: {
-        ...dashboard.weekSummary,
-        completedCount,
-        completionPercentage:
-          dashboard.weekSummary.totalCount === 0
-            ? 0
-            : Math.round((completedCount / dashboard.weekSummary.totalCount) * 100),
-      },
-    },
+    dashboard: withWeekCounts(next, 1, Number(addedToWeek)),
     previous,
-    incrementedWeekSummary,
+    incrementedWeekSummary: true,
+    addedToWeek,
   }
 }
 
@@ -79,22 +104,11 @@ export function rollbackDashboardAssignmentCompletion(
   dashboard: HouseholdDashboard,
   previous: AssignmentDTO,
   incrementedWeekSummary: boolean,
+  addedToWeek = false,
 ): HouseholdDashboard {
   const next = updateDashboardAssignment(dashboard, previous)
   if (!incrementedWeekSummary) return next
-
-  const completedCount = Math.max(0, dashboard.weekSummary.completedCount - 1)
-  return {
-    ...next,
-    weekSummary: {
-      ...dashboard.weekSummary,
-      completedCount,
-      completionPercentage:
-        dashboard.weekSummary.totalCount === 0
-          ? 0
-          : Math.round((completedCount / dashboard.weekSummary.totalCount) * 100),
-    },
-  }
+  return withWeekCounts(next, -1, -Number(addedToWeek))
 }
 
 function countsInWeekTotal(assignment: AssignmentDTO) {
@@ -110,6 +124,7 @@ export function replaceDashboardOccurrence(
   next: AssignmentDTO,
   current: AssignmentDTO,
   todayKey?: string,
+  viewerId?: string,
 ): HouseholdDashboard {
   let replaced = updateDashboardAssignment(dashboard, next)
   if (todayKey) {
@@ -140,6 +155,18 @@ export function replaceDashboardOccurrence(
         Number(current.status === "COMPLETED"),
     ),
   )
+  // The viewer's own assigned count follows a skip or restore of their occurrence.
+  const personal = replaced.personalWeek
+  const counts = (assignment: AssignmentDTO) =>
+    countsInWeekTotal(assignment) &&
+    assignment.assignees.some((assignee) => assignee.userId === viewerId)
+  const personalAssigned =
+    personal && viewerId
+      ? Math.max(
+          personal.completedCount,
+          personal.assignedCount + Number(counts(next)) - Number(counts(current)),
+        )
+      : null
   return {
     ...replaced,
     weekSummary: {
@@ -147,6 +174,9 @@ export function replaceDashboardOccurrence(
       completedCount,
       completionPercentage: totalCount === 0 ? 0 : Math.round((completedCount / totalCount) * 100),
     },
+    ...(personal && personalAssigned !== null
+      ? { personalWeek: { ...personal, assignedCount: personalAssigned } }
+      : {}),
   }
 }
 

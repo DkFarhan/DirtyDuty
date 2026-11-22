@@ -2541,7 +2541,9 @@ class HouseholdControllerIntegrationTest {
         .perform(get(base + "/dashboard").cookie(owner.cookie()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.overdue.length()").value(0))
-        .andExpect(jsonPath("$.weekSummary.totalCount").value(0));
+        // Done this week, so it counts this week (credit goes to the week it was done).
+        .andExpect(jsonPath("$.weekSummary.totalCount").value(1))
+        .andExpect(jsonPath("$.weekSummary.completedCount").value(1));
     assertThat(
             jdbcTemplate.queryForObject(
                 "SELECT scheduled_for FROM chore_assignments WHERE id=?",
@@ -2694,8 +2696,13 @@ class HouseholdControllerIntegrationTest {
                 Integer.class,
                 assignmentIds.getFirst()))
         .isZero();
+    // Done lists it for the member who completed it, not for the co-assignee.
     mockMvc
         .perform(get(base + "/my-chores").param("status", "COMPLETED").cookie(owner.cookie()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(0));
+    mockMvc
+        .perform(get(base + "/my-chores").param("status", "COMPLETED").cookie(member.cookie()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.length()").value(1))
         .andExpect(jsonPath("$[0].completedByDisplayName").value("Test User"));
@@ -3011,33 +3018,47 @@ class HouseholdControllerIntegrationTest {
     LocalDate nextWeekStart = weekStart.plusWeeks(1);
     for (var memberStatsEntry : stats) {
       UUID memberId = UUID.fromString(memberStatsEntry.get("userId").asText());
+      // Week credit: planned this week (not cancelled or skipped) for the member, plus what the
+      // member completed this week; completion credit goes to whoever completed it.
+      OffsetDateTime weekStartAt = weekStart.atStartOfDay().atOffset(ZoneOffset.UTC);
+      OffsetDateTime weekEndAt = nextWeekStart.atStartOfDay().atOffset(ZoneOffset.UTC);
       long expectedAssignedThisWeek =
           jdbcTemplate.queryForObject(
               """
-              SELECT COUNT(*) FROM chore_assignment_assignees aa
-              JOIN chore_assignments a ON a.id=aa.assignment_id
-              WHERE aa.household_id=? AND aa.user_id=? AND a.scheduled_for>=? AND a.scheduled_for<?
-                AND a.status<>'CANCELLED'
+              SELECT COUNT(*) FROM (
+                SELECT a.id FROM chore_assignment_assignees aa
+                JOIN chore_assignments a ON a.id=aa.assignment_id
+                WHERE aa.household_id=? AND aa.user_id=? AND a.scheduled_for>=? AND a.scheduled_for<?
+                  AND a.status NOT IN ('CANCELLED','SKIPPED')
+                  AND NOT (a.kind_snapshot<>'CALENDAR' AND a.status IN ('PENDING','SUBMITTED')
+                           AND (a.due_at IS NULL OR a.due_at>=?))
+                UNION
+                SELECT cc.assignment_id FROM chore_completions cc
+                WHERE cc.household_id=? AND cc.completed_by_user_id=?
+                  AND cc.completed_at>=? AND cc.completed_at<?) w
               """,
               Long.class,
               householdId,
               memberId,
               weekStart,
-              nextWeekStart);
+              nextWeekStart,
+              weekEndAt,
+              householdId,
+              memberId,
+              weekStartAt,
+              weekEndAt);
       long expectedCompletedThisWeek =
           jdbcTemplate.queryForObject(
               """
-              SELECT COUNT(DISTINCT a.id) FROM chore_assignment_assignees aa
-              JOIN chore_assignments a ON a.id=aa.assignment_id
-              JOIN chore_completions cc ON cc.assignment_id=a.id
-              WHERE aa.household_id=? AND aa.user_id=? AND a.scheduled_for>=? AND a.scheduled_for<?
-                AND a.status='COMPLETED'
+              SELECT COUNT(DISTINCT cc.assignment_id) FROM chore_completions cc
+              WHERE cc.household_id=? AND cc.completed_by_user_id=?
+                AND cc.completed_at>=? AND cc.completed_at<?
               """,
               Long.class,
               householdId,
               memberId,
-              weekStart,
-              nextWeekStart);
+              weekStartAt,
+              weekEndAt);
       assertThat(memberStatsEntry.get("assignedThisWeek").asLong())
           .isEqualTo(expectedAssignedThisWeek);
       assertThat(memberStatsEntry.get("completedThisWeek").asLong())

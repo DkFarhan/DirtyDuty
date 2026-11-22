@@ -237,11 +237,12 @@ describe("summary", () => {
     )
     const parts = summaryParts(values, members, "farhan")
     expect(text(values)).toBe(
-      "When it's needed, at least every 2 days by 8 PM. Turns between you, Rubayet and Abubakar.",
+      "When it's needed, at least 2 days after it was last done. Turns between you, Rubayet and Abubakar.",
     )
+    // Deadlines after the first roll from each completion: no clock time.
     expect(parts.filter((part) => part.strong).map((part) => part.text)).toEqual([
       "When it's needed",
-      "2 days by 8 PM",
+      "2 days",
       "you, Rubayet and Abubakar",
     ])
   })

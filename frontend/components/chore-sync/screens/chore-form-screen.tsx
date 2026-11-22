@@ -825,6 +825,7 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
 
       {sheet === "often" && (
         <HowOftenSheet
+          editing={isEditing}
           onChange={(next) => {
             if (
               !allowsGroups(next.often) &&

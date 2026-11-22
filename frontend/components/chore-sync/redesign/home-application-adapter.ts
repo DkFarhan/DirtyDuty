@@ -157,9 +157,13 @@ export function createHomeApplicationViewModel(
   const personalToday = today.filter((assignment) =>
     assignment.assignees.some((assignee) => assignee.userId === input.currentUserId),
   )
+  // Assigned and Completed come from the server, which credits whoever completed a chore in the
+  // week they did it (lists alone miss work done for others or ahead of its week).
   const personalCounts = {
-    assigned: personalWeek.length,
-    completed: personalWeek.filter((assignment) => assignment.status === "COMPLETED").length,
+    assigned: dashboard?.personalWeek?.assignedCount ?? personalWeek.length,
+    completed:
+      dashboard?.personalWeek?.completedCount ??
+      personalWeek.filter((assignment) => assignment.status === "COMPLETED").length,
     dueToday: personalToday.filter(
       (assignment) => assignment.status === "PENDING" && !assignment.overdue,
     ).length,
