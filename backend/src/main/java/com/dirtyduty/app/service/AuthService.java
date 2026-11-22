@@ -216,6 +216,26 @@ public class AuthService {
         "UPDATE board_posts SET author_user_id=NULL WHERE author_user_id=?", user.getId());
     jdbcTemplate.update(
         "UPDATE board_posts SET fixed_by_user_id=NULL WHERE fixed_by_user_id=?", user.getId());
+    // List items stay too ("Former member"); their claims were released when the person left.
+    jdbcTemplate.update(
+        """
+        UPDATE board_list_items SET
+            added_by_user_id=CASE WHEN added_by_user_id=? THEN NULL ELSE added_by_user_id END,
+            needed_today_by_user_id=
+                CASE WHEN needed_today_by_user_id=? THEN NULL ELSE needed_today_by_user_id END,
+            bought_by_user_id=CASE WHEN bought_by_user_id=? THEN NULL ELSE bought_by_user_id END,
+            claimed_by_user_id=CASE WHEN claimed_by_user_id=? THEN NULL ELSE claimed_by_user_id END,
+            claimed_at=CASE WHEN claimed_by_user_id=? THEN NULL ELSE claimed_at END
+        WHERE ? IN (added_by_user_id, needed_today_by_user_id, bought_by_user_id, claimed_by_user_id)
+        """,
+        user.getId(),
+        user.getId(),
+        user.getId(),
+        user.getId(),
+        user.getId(),
+        user.getId());
+    jdbcTemplate.update(
+        "UPDATE board_lists SET created_by_user_id=NULL WHERE created_by_user_id=?", user.getId());
     String deletedEmail = "deleted-" + UUID.randomUUID() + "@deleted.local";
     user.setEmail(deletedEmail);
     user.setDisplayName("Deleted User");

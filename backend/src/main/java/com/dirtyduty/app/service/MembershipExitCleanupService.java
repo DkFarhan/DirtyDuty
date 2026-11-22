@@ -444,7 +444,8 @@ public class MembershipExitCleanupService {
 
   /**
    * Board posts stay (their author shows as "Former member"); the person's recipient and read rows
-   * go, and a problem they were handling has no handler again.
+   * go, and a problem they were handling has no handler again. List items they added stay; their
+   * "I'll get it" claims are released.
    */
   private void cleanupBoard(UUID householdId, UUID userId) {
     jdbc.update(
@@ -465,6 +466,13 @@ public class MembershipExitCleanupService {
         """
         UPDATE board_posts SET handler_user_id=NULL, updated_at=NOW()
         WHERE household_id=? AND handler_user_id=?
+        """,
+        householdId,
+        userId);
+    jdbc.update(
+        """
+        UPDATE board_list_items SET claimed_by_user_id=NULL, claimed_at=NULL, updated_at=NOW()
+        WHERE household_id=? AND claimed_by_user_id=?
         """,
         householdId,
         userId);

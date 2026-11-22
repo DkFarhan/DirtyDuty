@@ -47,7 +47,7 @@ import { HomeBoardSection } from "../board/home-board-section"
 import { useBoard } from "../board/use-board"
 
 export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } = {}) {
-  const { state, navigate, openNotifications, openBoardPost } = useChoreSync()
+  const { state, navigate, openNotifications, openBoardPost, openBoardLists } = useChoreSync()
   const {
     state: pushHealth,
     refresh: refreshPushHealth,
@@ -484,7 +484,9 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
             <HomeBoardSection
               onOpenBoard={() => navigate("board")}
               onOpenPost={(postId) => openBoardPost(postId, "dashboard")}
+              onOpenShopping={(listId) => openBoardLists(listId)}
               rows={homeBoardRows(board.posts, household?.timezone ?? "UTC")}
+              shopping={board.shopping}
               theme={theme === "dark" ? "dark" : "light"}
               unseenCount={board.unseenCount}
             />

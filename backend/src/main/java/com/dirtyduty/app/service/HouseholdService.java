@@ -308,6 +308,9 @@ public class HouseholdService {
     jdbc.update("DELETE FROM activity_events WHERE household_id = ?", householdId);
     // Recipients and reads go with their posts.
     jdbc.update("DELETE FROM board_posts WHERE household_id = ?", householdId);
+    // Items go with their lists.
+    jdbc.update("DELETE FROM board_lists WHERE household_id = ?", householdId);
+    jdbc.update("DELETE FROM board_list_item_names WHERE household_id = ?", householdId);
     jdbc.update("DELETE FROM chore_assignment_assignees WHERE household_id = ?", householdId);
     jdbc.update("DELETE FROM chore_completions WHERE household_id = ?", householdId);
     jdbc.update("DELETE FROM chore_assignments WHERE household_id = ?", householdId);

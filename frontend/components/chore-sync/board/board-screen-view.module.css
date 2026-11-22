@@ -42,6 +42,14 @@
   );
   --more-text: var(--body-text);
   --more-accent: var(--accent);
+  /* Lists (Figma "B2 · Board · Lists", dark 365:254 and light 365:997). */
+  --field-surface: #0d3039;
+  --row-divider: #24474f;
+  --suggestion-surface: #163c45;
+  --suggestion-border: #24474f;
+  --list-card-shadow: none;
+  --highlight: rgb(121 231 222 / 14%);
+  --danger-text: #ffad9a;
   position: relative;
   width: 100%;
   height: 100vh;
@@ -85,6 +93,13 @@
   --date-block: #dcf1ea;
   --tile: #dcf1ea;
   --unseen-dot: #d9822b;
+  --field-surface: #f4fbf8;
+  --row-divider: #d6e8e3;
+  --suggestion-surface: #e6f6ef;
+  --suggestion-border: #c0dad5;
+  --list-card-shadow: 0 10px 28px rgb(3 23 30 / 7%);
+  --highlight: rgb(13 112 108 / 10%);
+  --danger-text: #9b4050;
   --header-glow: radial-gradient(
     ellipse 260px 110px at 93% 64%,
     rgb(167 223 214 / 58%) 0%,
@@ -171,6 +186,16 @@
   border-left: 1px solid var(--counter-divider);
 }
 
+/* "To buy" is the smaller, quieter counter (B2). */
+.toBuy .counterNumber {
+  font-size: 34px;
+  line-height: 43px;
+}
+
+.toBuy .counterLabel {
+  color: var(--body-text);
+}
+
 .counterNumber {
   color: var(--main-text);
   font-family: var(--font-libre-baskerville), "Libre Baskerville", Georgia, serif;
@@ -186,7 +211,7 @@
   text-transform: uppercase;
 }
 
-/* Posts | Lists, for the next part of the Board. */
+/* Posts | Lists. */
 .tabs {
   display: flex;
   gap: 1px;

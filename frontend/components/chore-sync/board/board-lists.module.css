@@ -1,0 +1,663 @@
+/* The Board's Lists tab (Figma "B2 · Board · Lists" dark 365:254, light 365:997, and "B11 · Lists ·
+   New list" 369:488). Colours come from the board screen's tokens (board-screen-view.module.css);
+   the sheets' fields use the sheet's own tokens. */
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.card {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--card-border);
+  border-radius: 22px;
+  background: var(--card-surface);
+  box-shadow: var(--list-card-shadow);
+  color: var(--body-text);
+}
+
+.skeleton {
+  height: 96px;
+  border: 1px solid var(--card-border);
+  border-radius: 22px;
+  background: var(--card-surface);
+  opacity: 0.6;
+}
+
+.errorCard {
+  padding: 16px;
+}
+
+.errorCard p {
+  margin: 0 0 8px;
+  color: var(--main-text);
+}
+
+.linkButton {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.error {
+  margin: 6px 4px 0;
+  color: var(--danger-text);
+  font-size: 12.5px;
+  line-height: 16px;
+}
+
+/* ---- Switcher ----------------------------------------------------------------------------- */
+
+.switcher {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 -16px;
+  padding: 0 16px 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.switcher::-webkit-scrollbar {
+  display: none;
+}
+
+.chipWrap {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+
+.listChip,
+.newListChip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 14px 9px 12px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--chip-neutral);
+  color: var(--main-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.listChip svg {
+  color: var(--body-text);
+}
+
+.chipCount {
+  color: var(--muted-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.listChip[aria-pressed="true"] {
+  border-color: var(--tab-selected-border);
+  background: var(--tab-selected);
+  color: var(--counter-label);
+  font-weight: 700;
+}
+
+.listChip[aria-pressed="true"] svg,
+.listChip[aria-pressed="true"] .chipCount {
+  color: var(--counter-label);
+}
+
+.chipMore {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--body-text);
+  cursor: pointer;
+}
+
+.newListChip {
+  gap: 5px;
+  padding: 9px 12px 9px 10px;
+  border-color: var(--suggestion-border);
+  background: transparent;
+  color: var(--body-text);
+}
+
+/* ---- Add field ---------------------------------------------------------------------------- */
+
+.addCard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 10px 12px;
+}
+
+.addField {
+  display: flex;
+  height: 50px;
+  box-sizing: border-box;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 14px;
+  border: 1.5px solid var(--card-border);
+  border-radius: 14px;
+  background: var(--field-surface);
+}
+
+.addField:focus-within {
+  border-color: var(--accent);
+}
+
+.addInput {
+  min-width: 0;
+  flex: 1 1 auto;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--main-text);
+  caret-color: var(--accent);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.addInput::placeholder {
+  color: var(--muted-text);
+  font-weight: 500;
+}
+
+.addButton {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  place-items: center;
+  border: 0;
+  border-radius: 11px;
+  background: var(--accent);
+  color: var(--accent-text);
+  cursor: pointer;
+}
+
+.addButton:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 0;
+  padding: 0 4px;
+  list-style: none;
+}
+
+.suggestion {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 12px 7px 10px;
+  border: 1px solid var(--suggestion-border);
+  border-radius: 999px;
+  background: var(--suggestion-surface);
+  color: var(--body-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.suggestion svg {
+  color: var(--accent);
+}
+
+.suggestion strong {
+  color: var(--main-text);
+  font-weight: 700;
+}
+
+/* ---- Items -------------------------------------------------------------------------------- */
+
+.items {
+  margin: 0;
+  padding: 4px 14px;
+  list-style: none;
+}
+
+.item + .item {
+  border-top: 1px solid var(--row-divider);
+}
+
+.item[data-highlight] {
+  margin: 0 -14px;
+  padding: 0 14px;
+  background: var(--highlight);
+  transition: background-color 300ms ease;
+}
+
+.itemRow {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+}
+
+.checkbox {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  padding: 0;
+  border: 1.8px solid var(--outline);
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.checkbox:hover {
+  border-color: var(--accent);
+}
+
+.itemCopy {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.itemNameRow {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.itemName {
+  overflow: hidden;
+  color: var(--main-text);
+  font-size: 14.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itemNote {
+  overflow: hidden;
+  color: var(--muted-text);
+  font-size: 12px;
+  line-height: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.todayChip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px 5px 8px;
+  border-radius: 999px;
+  background: var(--chip-for-you);
+  color: var(--chip-for-you-text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 15px;
+}
+
+.claimButton {
+  display: inline-flex;
+  height: 36px;
+  flex: none;
+  align-items: center;
+  padding: 0 11px;
+  border: 1px solid var(--outline);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--outline-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.getting {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.avatar {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  box-sizing: border-box;
+  place-items: center;
+  border: 1px solid var(--avatar-ring);
+  border-radius: 999px;
+  background: var(--avatar);
+  color: var(--avatar-text);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.more {
+  display: grid;
+  width: 28px;
+  height: 36px;
+  flex: none;
+  margin-right: -6px;
+  place-items: center;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--more-text);
+  cursor: pointer;
+}
+
+.emptyCard {
+  padding: 18px 16px;
+}
+
+.emptyCard p {
+  margin: 0 0 4px;
+  color: var(--main-text);
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.emptyCard span {
+  font-size: 12.5px;
+}
+
+/* ---- Undo and bought ---------------------------------------------------------------------- */
+
+.undoBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 10px 14px;
+  border: 1px solid var(--tab-selected-border);
+  border-radius: 14px;
+  background: var(--tab-selected);
+  color: var(--counter-label);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.undoBar span {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.undoButton {
+  padding: 4px 6px;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.bought {
+  padding: 4px 6px 0;
+}
+
+.boughtToggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.boughtToggle span {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.boughtToggle svg[data-open] {
+  transform: rotate(180deg);
+}
+
+.boughtList {
+  margin: 10px 0 0;
+  padding: 0 0 0 23px;
+  list-style: none;
+}
+
+.boughtList li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 0;
+  font-size: 13px;
+}
+
+.boughtName {
+  color: var(--body-text);
+  text-decoration: line-through;
+}
+
+.boughtBy {
+  color: var(--muted-text);
+}
+
+/* ---- New list (B11) ----------------------------------------------------------------------- */
+
+.newList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+}
+
+.newListHead {
+  display: flex;
+  align-items: center;
+}
+
+.newListHead h2 {
+  flex: 1 1 auto;
+  margin: 0;
+  color: var(--main-text);
+  font-family: var(--font-libre-baskerville), "Libre Baskerville", Georgia, serif;
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 26px;
+}
+
+.iconButton {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  margin: -6px -6px -6px 0;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--body-text);
+  cursor: pointer;
+}
+
+.fieldLabel {
+  margin: 0;
+  color: var(--body-text);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.nameField {
+  height: 56px;
+  box-sizing: border-box;
+  padding: 0 16px;
+  border: 1.5px solid var(--card-border);
+  border-radius: 14px;
+  outline: none;
+  background: var(--field-surface);
+  color: var(--main-text);
+  caret-color: var(--accent);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.nameField:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--highlight);
+}
+
+.nameField::placeholder {
+  color: var(--muted-text);
+  font-weight: 500;
+}
+
+.quickPicks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.quickPick {
+  padding: 8px 12px;
+  border: 1px solid var(--suggestion-border);
+  border-radius: 18px;
+  background: var(--suggestion-surface);
+  color: var(--main-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.quickPick[aria-pressed="true"] {
+  border-color: var(--tab-selected-border);
+  background: var(--tab-selected);
+  color: var(--counter-label);
+}
+
+.newListNote {
+  margin: 0;
+  color: var(--muted-text);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.createButton {
+  height: 50px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--accent);
+  color: var(--accent-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.createButton:disabled {
+  opacity: 0.6;
+}
+
+.listChip:focus-visible,
+.newListChip:focus-visible,
+.chipMore:focus-visible,
+.addButton:focus-visible,
+.suggestion:focus-visible,
+.checkbox:focus-visible,
+.claimButton:focus-visible,
+.more:focus-visible,
+.undoButton:focus-visible,
+.boughtToggle:focus-visible,
+.quickPick:focus-visible,
+.createButton:focus-visible,
+.iconButton:focus-visible,
+.linkButton:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- Sheets (rendered in the sheet's portal, with its tokens) ----------------------------- */
+
+.sheetFields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.sheetLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--secondary-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sheetInput {
+  height: 50px;
+  box-sizing: border-box;
+  padding: 0 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  outline: none;
+  background: var(--field-bg);
+  color: var(--main-text);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.sheetInput:focus {
+  border-color: var(--accent);
+}
+
+.sheetError {
+  margin: 0;
+  color: var(--danger);
+  font-size: 12.5px;
+}
+
+.dangerOption {
+  color: var(--danger);
+}
+
+.dangerPrimary {
+  background: var(--danger-surface);
+  color: var(--danger);
+}

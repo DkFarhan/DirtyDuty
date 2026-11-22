@@ -169,6 +169,24 @@ public class GlobalExceptionHandler {
                 status.value(), error, message, request.getRequestURI(), OffsetDateTime.now()));
   }
 
+  /** A method the endpoint doesn't offer (e.g. DELETE on a list) is the client's mistake: 405. */
+  @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+  public ResponseEntity<ApiErrorResponse> handleMethodNotSupported(
+      org.springframework.web.HttpRequestMethodNotSupportedException ex,
+      HttpServletRequest request) {
+    ResponseEntity<ApiErrorResponse> response =
+        buildResponse(
+            HttpStatus.METHOD_NOT_ALLOWED,
+            "Method Not Allowed",
+            "This action isn't available.",
+            request.getRequestURI());
+    return ex.getSupportedHttpMethods() == null
+        ? response
+        : ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
+            .allow(ex.getSupportedHttpMethods().toArray(org.springframework.http.HttpMethod[]::new))
+            .body(response.getBody());
+  }
+
   @ExceptionHandler(Exception.class)
   public ResponseEntity<ApiErrorResponse> handleGeneralException(
       Exception ex, HttpServletRequest request) {
