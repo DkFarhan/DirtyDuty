@@ -99,6 +99,7 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
         assignmentId: string
         previous: import("@/lib/household/chores").AssignmentDTO
         incrementedWeekSummary: boolean
+        addedToWeek: boolean
         serverConfirmed: boolean
       }
     >(),
@@ -219,6 +220,7 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
       assignmentId,
       previous: optimistic.previous,
       incrementedWeekSummary: optimistic.incrementedWeekSummary,
+      addedToWeek: optimistic.addedToWeek,
       serverConfirmed: false,
     })
     requestSequence.current += 1
@@ -249,6 +251,7 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
           dashboardRef.current,
           pending.previous,
           pending.incrementedWeekSummary,
+          pending.addedToWeek,
         )
         dashboardRef.current = rolledBack
         setDashboard(rolledBack)
@@ -308,7 +311,15 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
     )
     requestSequence.current += 1
     if (dashboardRef.current) {
-      apply(replaceDashboardOccurrence(dashboardRef.current, optimistic, previous, todayKey))
+      apply(
+        replaceDashboardOccurrence(
+          dashboardRef.current,
+          optimistic,
+          previous,
+          todayKey,
+          state.currentUser.id,
+        ),
+      )
     }
     setCardFeedback(null)
     try {
@@ -316,14 +327,30 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
       requestSequence.current += 1
       const current = findDashboardAssignment(dashboardRef.current, assignmentId) ?? optimistic
       if (dashboardRef.current) {
-        apply(replaceDashboardOccurrence(dashboardRef.current, confirmed, current, todayKey))
+        apply(
+          replaceDashboardOccurrence(
+            dashboardRef.current,
+            confirmed,
+            current,
+            todayKey,
+            state.currentUser.id,
+          ),
+        )
       }
       invalidateChores()
     } catch (cause) {
       requestSequence.current += 1
       const current = findDashboardAssignment(dashboardRef.current, assignmentId)
       if (current && dashboardRef.current) {
-        apply(replaceDashboardOccurrence(dashboardRef.current, previous, current, todayKey))
+        apply(
+          replaceDashboardOccurrence(
+            dashboardRef.current,
+            previous,
+            current,
+            todayKey,
+            state.currentUser.id,
+          ),
+        )
       }
       if (dashboardHouseholdIdRef.current === household.id) {
         setCardFeedback(

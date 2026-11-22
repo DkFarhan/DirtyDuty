@@ -5,13 +5,20 @@ import java.util.List;
 /**
  * Home. {@code householdJobs} lists the open occurrence of every active "When needed" chore, for
  * every member (participants or not); those chores are not repeated in {@code today} or {@code
- * thisWeek}.
+ * thisWeek}. Week numbers follow the week credit rules in OccurrenceService.
  */
 public record DashboardResponse(
     WeekSummary weekSummary,
+    PersonalWeek personalWeek,
     List<AssignmentResponse> today,
     List<AssignmentResponse> thisWeek,
     List<AssignmentResponse> overdue,
     List<AssignmentResponse> householdJobs) {
   public record WeekSummary(long completedCount, long totalCount, double completionPercentage) {}
+
+  /**
+   * The viewer's week: what was planned for them plus what they did for others or early, and what
+   * they completed (credit goes to whoever completed it, in the week they did).
+   */
+  public record PersonalWeek(long assignedCount, long completedCount) {}
 }

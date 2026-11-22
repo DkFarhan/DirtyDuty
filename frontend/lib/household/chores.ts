@@ -143,6 +143,15 @@ export type HouseholdDashboard = {
     totalCount: number
     completionPercentage: number
   }
+  /**
+   * The viewer's week: planned for them plus what they did for others or early, and what they
+   * completed. Credit goes to whoever completed a chore, in the week they did it. Absent from older
+   * responses.
+   */
+  personalWeek?: {
+    assignedCount: number
+    completedCount: number
+  }
   today: AssignmentDTO[]
   thisWeek: AssignmentDTO[]
   overdue: AssignmentDTO[]

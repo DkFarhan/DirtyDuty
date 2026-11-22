@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import type { AssignmentDTO, HouseholdDashboard } from "./chores"
 import {
   optimisticallyCompleteDashboardAssignment,
+  replaceDashboardOccurrence,
   rollbackDashboardAssignmentCompletion,
   updateDashboardAssignment,
 } from "./assignment-state"
@@ -106,5 +107,56 @@ describe("optimistic assignment state", () => {
     expect(reconciled.today[0]).toEqual(confirmed)
     expect(reconciled.overdue[0]).toEqual(confirmed)
     expect(reconciled.weekSummary).toEqual(optimistic.dashboard.weekSummary)
+  })
+
+  it("credits the week for work done outside this week's list and rolls it back", () => {
+    // A household job (not in this week's list) completed today joins the week for the completer.
+    const job: AssignmentDTO = { ...assignment("job"), overdue: false }
+    const before: HouseholdDashboard = {
+      weekSummary: { completedCount: 1, totalCount: 2, completionPercentage: 50 },
+      personalWeek: { assignedCount: 2, completedCount: 1 },
+      today: [],
+      thisWeek: [],
+      overdue: [],
+      householdJobs: [job],
+    }
+    const result = optimisticallyCompleteDashboardAssignment(before, "job")
+    if (!result) throw new Error("Expected the job to be eligible.")
+    expect(result.addedToWeek).toBe(true)
+    expect(result.dashboard.weekSummary).toMatchObject({ completedCount: 2, totalCount: 3 })
+    expect(result.dashboard.personalWeek).toEqual({ assignedCount: 3, completedCount: 2 })
+
+    const rolledBack = rollbackDashboardAssignmentCompletion(
+      result.dashboard,
+      result.previous,
+      result.incrementedWeekSummary,
+      result.addedToWeek,
+    )
+    expect(rolledBack.weekSummary).toMatchObject({ completedCount: 1, totalCount: 2 })
+    expect(rolledBack.personalWeek).toEqual({ assignedCount: 2, completedCount: 1 })
+  })
+
+  it("keeps a planned occurrence's week total and the viewer's assigned count when completed", () => {
+    const before: HouseholdDashboard = {
+      ...dashboard([assignment("one")]),
+      personalWeek: { assignedCount: 1, completedCount: 0 },
+    }
+    const result = optimisticallyCompleteDashboardAssignment(before, "one")
+    expect(result?.addedToWeek).toBe(false)
+    expect(result?.dashboard.weekSummary).toMatchObject({ completedCount: 1, totalCount: 1 })
+    expect(result?.dashboard.personalWeek).toEqual({ assignedCount: 1, completedCount: 1 })
+  })
+
+  it("drops a skipped occurrence from the viewer's assigned count", () => {
+    const one = { ...assignment("one"), overdue: false }
+    const before: HouseholdDashboard = {
+      ...dashboard([one]),
+      personalWeek: { assignedCount: 1, completedCount: 0 },
+    }
+    const skipped: AssignmentDTO = { ...one, status: "SKIPPED" }
+    const mine = replaceDashboardOccurrence(before, skipped, one, undefined, "user-1")
+    expect(mine.personalWeek).toEqual({ assignedCount: 0, completedCount: 0 })
+    const someoneElse = replaceDashboardOccurrence(before, skipped, one, undefined, "user-9")
+    expect(someoneElse.personalWeek).toEqual({ assignedCount: 1, completedCount: 0 })
   })
 })
