@@ -61,7 +61,7 @@ const notificationStyles: Array<[NotificationStyle, string]> = [
 ]
 
 export function NotificationsScreen({ theme = "light" }: { theme?: Exclude<Theme, "system"> }) {
-  const { returnFromNotifications, openBoardPost } = useChoreSync()
+  const { returnFromNotifications, openBoardPost, openBoardLists } = useChoreSync()
   const {
     state: pushHealth,
     refresh: refreshPushHealth,
@@ -496,6 +496,19 @@ export function NotificationsScreen({ theme = "light" }: { theme?: Exclude<Theme
                           type="button"
                         >
                           Open post
+                        </button>
+                      )}
+                      {item.referenceType === "BOARD_LIST" && item.referenceId && (
+                        <button
+                          aria-label={`Open list: ${item.title}`}
+                          className={profileStyles.notificationMarkRead}
+                          onClick={() => {
+                            if (!read) void markRead(item)
+                            openBoardLists(item.referenceId)
+                          }}
+                          type="button"
+                        >
+                          Open list
                         </button>
                       )}
                       {!read && (

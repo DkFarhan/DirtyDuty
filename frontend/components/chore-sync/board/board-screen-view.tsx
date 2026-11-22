@@ -35,6 +35,7 @@ import { OccurrenceMoreButton } from "../occurrence-action-sheet"
 import styles from "./board-screen-view.module.css"
 
 export type BoardTheme = "light" | "dark"
+export type BoardTab = "posts" | "lists"
 
 export type BoardScreenViewProps = {
   theme: BoardTheme
@@ -48,8 +49,12 @@ export type BoardScreenViewProps = {
   viewerIsAdmin: boolean
   busyIds: string[]
   feedback: { postId: string; view: CardFeedbackView } | null
-  /** The Posts | Lists switch and the "To buy" counter, for the Lists part of the Board. */
-  listsEnabled?: boolean
+  /** Posts or Lists (the Lists tab's content comes in {@link listsContent}). */
+  tab?: BoardTab
+  onSelectTab?: (tab: BoardTab) => void
+  /** Open items across the lists ("To buy"); null while unknown. */
+  toBuyCount?: number | null
+  listsContent?: ReactNode
   now?: number
   onCompose: () => void
   onOpenPost: (postId: string) => void
@@ -365,7 +370,10 @@ function Section({
   )
 }
 
-/** The Board tab (B1): composer, house info, problems, events, heads-ups and Past. */
+/**
+ * The Board tab: the header with "New for you" and "To buy", the Posts | Lists switch, and either
+ * the posts (B1: composer, house info, problems, events, heads-ups and Past) or the lists (B2).
+ */
 export function BoardScreenView(props: BoardScreenViewProps) {
   const {
     theme,
@@ -374,7 +382,8 @@ export function BoardScreenView(props: BoardScreenViewProps) {
     groups,
     unseenCount,
     pastCount,
-    listsEnabled = false,
+    tab = "posts",
+    toBuyCount = null,
     now = Date.now(),
   } = props
   const cardProps = (post: BoardPost): CardProps => ({
@@ -405,144 +414,177 @@ export function BoardScreenView(props: BoardScreenViewProps) {
                 <span className={styles.counterNumber}>{loaded ? unseenCount : "—"}</span>
                 <span className={styles.counterLabel}>New for you</span>
               </div>
-              {listsEnabled && (
-                <div className={styles.counter}>
-                  <span className={styles.counterNumber}>—</span>
-                  <span className={styles.counterLabel}>To buy</span>
-                </div>
-              )}
+              <div className={`${styles.counter} ${styles.toBuy}`}>
+                <span className={styles.counterNumber}>{toBuyCount ?? "—"}</span>
+                <span className={styles.counterLabel}>To buy</span>
+              </div>
             </div>
           </header>
 
-          {listsEnabled && (
-            <div aria-label="Board" className={styles.tabs} role="tablist">
-              <button aria-selected="true" className={styles.tab} role="tab" type="button">
-                Posts
-                {unseenCount > 0 && <span className={styles.tabBadge}>{unseenCount} new</span>}
+          <div aria-label="Board" className={styles.tabs} role="tablist">
+            <button
+              aria-controls="board-panel"
+              aria-selected={tab === "posts"}
+              className={styles.tab}
+              id="board-tab-posts"
+              onClick={() => props.onSelectTab?.("posts")}
+              role="tab"
+              type="button"
+            >
+              Posts
+              {loaded && unseenCount > 0 && (
+                <span className={styles.tabBadge}>{unseenCount} new</span>
+              )}
+            </button>
+            <button
+              aria-controls="board-panel"
+              aria-selected={tab === "lists"}
+              className={styles.tab}
+              id="board-tab-lists"
+              onClick={() => props.onSelectTab?.("lists")}
+              role="tab"
+              type="button"
+            >
+              Lists
+              {toBuyCount !== null && toBuyCount > 0 && (
+                <span className={styles.tabBadge}>{toBuyCount}</span>
+              )}
+            </button>
+          </div>
+
+          {tab === "lists" ? (
+            <div
+              aria-labelledby="board-tab-lists"
+              className={styles.body}
+              id="board-panel"
+              role="tabpanel"
+            >
+              {props.listsContent}
+            </div>
+          ) : (
+            <div
+              aria-labelledby="board-tab-posts"
+              className={styles.body}
+              id="board-panel"
+              role="tabpanel"
+            >
+              <button className={styles.composer} onClick={props.onCompose} type="button">
+                <span>Tell the house something…</span>
+                <span aria-hidden="true" className={styles.composerPlus}>
+                  <Plus size={20} strokeWidth={2.4} />
+                </span>
               </button>
-              <button aria-selected="false" className={styles.tab} role="tab" type="button">
-                Lists
-              </button>
+
+              {status === "loading" && (
+                <div aria-label="Loading the board" className={styles.list}>
+                  {[0, 1].map((item) => (
+                    <div className={styles.skeleton} key={item} />
+                  ))}
+                </div>
+              )}
+
+              {status === "error" && (
+                <div className={`${styles.card} ${styles.error}`}>
+                  <p role="alert">
+                    {props.errorMessage ?? "The board is unavailable right now. Please try again."}
+                  </p>
+                  <button className={styles.linkButton} onClick={props.onRetry} type="button">
+                    Try again
+                  </button>
+                </div>
+              )}
+
+              {loaded && isEmptyBoard(groups) && (
+                <section className={`${styles.card} ${styles.empty}`}>
+                  <span aria-hidden="true" className={styles.emptyIcon}>
+                    <StickyNote size={24} />
+                  </span>
+                  <h2>Nothing on the board yet.</h2>
+                  <p>
+                    A visit coming up, something broken, a package at the door: say it once here and
+                    everyone sees it.
+                  </p>
+                  <button className={styles.linkButton} onClick={props.onCompose} type="button">
+                    Tell the house something
+                    <ChevronRight aria-hidden="true" size={16} />
+                  </button>
+                </section>
+              )}
+
+              {loaded && groups.houseInfo.length > 0 && (
+                <section
+                  aria-labelledby="board-house-info"
+                  className={`${styles.card} ${styles.houseInfo}`}
+                >
+                  <div className={styles.houseInfoHead}>
+                    <Pin aria-hidden="true" size={15} />
+                    <h2 id="board-house-info">House info</h2>
+                    <span>{groups.houseInfo.length}</span>
+                  </div>
+                  <ul className={styles.infoList}>
+                    {groups.houseInfo.map((post) => (
+                      <li
+                        data-board-post={post.id}
+                        key={post.id}
+                        ref={
+                          props.observe ? (element) => props.observe?.(post.id, element) : undefined
+                        }
+                      >
+                        <button
+                          className={styles.infoRow}
+                          onClick={() => props.onOpenPost(post.id)}
+                          type="button"
+                        >
+                          <span aria-hidden="true">{infoIcon(post)}</span>
+                          <span className={styles.infoTitle}>{post.title}</span>
+                          <span className={styles.infoDetail}>{firstLine(post.details)}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              {loaded && groups.needsFixing.length > 0 && (
+                <Section
+                  count={`${groups.needsFixing.length} open`}
+                  id="board-needs-fixing"
+                  title="Needs fixing"
+                >
+                  {groups.needsFixing.map((post) => (
+                    <PostCard key={post.id} {...cardProps(post)} />
+                  ))}
+                </Section>
+              )}
+
+              {loaded && events > 0 && (
+                <Section
+                  count={events === 1 ? "1 event" : `${events} events`}
+                  id="board-coming-up"
+                  title="Coming up"
+                >
+                  {groups.comingUp.map((post) => (
+                    <PostCard key={post.id} {...cardProps(post)} />
+                  ))}
+                </Section>
+              )}
+
+              {loaded && groups.headsUps.length > 0 && (
+                <Section id="board-heads-ups" title="Heads-ups">
+                  {groups.headsUps.map((post) => (
+                    <PostCard key={post.id} {...cardProps(post)} />
+                  ))}
+                </Section>
+              )}
+
+              {loaded && pastCount > 0 && (
+                <button className={styles.pastLink} onClick={props.onOpenPast} type="button">
+                  Past posts ({pastCount})
+                  <ChevronRight aria-hidden="true" size={15} />
+                </button>
+              )}
             </div>
           )}
-
-          <div className={styles.body}>
-            <button className={styles.composer} onClick={props.onCompose} type="button">
-              <span>Tell the house something…</span>
-              <span aria-hidden="true" className={styles.composerPlus}>
-                <Plus size={20} strokeWidth={2.4} />
-              </span>
-            </button>
-
-            {status === "loading" && (
-              <div aria-label="Loading the board" className={styles.list}>
-                {[0, 1].map((item) => (
-                  <div className={styles.skeleton} key={item} />
-                ))}
-              </div>
-            )}
-
-            {status === "error" && (
-              <div className={`${styles.card} ${styles.error}`}>
-                <p role="alert">
-                  {props.errorMessage ?? "The board is unavailable right now. Please try again."}
-                </p>
-                <button className={styles.linkButton} onClick={props.onRetry} type="button">
-                  Try again
-                </button>
-              </div>
-            )}
-
-            {loaded && isEmptyBoard(groups) && (
-              <section className={`${styles.card} ${styles.empty}`}>
-                <span aria-hidden="true" className={styles.emptyIcon}>
-                  <StickyNote size={24} />
-                </span>
-                <h2>Nothing on the board yet.</h2>
-                <p>
-                  A visit coming up, something broken, a package at the door: say it once here and
-                  everyone sees it.
-                </p>
-                <button className={styles.linkButton} onClick={props.onCompose} type="button">
-                  Tell the house something
-                  <ChevronRight aria-hidden="true" size={16} />
-                </button>
-              </section>
-            )}
-
-            {loaded && groups.houseInfo.length > 0 && (
-              <section
-                aria-labelledby="board-house-info"
-                className={`${styles.card} ${styles.houseInfo}`}
-              >
-                <div className={styles.houseInfoHead}>
-                  <Pin aria-hidden="true" size={15} />
-                  <h2 id="board-house-info">House info</h2>
-                  <span>{groups.houseInfo.length}</span>
-                </div>
-                <ul className={styles.infoList}>
-                  {groups.houseInfo.map((post) => (
-                    <li
-                      data-board-post={post.id}
-                      key={post.id}
-                      ref={
-                        props.observe ? (element) => props.observe?.(post.id, element) : undefined
-                      }
-                    >
-                      <button
-                        className={styles.infoRow}
-                        onClick={() => props.onOpenPost(post.id)}
-                        type="button"
-                      >
-                        <span aria-hidden="true">{infoIcon(post)}</span>
-                        <span className={styles.infoTitle}>{post.title}</span>
-                        <span className={styles.infoDetail}>{firstLine(post.details)}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
-
-            {loaded && groups.needsFixing.length > 0 && (
-              <Section
-                count={`${groups.needsFixing.length} open`}
-                id="board-needs-fixing"
-                title="Needs fixing"
-              >
-                {groups.needsFixing.map((post) => (
-                  <PostCard key={post.id} {...cardProps(post)} />
-                ))}
-              </Section>
-            )}
-
-            {loaded && events > 0 && (
-              <Section
-                count={events === 1 ? "1 event" : `${events} events`}
-                id="board-coming-up"
-                title="Coming up"
-              >
-                {groups.comingUp.map((post) => (
-                  <PostCard key={post.id} {...cardProps(post)} />
-                ))}
-              </Section>
-            )}
-
-            {loaded && groups.headsUps.length > 0 && (
-              <Section id="board-heads-ups" title="Heads-ups">
-                {groups.headsUps.map((post) => (
-                  <PostCard key={post.id} {...cardProps(post)} />
-                ))}
-              </Section>
-            )}
-
-            {loaded && pastCount > 0 && (
-              <button className={styles.pastLink} onClick={props.onOpenPast} type="button">
-                Past posts ({pastCount})
-                <ChevronRight aria-hidden="true" size={15} />
-              </button>
-            )}
-          </div>
         </div>
       </main>
       <BottomNav active="board" navigate={props.onNavigate} theme={theme} />

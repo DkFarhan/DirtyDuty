@@ -96,17 +96,20 @@ public class BoardPostService {
   private final UserRepository userRepository;
   private final MembershipExitCleanupService membershipLocks;
   private final NotificationEventService notificationEventService;
+  private final BoardListService boardListService;
   private Clock clock = Clock.systemUTC();
 
   public BoardPostService(
       JdbcTemplate jdbc,
       UserRepository userRepository,
       MembershipExitCleanupService membershipLocks,
-      NotificationEventService notificationEventService) {
+      NotificationEventService notificationEventService,
+      BoardListService boardListService) {
     this.jdbc = jdbc;
     this.userRepository = userRepository;
     this.membershipLocks = membershipLocks;
     this.notificationEventService = notificationEventService;
+    this.boardListService = boardListService;
   }
 
   /** Tests pin the clock; {@code null} restores the system clock. */
@@ -146,7 +149,9 @@ public class BoardPostService {
         actor.admin(),
         actor.members().values().stream()
             .map(member -> new BoardMemberResponse(member.userId(), member.name(), member.role()))
-            .toList());
+            .toList(),
+        boardListService.toBuyCount(householdId),
+        boardListService.shoppingSummary(householdId, actor.zone()));
   }
 
   /** Past posts, most recently Past first. */

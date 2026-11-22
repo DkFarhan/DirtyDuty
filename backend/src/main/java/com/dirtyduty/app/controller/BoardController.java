@@ -1,10 +1,18 @@
 package com.dirtyduty.app.controller;
 
+import com.dirtyduty.app.dto.board.BoardListItemAddResponse;
+import com.dirtyduty.app.dto.board.BoardListItemRequest;
+import com.dirtyduty.app.dto.board.BoardListItemResponse;
+import com.dirtyduty.app.dto.board.BoardListItemsResponse;
+import com.dirtyduty.app.dto.board.BoardListRequest;
+import com.dirtyduty.app.dto.board.BoardListResponse;
+import com.dirtyduty.app.dto.board.BoardListsResponse;
 import com.dirtyduty.app.dto.board.BoardPostRequest;
 import com.dirtyduty.app.dto.board.BoardPostResponse;
 import com.dirtyduty.app.dto.board.BoardResponse;
 import com.dirtyduty.app.dto.board.BoardSeenRequest;
 import com.dirtyduty.app.dto.board.BoardUnseenResponse;
+import com.dirtyduty.app.service.BoardListService;
 import com.dirtyduty.app.service.BoardPostService;
 import java.util.List;
 import java.util.UUID;
@@ -20,14 +28,16 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-/** The Household Board: posts every active member sees. Non-members get 404. */
+/** The Household Board: posts and shared lists every active member sees. Non-members get 404. */
 @RestController
 @RequestMapping("/api/households/{householdId}/board")
 public class BoardController {
   private final BoardPostService boardPostService;
+  private final BoardListService boardListService;
 
-  public BoardController(BoardPostService boardPostService) {
+  public BoardController(BoardPostService boardPostService, BoardListService boardListService) {
     this.boardPostService = boardPostService;
+    this.boardListService = boardListService;
   }
 
   @GetMapping
@@ -115,5 +125,112 @@ public class BoardController {
   public BoardPostResponse remind(
       @PathVariable UUID householdId, @PathVariable UUID postId, Authentication authentication) {
     return boardPostService.remind(householdId, postId, authentication);
+  }
+
+  // ---- Lists -----------------------------------------------------------------------------------
+
+  @GetMapping("/lists")
+  public BoardListsResponse lists(@PathVariable UUID householdId, Authentication authentication) {
+    return boardListService.lists(householdId, authentication);
+  }
+
+  @PostMapping("/lists")
+  @ResponseStatus(HttpStatus.CREATED)
+  public BoardListResponse createList(
+      @PathVariable UUID householdId,
+      @RequestBody BoardListRequest request,
+      Authentication authentication) {
+    return boardListService.createList(householdId, request, authentication);
+  }
+
+  @PutMapping("/lists/{listId}")
+  public BoardListResponse renameList(
+      @PathVariable UUID householdId,
+      @PathVariable UUID listId,
+      @RequestBody BoardListRequest request,
+      Authentication authentication) {
+    return boardListService.renameList(householdId, listId, request, authentication);
+  }
+
+  @PostMapping("/lists/{listId}/archive")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void archiveList(
+      @PathVariable UUID householdId, @PathVariable UUID listId, Authentication authentication) {
+    boardListService.archiveList(householdId, listId, authentication);
+  }
+
+  @GetMapping("/lists/{listId}/items")
+  public BoardListItemsResponse items(
+      @PathVariable UUID householdId, @PathVariable UUID listId, Authentication authentication) {
+    return boardListService.items(householdId, listId, authentication);
+  }
+
+  /** Adds an item, or answers with the open item of the same name ({@code existing}). */
+  @PostMapping("/lists/{listId}/items")
+  public BoardListItemAddResponse addItem(
+      @PathVariable UUID householdId,
+      @PathVariable UUID listId,
+      @RequestBody BoardListItemRequest request,
+      Authentication authentication) {
+    return boardListService.addItem(householdId, listId, request, authentication);
+  }
+
+  /** Names this household added before, most recent first (suggestions). */
+  @GetMapping("/list-items/recent")
+  public List<String> recentItemNames(
+      @PathVariable UUID householdId, Authentication authentication) {
+    return boardListService.recentNames(householdId, authentication);
+  }
+
+  @PutMapping("/list-items/{itemId}")
+  public BoardListItemResponse updateItem(
+      @PathVariable UUID householdId,
+      @PathVariable UUID itemId,
+      @RequestBody BoardListItemRequest request,
+      Authentication authentication) {
+    return boardListService.updateItem(householdId, itemId, request, authentication);
+  }
+
+  @DeleteMapping("/list-items/{itemId}")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void deleteItem(
+      @PathVariable UUID householdId, @PathVariable UUID itemId, Authentication authentication) {
+    boardListService.deleteItem(householdId, itemId, authentication);
+  }
+
+  @PostMapping("/list-items/{itemId}/claim")
+  public BoardListItemResponse claimItem(
+      @PathVariable UUID householdId, @PathVariable UUID itemId, Authentication authentication) {
+    return boardListService.claim(householdId, itemId, authentication);
+  }
+
+  @PostMapping("/list-items/{itemId}/release")
+  public BoardListItemResponse releaseItem(
+      @PathVariable UUID householdId, @PathVariable UUID itemId, Authentication authentication) {
+    return boardListService.release(householdId, itemId, authentication);
+  }
+
+  @PostMapping("/list-items/{itemId}/today")
+  public BoardListItemResponse neededToday(
+      @PathVariable UUID householdId, @PathVariable UUID itemId, Authentication authentication) {
+    return boardListService.neededToday(householdId, itemId, true, authentication);
+  }
+
+  @DeleteMapping("/list-items/{itemId}/today")
+  public BoardListItemResponse notNeededToday(
+      @PathVariable UUID householdId, @PathVariable UUID itemId, Authentication authentication) {
+    return boardListService.neededToday(householdId, itemId, false, authentication);
+  }
+
+  @PostMapping("/list-items/{itemId}/buy")
+  public BoardListItemResponse buyItem(
+      @PathVariable UUID householdId, @PathVariable UUID itemId, Authentication authentication) {
+    return boardListService.buy(householdId, itemId, authentication);
+  }
+
+  @PostMapping("/list-items/{itemId}/unbuy")
+  public BoardListItemResponse unbuyItem(
+      @PathVariable UUID householdId, @PathVariable UUID itemId, Authentication authentication) {
+    return boardListService.unbuy(householdId, itemId, authentication);
   }
 }

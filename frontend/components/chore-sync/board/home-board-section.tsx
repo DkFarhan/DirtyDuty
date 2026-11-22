@@ -1,28 +1,38 @@
 "use client"
 
-import { ChevronRight } from "lucide-react"
+import { ChevronRight, ShoppingCart } from "lucide-react"
+import type { BoardShoppingSummary } from "@/lib/board/api"
 import type { HomeBoardRow } from "@/lib/board/board-view"
+import { shoppingSubtitle, showShoppingRow } from "@/lib/board/list-view"
 import { TYPE_ICONS } from "./post-sheets"
 import styles from "./home-board-section.module.css"
 
 /**
  * Home's "Board" section, after every chore section: up to four rows (the next event, open
- * problems, heads-ups the viewer hasn't seen) and "Open board". Hidden when there's nothing.
+ * problems, heads-ups the viewer hasn't seen, and last the Shopping list while something is on it)
+ * and "Open board". Hidden when there's nothing.
  */
 export function HomeBoardSection({
   rows,
   unseenCount,
   theme,
+  shopping = null,
   onOpenPost,
   onOpenBoard,
+  onOpenShopping,
 }: {
   rows: HomeBoardRow[]
   unseenCount: number
   theme: "light" | "dark"
+  shopping?: BoardShoppingSummary | null
   onOpenPost: (postId: string) => void
   onOpenBoard: () => void
+  onOpenShopping?: (listId: string | null) => void
 }) {
-  if (rows.length === 0) return null
+  const shoppingRow = showShoppingRow(shopping) ? shopping : null
+  // The Shopping row takes the fourth slot.
+  const postRows = shoppingRow ? rows.slice(0, 3) : rows
+  if (postRows.length === 0 && !shoppingRow) return null
   return (
     <section
       aria-labelledby="home-board-title"
@@ -34,7 +44,7 @@ export function HomeBoardSection({
       </div>
       <div className={styles.card}>
         <ul className={styles.rows}>
-          {rows.map(({ post, subtitle, unseen }) => (
+          {postRows.map(({ post, subtitle, unseen }) => (
             <li key={post.id}>
               <button className={styles.row} onClick={() => onOpenPost(post.id)} type="button">
                 <span aria-hidden="true" className={styles.tile} data-type={post.type}>
@@ -51,6 +61,26 @@ export function HomeBoardSection({
               </button>
             </li>
           ))}
+          {shoppingRow && (
+            <li>
+              <button
+                className={styles.row}
+                onClick={() => onOpenShopping?.(shoppingRow.listId)}
+                type="button"
+              >
+                <span aria-hidden="true" className={styles.tile} data-type="SHOPPING">
+                  <ShoppingCart size={17} />
+                </span>
+                <span>
+                  <span className={styles.title}>
+                    <span>Shopping</span>
+                  </span>
+                  <span className={styles.subtitle}>{shoppingSubtitle(shoppingRow)}</span>
+                </span>
+                <ChevronRight aria-hidden="true" size={18} />
+              </button>
+            </li>
+          )}
         </ul>
       </div>
       <button className={styles.open} onClick={onOpenBoard} type="button">

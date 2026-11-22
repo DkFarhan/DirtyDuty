@@ -114,6 +114,20 @@ const BOARD_MESSAGES = [
   /^Already reminded at \d{1,2}:\d{2} (AM|PM)\.$/,
   /^Everyone has seen this post\.$/,
   /^Send at most 100 posts at a time\.$/,
+  // Lists
+  /^This list is no longer on the board\.$/,
+  /^This item is no longer on the list\.$/,
+  /^This item is already bought\.$/,
+  /^Enter a name for the list\.$/,
+  /^Keep list names to 40 characters\.$/,
+  /^There's already a list called [^\n]{1,40}\.$/,
+  /^You can have at most 20 lists\. Archive one to make room\.$/,
+  /^Shopping can't be (renamed|archived)\.$/,
+  /^Enter an item\.$/,
+  /^Keep items to 80 characters\.$/,
+  /^Keep the note to 60 characters\.$/,
+  /^[^\n]{1,80} is already on this list\.$/,
+  /^This action isn't available\.$/,
 ]
 
 /** Chore type settings checked when a chore is saved. */

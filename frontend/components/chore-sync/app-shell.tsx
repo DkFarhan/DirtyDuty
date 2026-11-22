@@ -68,6 +68,7 @@ function ScreenRouter() {
     adminTab,
     navigate,
     openBoardPost,
+    openBoardLists,
     setCurrentUser,
     pendingAccountDeletionUserId,
     clearAccountDeletion,
@@ -101,14 +102,17 @@ function ScreenRouter() {
     const screenTarget = target ? screenTargets.get(target) : undefined
     if (screenTarget) {
       const params = new URLSearchParams(window.location.search)
-      // A board notification opens its post: /?screen=board&postId=…
+      // A board notification opens its post (/?screen=board&postId=…) or list (&listId=…).
       const postId = screenTarget === "board" ? params.get("postId") : null
+      const listId = screenTarget === "board" ? params.get("listId") : null
       skipNextRouteGuard.current = (postId ? "board-post" : screenTarget) !== screen
       if (postId) openBoardPost(postId)
+      else if (listId) openBoardLists(listId)
       else navigate(screenTarget)
       params.delete("screen")
       params.delete("returnTo")
       params.delete("postId")
+      params.delete("listId")
       const query = params.toString()
       window.history.replaceState(
         {},
@@ -116,7 +120,7 @@ function ScreenRouter() {
         query ? `${window.location.pathname}?${query}` : window.location.pathname,
       )
     }
-  }, [isLoading, navigate, openBoardPost, screen])
+  }, [isLoading, navigate, openBoardLists, openBoardPost, screen])
 
   useEffect(() => {
     if (user) {

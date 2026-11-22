@@ -2471,6 +2471,32 @@ class HouseholdControllerIntegrationTest {
   }
 
   @Test
+  void theShoppingListCantBeDeletedAndAnUnsupportedMethodIs405NotAServerError() throws Exception {
+    WebSession owner = login("listdelete");
+    UUID householdId = createHousehold(owner, "List Delete Home", "UTC");
+    String base = "/api/households/" + householdId + "/board/lists";
+    MvcResult lists =
+        mockMvc.perform(get(base).cookie(owner.cookie())).andExpect(status().isOk()).andReturn();
+    String shoppingId =
+        objectMapper
+            .readTree(lists.getResponse().getContentAsString())
+            .get("lists")
+            .get(0)
+            .get("id")
+            .asText();
+    mockMvc
+        .perform(
+            delete(base + "/" + shoppingId)
+                .cookie(owner.cookie())
+                .header(owner.csrfHeader(), owner.csrfToken()))
+        .andExpect(status().isMethodNotAllowed())
+        .andExpect(jsonPath("$.message").value("This action isn't available."));
+    mockMvc
+        .perform(get(base).cookie(owner.cookie()))
+        .andExpect(jsonPath("$.lists[0].name").value("Shopping"));
+  }
+
+  @Test
   void dashboardIncludesPersonalOverdueCarryoverOutsideCurrentWeek() throws Exception {
     WebSession owner = login("overduecarryover");
     UUID householdId = createHousehold(owner, "Overdue Carryover Home", "UTC");

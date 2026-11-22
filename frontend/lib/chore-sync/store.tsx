@@ -40,6 +40,10 @@ interface ChoreSyncContextValue {
   boardPostReturn: Screen
   /** The post the Board form edits; null for a new post. */
   editingBoardPostId: string | null
+  /** The Board's Posts | Lists tab, kept while moving between screens. */
+  boardTab: "posts" | "lists"
+  /** A list the Board should open (Home's Shopping row, a "needed today" notification). */
+  requestedBoardListId: string | null
   choreDraft: ChoreDraft | null
   pendingAccountDeletionUserId: string | null
   navigate: (screen: Screen, adminTab?: "members" | "chores") => void
@@ -50,6 +54,9 @@ interface ChoreSyncContextValue {
   editChore: (choreId: string) => void
   openBoardPost: (postId: string, returnTo?: Screen) => void
   openBoardPostForm: (postId: string | null) => void
+  setBoardTab: (tab: "posts" | "lists") => void
+  /** The Board on its Lists tab, on {@link listId} when given. */
+  openBoardLists: (listId?: string | null) => void
   startChoreDraft: (draft: ChoreDraft) => void
   clearChoreDraft: () => void
   setCurrentUser: (user: Member) => void
@@ -75,6 +82,8 @@ export function ChoreSyncProvider({
   const [boardPostId, setBoardPostId] = useState<string | null>(null)
   const [boardPostReturn, setBoardPostReturn] = useState<Screen>("board")
   const [editingBoardPostId, setEditingBoardPostId] = useState<string | null>(null)
+  const [boardTab, setBoardTab] = useState<"posts" | "lists">("posts")
+  const [requestedBoardListId, setRequestedBoardListId] = useState<string | null>(null)
   const [choreDraft, setChoreDraft] = useState<ChoreDraft | null>(null)
   const [notificationReturnScreen, setNotificationReturnScreen] = useState<Screen | null>(null)
   const [pendingAccountDeletionUserId, setPendingAccountDeletionUserId] = useState<string | null>(
@@ -136,6 +145,12 @@ export function ChoreSyncProvider({
     setScreen("board-post-form")
   }, [])
 
+  const openBoardLists = useCallback((listId: string | null = null) => {
+    setBoardTab("lists")
+    setRequestedBoardListId(listId)
+    setScreen("board")
+  }, [])
+
   const startChoreDraft = useCallback((draft: ChoreDraft) => {
     setChoreDraft(draft)
     setScreen("create-chore")
@@ -152,6 +167,8 @@ export function ChoreSyncProvider({
     setEditingChoreId(null)
     setBoardPostId(null)
     setEditingBoardPostId(null)
+    setBoardTab("posts")
+    setRequestedBoardListId(null)
     setChoreDraft(null)
     setPendingAccountDeletionUserId(null)
   }, [])
@@ -180,6 +197,8 @@ export function ChoreSyncProvider({
       boardPostId,
       boardPostReturn,
       editingBoardPostId,
+      boardTab,
+      requestedBoardListId,
       choreDraft,
       pendingAccountDeletionUserId,
       navigate,
@@ -190,6 +209,8 @@ export function ChoreSyncProvider({
       editChore,
       openBoardPost,
       openBoardPostForm,
+      setBoardTab,
+      openBoardLists,
       startChoreDraft,
       clearChoreDraft,
       setCurrentUser,
@@ -206,6 +227,8 @@ export function ChoreSyncProvider({
       boardPostId,
       boardPostReturn,
       editingBoardPostId,
+      boardTab,
+      requestedBoardListId,
       choreDraft,
       pendingAccountDeletionUserId,
       navigate,
@@ -214,6 +237,11 @@ export function ChoreSyncProvider({
       openNotifications,
       returnFromNotifications,
       editChore,
+      openBoardPost,
+      openBoardPostForm,
+      openBoardLists,
+      startChoreDraft,
+      clearChoreDraft,
       setCurrentUser,
       resetUserData,
       markComplete,

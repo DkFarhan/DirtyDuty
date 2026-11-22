@@ -1,5 +1,6 @@
 package com.dirtyduty.app.notification;
 
+import com.dirtyduty.app.service.BoardListService;
 import com.dirtyduty.app.service.BoardPostService;
 import com.dirtyduty.app.service.MembershipExitCleanupService;
 import java.time.Duration;
@@ -57,6 +58,7 @@ public class NotificationScheduler {
   private final NotificationTemplateResolver templateResolver;
   private final MembershipExitCleanupService membershipExitCleanupService;
   private final BoardPostService boardPostService;
+  private final BoardListService boardListService;
 
   public NotificationScheduler(
       JdbcTemplate jdbc,
@@ -65,7 +67,8 @@ public class NotificationScheduler {
       NotificationCooldownService cooldownService,
       NotificationTemplateResolver templateResolver,
       MembershipExitCleanupService membershipExitCleanupService,
-      BoardPostService boardPostService) {
+      BoardPostService boardPostService,
+      BoardListService boardListService) {
     this.jdbc = jdbc;
     this.eventService = eventService;
     this.providers = providers;
@@ -73,6 +76,7 @@ public class NotificationScheduler {
     this.templateResolver = templateResolver;
     this.membershipExitCleanupService = membershipExitCleanupService;
     this.boardPostService = boardPostService;
+    this.boardListService = boardListService;
   }
 
   @Scheduled(
@@ -432,6 +436,7 @@ public class NotificationScheduler {
       if (!isEnabled(item)
           || !isAssignmentActive(item)
           || !isBoardReminderLive(item)
+          || !isBoardListPushLive(item)
           || !membershipExitCleanupService.isRecipientActiveForNotification(item.id())) {
         cancelNotification(item.id());
         continue;
@@ -555,6 +560,7 @@ public class NotificationScheduler {
       if (!isEnabled(item)
           || !isAssignmentActive(item)
           || !isBoardReminderLive(item)
+          || !isBoardListPushLive(item)
           || !membershipExitCleanupService.isRecipientActiveForNotification(item.id())) {
         cancelNotification(item.id());
         continue;
@@ -644,6 +650,21 @@ public class NotificationScheduler {
                 """,
             Boolean.class,
             item.referenceId()));
+  }
+
+  /**
+   * A scheduled "Need it today" push (the bundle at the end of a list's 30-minute window) goes only
+   * while a flag it carries is still open today; an immediate one always goes.
+   */
+  private boolean isBoardListPushLive(PendingNotification item) {
+    if (!"BOARD_LIST".equals(item.referenceType())
+        || !"BOARD_LIST_NEEDED_TODAY".equals(item.type())
+        || item.referenceId() == null
+        || item.deduplicationKey() == null
+        || item.deduplicationKey().contains(":event")) {
+      return true;
+    }
+    return boardListService.claimDeferredPush(item.referenceId(), item.scheduledAt());
   }
 
   private boolean isChoreReminder(String type) {
@@ -760,6 +781,8 @@ public class NotificationScheduler {
   public void cleanupReadNotifications() {
     // Board posts move to Past when their time is up and are deleted 30 days later.
     boardPostService.runRetention();
+    // List items go a day after they're bought; Today flags clear when the day ends.
+    boardListService.runRetention();
     jdbc.update(
         """
                 DELETE FROM notifications
