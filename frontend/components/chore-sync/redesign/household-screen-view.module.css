@@ -113,9 +113,9 @@
 .householdHeader {
   position: relative;
   box-sizing: border-box;
-  height: calc(125px + var(--app-safe-top));
+  height: calc(101px + var(--tab-header-top));
   overflow: hidden;
-  padding: calc(24px + var(--app-safe-top)) 24px 12px;
+  padding: var(--tab-header-top) 24px 12px;
   border-bottom: 1px solid var(--rule);
   background: linear-gradient(
     151.6deg,
@@ -1393,8 +1393,9 @@
 }
 
 @media (min-width: 900px) {
+  /* With the header's 18px top padding, the eyebrow lands on --tab-header-top. */
   .safeAreaSpacer {
-    height: calc(24px + var(--app-safe-top));
+    height: calc(var(--tab-header-top) - 18px);
   }
 
   .householdHeader {
