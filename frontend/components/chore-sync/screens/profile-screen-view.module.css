@@ -169,8 +169,8 @@
 .profileHeader {
   position: relative;
   overflow: hidden;
-  flex: 0 0 calc(173px + var(--app-safe-top));
-  padding: calc(18px + var(--app-safe-top)) 24px 0;
+  flex: 0 0 calc(155px + var(--tab-header-top));
+  padding: var(--tab-header-top) 24px 0;
   background: linear-gradient(139.1056deg, #08202b 8.871%, #10434f 50.806%, #0a2834 89.516%);
 }
 
@@ -3147,8 +3147,8 @@
 
   .profileHeader {
     box-sizing: border-box;
-    flex-basis: calc(212px + var(--app-safe-top));
-    padding: calc(30px + var(--app-safe-top)) max(24px, calc((100% - 820px) / 2)) 24px;
+    flex-basis: calc(182px + var(--tab-header-top));
+    padding: var(--tab-header-top) max(24px, calc((100% - 820px) / 2)) 24px;
   }
 
   .profileHeader .accountEyebrow {

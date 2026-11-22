@@ -479,3 +479,19 @@
 .font-display {
   font-family: var(--font-nunito), ui-sans-serif, system-ui, sans-serif;
 }
+
+/* Where the first line of every main tab (Home, My Chores, Board, Household, Profile) sits below
+   the status bar; Household is the reference. Defined on the shell's top-inset wrapper too, so it
+   follows --app-safe-top there (0px under the household refresh banner). */
+html,
+[data-testid="screen-top-inset"] {
+  --tab-header-top: calc(24px + var(--app-safe-top));
+}
+
+@media (min-width: 900px) {
+  html,
+  [data-testid="screen-top-inset"] {
+    /* Household's 24px gap above its header plus its 18px top padding. */
+    --tab-header-top: calc(42px + var(--app-safe-top));
+  }
+}

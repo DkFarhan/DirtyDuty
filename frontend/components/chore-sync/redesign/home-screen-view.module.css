@@ -84,7 +84,7 @@
 }
 
 .backgroundAtmosphereCyan {
-  top: calc(68px + var(--app-safe-top));
+  top: calc(var(--tab-header-top) + 11px);
   left: 118px;
   width: 414px;
   height: 444px;
@@ -92,7 +92,7 @@
 }
 
 .backgroundAtmosphereTwilight {
-  top: calc(305px + var(--app-safe-top));
+  top: calc(var(--tab-header-top) + 248px);
   left: -215px;
   width: 440px;
   height: 510px;
@@ -119,19 +119,21 @@
 
 .header {
   box-sizing: border-box;
-  height: calc(218px + var(--app-safe-top));
-  padding: calc(57px + var(--app-safe-top)) 25px 0;
+  height: calc(var(--tab-header-top) + 161px);
+  /* The bell row's top edge sits on the tab line; the date stays centred beside the bell. */
+  padding: var(--tab-header-top) 25px 0;
 }
 
+/* The date is centred on the bell and avatar beside it. */
 .topBar {
   display: flex;
   height: 43px;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
 }
 
 .dateLabel {
-  margin: 19px 0 0;
+  margin: 0;
   color: var(--accent);
   font-size: 10px;
   font-weight: 700;

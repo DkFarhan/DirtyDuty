@@ -118,7 +118,7 @@
 /* ---- Header -------------------------------------------------------------------------------- */
 
 .header {
-  padding: calc(72px + var(--app-safe-top)) 25px 0;
+  padding: var(--tab-header-top) 25px 0;
   background: var(--header-glow);
 }
 
