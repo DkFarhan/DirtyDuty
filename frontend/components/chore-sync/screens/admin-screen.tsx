@@ -322,7 +322,9 @@ export function AdminScreen({
                       ? `Random · ${peopleNeeded} of ${
                           participantCount > 0 ? peopleLabel : "participants"
                         }`
-                      : null
+                      : chore.schedule?.assignmentStrategy === "BALANCED"
+                        ? `Balanced · ${participantCount > 0 ? peopleLabel : "participants"}`
+                        : null
               const scheduleDescription = chore.schedule
                 ? [
                     chore.schedule.recurrenceRule ||

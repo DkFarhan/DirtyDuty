@@ -4,5 +4,7 @@ public enum AssignmentStrategy {
   MANUAL,
   FIXED,
   ROUND_ROBIN,
-  RANDOM
+  RANDOM,
+  /** Whoever has the least fairness effort per present day lately (E8). */
+  BALANCED
 }

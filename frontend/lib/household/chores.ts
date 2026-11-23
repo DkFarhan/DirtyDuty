@@ -1,7 +1,7 @@
 import { api } from "@/lib/auth/api"
 
 export type ChorePriority = "LOW" | "NORMAL" | "HIGH" | "URGENT"
-export type AssignmentStrategy = "FIXED" | "ROUND_ROBIN" | "RANDOM"
+export type AssignmentStrategy = "FIXED" | "ROUND_ROBIN" | "RANDOM" | "BALANCED"
 /**
  * How a chore repeats. CALENDAR follows its recurrence rule (one-time chores included).
  * AFTER_COMPLETION is due an interval after it was last done. AS_NEEDED is done by anyone in the

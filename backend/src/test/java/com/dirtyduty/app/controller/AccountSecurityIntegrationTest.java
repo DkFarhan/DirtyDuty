@@ -249,8 +249,9 @@ class AccountSecurityIntegrationTest {
         LocalDate.now().minusDays(2));
     jdbc.update(
         """
-                INSERT INTO chore_completions (household_id, assignment_id, completed_by_user_id, completed_at)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO chore_completions (household_id, assignment_id, completed_by_user_id, completed_at,
+                    effort_points)
+                VALUES (?, ?, ?, ?, 1)
                 """,
         householdId,
         historicalAssignmentId,

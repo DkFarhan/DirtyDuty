@@ -410,8 +410,8 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
         """
         INSERT INTO chore_completions
             (household_id, assignment_id, attempt_number, completed_by_user_id,
-             verification_status, note)
-        VALUES (?, ?, 1, ?, 'PENDING', 'Submitted proof history')
+             verification_status, note, effort_points)
+        VALUES (?, ?, 1, ?, 'PENDING', 'Submitted proof history', 1)
         """,
         householdId,
         assignmentId,

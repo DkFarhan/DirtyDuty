@@ -65,7 +65,14 @@ public class OccurrenceService {
   private final UserRepository userRepository;
   private final NotificationEventService notificationEventService;
   private final AwayPeriods awayPeriods;
+  private final EffortLedger effortLedger;
   private final int horizonDays;
+
+  /**
+   * Balanced workloads per household for the current generation run (or single schedule sync), so
+   * they are read once and updated as Balanced assigns. Null outside a run.
+   */
+  private final ThreadLocal<Map<UUID, EffortLedger.Workloads>> balancedRun = new ThreadLocal<>();
 
   /** The completion instant comes from this clock; tests pin it. */
   private java.time.Clock clock = java.time.Clock.systemUTC();
@@ -78,6 +85,7 @@ public class OccurrenceService {
       UserRepository userRepository,
       NotificationEventService notificationEventService,
       AwayPeriods awayPeriods,
+      EffortLedger effortLedger,
       @Value("${app.chores.occurrence-horizon-days:30}") int horizonDays) {
     if (horizonDays < 1 || horizonDays > 90) {
       throw new IllegalArgumentException("Occurrence horizon must be between 1 and 90 days.");
@@ -89,6 +97,7 @@ public class OccurrenceService {
     this.userRepository = userRepository;
     this.notificationEventService = notificationEventService;
     this.awayPeriods = awayPeriods;
+    this.effortLedger = effortLedger;
     this.horizonDays = horizonDays;
   }
 
@@ -104,6 +113,31 @@ public class OccurrenceService {
 
   @Transactional
   public void synchronizeSchedule(
+      ChoreSchedule schedule, boolean updatePendingAssignees, boolean userInitiatedEdit) {
+    boolean ownsRun = beginBalancedRun();
+    try {
+      synchronizeInRun(schedule, updatePendingAssignees, userInitiatedEdit);
+    } finally {
+      endBalancedRun(ownsRun);
+    }
+  }
+
+  /** Starts a Balanced run unless one is already open; returns whether this call opened it. */
+  private boolean beginBalancedRun() {
+    if (balancedRun.get() != null) {
+      return false;
+    }
+    balancedRun.set(new java.util.HashMap<>());
+    return true;
+  }
+
+  private void endBalancedRun(boolean ownsRun) {
+    if (ownsRun) {
+      balancedRun.remove();
+    }
+  }
+
+  private void synchronizeInRun(
       ChoreSchedule schedule, boolean updatePendingAssignees, boolean userInitiatedEdit) {
     lockHousehold(schedule.getHousehold().getId());
     jdbc.queryForObject(
@@ -189,8 +223,6 @@ public class OccurrenceService {
     }
 
     for (LocalDate date : dates) {
-      Selection selection = selection(schedule, date);
-      List<UUID> assignees = selection.assignees();
       OffsetDateTime dueAt =
           schedule.getDueTime() == null ? null : dueAt(date, schedule.getDueTime(), zone);
       UUID occurrenceId =
@@ -202,6 +234,8 @@ public class OccurrenceService {
               date);
       Chore chore = schedule.getChore();
       if (occurrenceId == null) {
+        Selection selection = selection(schedule, date, null);
+        List<UUID> assignees = selection.assignees();
         occurrenceId = UUID.randomUUID();
         int inserted =
             jdbc.update(
@@ -233,6 +267,7 @@ public class OccurrenceService {
         if (inserted == 0 || selection.paused()) {
           continue;
         }
+        noteAssigned(schedule, occurrenceId, date, assignees);
         for (UUID userId : assignees) {
           jdbc.update(
               """
@@ -257,11 +292,23 @@ public class OccurrenceService {
                   assignees));
         }
       } else {
+        // Picked only when needed: Balanced reads workloads, and the occurrence's own effort is
+        // left out when it is re-picked.
+        UUID existingId = occurrenceId;
+        Selection[] picked = new Selection[1];
+        java.util.function.Supplier<Selection> pick =
+            () -> {
+              if (picked[0] == null) {
+                picked[0] = selection(schedule, date, existingId);
+              }
+              return picked[0];
+            };
         String occurrenceStatus = status(occurrenceId);
         if ("SKIPPED".equals(occurrenceStatus)) {
           // Paused because everyone was away: it comes back once someone can do it.
-          if (!selection.paused() && isAwayPaused(occurrenceId)) {
-            resumeAwayPaused(household.getId(), occurrenceId, selection);
+          if (isAwayPaused(occurrenceId) && !pick.get().paused()) {
+            resumeAwayPaused(household.getId(), occurrenceId, pick.get());
+            noteAssigned(schedule, occurrenceId, date, pick.get().assignees());
           }
           continue;
         }
@@ -334,6 +381,8 @@ public class OccurrenceService {
                 || exitCancelled
                 || awayRelevant
                 || (reviving && state.assigneesOverridden()))) {
+          Selection selection = pick.get();
+          List<UUID> assignees = selection.assignees();
           List<UUID> before = currentAssignees(occurrenceId);
           jdbc.update("DELETE FROM chore_assignment_assignees WHERE assignment_id=?", occurrenceId);
           jdbc.update(
@@ -345,8 +394,10 @@ public class OccurrenceService {
               occurrenceId, before.stream().filter(userId -> !assignees.contains(userId)).toList());
           if (selection.paused() && !keepDate) {
             pauseForAway(occurrenceId);
+            noteAssigned(schedule, occurrenceId, date, List.of());
             continue;
           }
+          noteAssigned(schedule, occurrenceId, date, assignees);
           for (UUID userId : assignees) {
             jdbc.update(
                 """
@@ -1005,7 +1056,8 @@ public class OccurrenceService {
         participantIds(schedule).stream().filter(activeMembers::contains).distinct().toList();
     boolean rotating =
         schedule.getAssignmentStrategy() == AssignmentStrategy.ROUND_ROBIN
-            || schedule.getAssignmentStrategy() == AssignmentStrategy.RANDOM;
+            || schedule.getAssignmentStrategy() == AssignmentStrategy.RANDOM
+            || schedule.getAssignmentStrategy() == AssignmentStrategy.BALANCED;
 
     for (UUID userId : recipients) {
       int inserted =
@@ -1171,11 +1223,13 @@ public class OccurrenceService {
             || activeMembersOnly(schedule.getHousehold().getId(), current).size() != current.size();
     boolean keepOverride = open.assigneesOverridden() && participants.containsAll(current);
     if (holderGone || (updatePendingAssignees && !keepOverride)) {
+      LocalDate turnDay = turnDay(schedule, open.plannedFor(), today);
       List<UUID> turn =
           nextTurn(
               schedule,
-              awayPeriods.awayOn(
-                  schedule.getHousehold().getId(), turnDay(schedule, open.plannedFor(), today)));
+              awayPeriods.awayOn(schedule.getHousehold().getId(), turnDay),
+              turnDay,
+              open.id());
       if (!turn.isEmpty() && !Set.copyOf(turn).equals(Set.copyOf(current))) {
         setOpenCopyAssignees(schedule, open.id(), current, turn, null);
       }
@@ -1489,12 +1543,12 @@ public class OccurrenceService {
   private UUID createOpenCopy(
       ChoreSchedule schedule, Plan plan, List<UUID> previousTurn, UUID actorId) {
     LocalDate today = LocalDate.now(clock.withZone(ZoneId.of(schedule.getTimezone())));
-    Set<UUID> away =
-        awayPeriods.awayOn(schedule.getHousehold().getId(), turnDay(schedule, plan.day(), today));
-    List<UUID> turn = nextTurn(schedule, away);
+    LocalDate turnDay = turnDay(schedule, plan.day(), today);
+    Set<UUID> away = awayPeriods.awayOn(schedule.getHousehold().getId(), turnDay);
+    List<UUID> turn = nextTurn(schedule, away, turnDay, null);
     UUID awayFrom = null;
     if (!away.isEmpty() && schedule.getAssignmentStrategy() != AssignmentStrategy.RANDOM) {
-      List<UUID> usual = nextTurn(schedule, Set.of());
+      List<UUID> usual = nextTurn(schedule, Set.of(), turnDay, null);
       if (!usual.isEmpty() && away.contains(usual.getFirst()) && !turn.equals(usual)) {
         awayFrom = usual.getFirst();
       }
@@ -1539,6 +1593,7 @@ public class OccurrenceService {
       return null;
     }
     insertAssignees(occurrenceId, household.getId(), turn);
+    noteAssigned(schedule, occurrenceId, plan.day(), turn);
     if (awayFrom != null) {
       jdbc.update(
           "UPDATE chore_assignments SET away_from_user_id=? WHERE id=?", awayFrom, occurrenceId);
@@ -1564,6 +1619,17 @@ public class OccurrenceService {
         turn.getFirst(),
         occurrenceId);
     insertAssignees(occurrenceId, schedule.getHousehold().getId(), turn);
+    Map<UUID, EffortLedger.Workloads> run = balancedRun.get();
+    if (run != null && run.containsKey(schedule.getHousehold().getId())) {
+      noteAssigned(
+          schedule,
+          occurrenceId,
+          jdbc.queryForObject(
+              "SELECT scheduled_for FROM chore_assignments WHERE id=?",
+              LocalDate.class,
+              occurrenceId),
+          turn);
+    }
     cancelPendingRemindersFor(
         occurrenceId, previous.stream().filter(userId -> !turn.contains(userId)).toList());
     announceTurn(
@@ -1615,6 +1681,14 @@ public class OccurrenceService {
    * deadline waits for them instead), and so does a rotation whose people are all away.
    */
   List<UUID> nextTurn(ChoreSchedule schedule, Set<UUID> away) {
+    return nextTurn(schedule, away, null, null);
+  }
+
+  /**
+   * As above for a copy whose turn day is {@code day} (Balanced weighs work up to then); {@code
+   * exclude} is the copy being re-picked, whose own effort doesn't count against its holder.
+   */
+  private List<UUID> nextTurn(ChoreSchedule schedule, Set<UUID> away, LocalDate day, UUID exclude) {
     List<UUID> participants = activeParticipants(schedule);
     if (participants.isEmpty()) {
       return List.of();
@@ -1629,6 +1703,9 @@ public class OccurrenceService {
     }
     if (schedule.getAssignmentStrategy() == AssignmentStrategy.RANDOM) {
       return List.of(eligible.get(RANDOM.nextInt(eligible.size())));
+    }
+    if (schedule.getAssignmentStrategy() == AssignmentStrategy.BALANCED) {
+      return balancedPick(schedule, eligible, day, 1, exclude);
     }
     Map<UUID, Integer> counts = completionCounts(schedule.getId());
     Map<UUID, Integer> offsets = turnOffsets(schedule.getStrategyConfig());
@@ -1680,7 +1757,7 @@ public class OccurrenceService {
     List<UUID> current = currentAssignees(open.id());
     UUID awayHolder = current.stream().filter(away::contains).findFirst().orElse(null);
     if (awayHolder != null) {
-      List<UUID> turn = nextTurn(schedule, away);
+      List<UUID> turn = nextTurn(schedule, away, day, open.id());
       if (!turn.isEmpty() && !Set.copyOf(turn).equals(Set.copyOf(current))) {
         setOpenCopyAssignees(schedule, open.id(), current, turn, null);
         jdbc.update(
@@ -1694,7 +1771,7 @@ public class OccurrenceService {
       if (schedule.getKind() == ScheduleKind.AFTER_COMPLETION
           && schedule.getAssignmentStrategy() != AssignmentStrategy.RANDOM
           && !open.plannedFor().isBefore(today)) {
-        List<UUID> turn = nextTurn(schedule, Set.of());
+        List<UUID> turn = nextTurn(schedule, Set.of(), day, open.id());
         if (!turn.isEmpty() && !Set.copyOf(turn).equals(Set.copyOf(current))) {
           setOpenCopyAssignees(schedule, open.id(), current, turn, null);
           current = turn;
@@ -2308,14 +2385,18 @@ public class OccurrenceService {
       jdbc.update(
           """
                     INSERT INTO chore_completions
-                        (household_id, assignment_id, attempt_number, completed_by_user_id, completed_at)
-                    VALUES (?, ?, ?, ?, ?) ON CONFLICT (assignment_id, attempt_number) DO NOTHING
+                        (household_id, assignment_id, attempt_number, completed_by_user_id,
+                         completed_at, effort_points)
+                    SELECT ?, a.id, ?, ?, ?, COALESCE(c.difficulty, a.difficulty_snapshot)
+                    FROM chore_assignments a LEFT JOIN chores c ON c.id=a.chore_id
+                    WHERE a.id=?
+                    ON CONFLICT (assignment_id, attempt_number) DO NOTHING
                     """,
           householdId,
-          assignmentId,
           attempt,
           actor.getUser().getId(),
-          now);
+          now,
+          assignmentId);
       jdbc.update(
           "UPDATE chore_assignments SET status='COMPLETED', updated_at=NOW() "
               + "WHERE id=? AND household_id=? AND status IN ('PENDING','SUBMITTED')",
@@ -3038,10 +3119,21 @@ public class OccurrenceService {
 
   @Transactional
   public void generateHousehold(UUID householdId) {
+    boolean ownsRun = beginBalancedRun();
+    try {
+      generateHouseholdInRun(householdId);
+    } finally {
+      endBalancedRun(ownsRun);
+    }
+  }
+
+  private void generateHouseholdInRun(UUID householdId) {
     lockHousehold(householdId);
+    // Balanced schedules go last, so their workloads include what the others assigned this run.
     List<UUID> scheduleIds =
         jdbc.query(
-            "SELECT id FROM chore_schedules WHERE household_id=? AND is_active=TRUE ORDER BY id",
+            "SELECT id FROM chore_schedules WHERE household_id=? AND is_active=TRUE "
+                + "ORDER BY assignment_strategy='BALANCED', id",
             (rs, row) -> rs.getObject("id", UUID.class),
             householdId);
     for (UUID scheduleId : scheduleIds) {
@@ -3079,10 +3171,20 @@ public class OccurrenceService {
    */
   @Transactional
   public void replanForAway(UUID householdId) {
+    boolean ownsRun = beginBalancedRun();
+    try {
+      replanForAwayInRun(householdId);
+    } finally {
+      endBalancedRun(ownsRun);
+    }
+  }
+
+  private void replanForAwayInRun(UUID householdId) {
     lockHousehold(householdId);
     List<UUID> scheduleIds =
         jdbc.queryForList(
-            "SELECT id FROM chore_schedules WHERE household_id=? AND is_active=TRUE ORDER BY id",
+            "SELECT id FROM chore_schedules WHERE household_id=? AND is_active=TRUE "
+                + "ORDER BY assignment_strategy='BALANCED', id",
             UUID.class,
             householdId);
     for (UUID scheduleId : scheduleIds) {
@@ -3612,9 +3714,16 @@ public class OccurrenceService {
   record Selection(List<UUID> assignees, UUID awayFrom, boolean paused) {}
 
   Selection selection(ChoreSchedule schedule, LocalDate date) {
+    return selection(schedule, date, null);
+  }
+
+  /**
+   * As above; {@code exclude} is the occurrence being re-picked (Balanced leaves its effort out).
+   */
+  private Selection selection(ChoreSchedule schedule, LocalDate date, UUID exclude) {
     Set<UUID> away = awayPeriods.awayOn(schedule.getHousehold().getId(), date);
     if (away.isEmpty()) {
-      return new Selection(selectedAssignees(schedule, date, Set.of()), null, false);
+      return new Selection(selectedAssignees(schedule, date, Set.of(), exclude), null, false);
     }
     if (schedule.getAssignmentStrategy() == AssignmentStrategy.RANDOM) {
       // Away members are simply left out of the draw.
@@ -3622,16 +3731,70 @@ public class OccurrenceService {
       boolean anyone = !selectedAssignees(schedule, date, Set.of()).isEmpty();
       return new Selection(drawn, null, drawn.isEmpty() && anyone);
     }
-    List<UUID> usual = selectedAssignees(schedule, date, Set.of());
+    List<UUID> usual = selectedAssignees(schedule, date, Set.of(), exclude);
     UUID awayFrom = usual.stream().filter(away::contains).findFirst().orElse(null);
     if (awayFrom == null) {
       // Nobody it would go to is away: the usual pick, unchanged.
       return new Selection(usual, null, false);
     }
-    List<UUID> covered = selectedAssignees(schedule, date, away);
+    List<UUID> covered = selectedAssignees(schedule, date, away, exclude);
     return covered.isEmpty()
         ? new Selection(List.of(), null, true)
         : new Selection(covered, awayFrom, false);
+  }
+
+  // ---- Balanced (E8)
+  // ------------------------------------------------------------------------------------
+
+  /**
+   * The household's Balanced workloads for this run, read once and then kept up to date as
+   * occurrences are assigned. Outside a run they are read for this one pick.
+   */
+  private EffortLedger.Workloads workloads(ChoreSchedule schedule) {
+    UUID householdId = schedule.getHousehold().getId();
+    Map<UUID, EffortLedger.Workloads> run = balancedRun.get();
+    EffortLedger.Workloads cached = run == null ? null : run.get(householdId);
+    if (cached != null) {
+      return cached;
+    }
+    ZoneId zone = ZoneId.of(schedule.getTimezone());
+    OffsetDateTime now = OffsetDateTime.now(clock);
+    EffortLedger.Workloads loaded =
+        effortLedger.workloads(householdId, zone, LocalDate.now(zone), now);
+    if (run != null) {
+      run.put(householdId, loaded);
+    }
+    return loaded;
+  }
+
+  /**
+   * Balanced: the {@code count} people (from {@code eligible}, in participant order) with the least
+   * effort per present day lately for an occurrence on {@code day}. See {@link
+   * EffortLedger.Workloads#workload}.
+   */
+  private List<UUID> balancedPick(
+      ChoreSchedule schedule, List<UUID> eligible, LocalDate day, int count, UUID exclude) {
+    EffortLedger.Workloads workloads = workloads(schedule);
+    Map<UUID, OffsetDateTime> lastDone =
+        schedule.getId() == null
+            ? Map.of()
+            : workloads.lastDone(schedule.getId(), this::lastCompletions);
+    return workloads.pick(
+        eligible, day == null ? workloads.today() : day, count, lastDone, exclude);
+  }
+
+  /**
+   * Keeps this run's Balanced workloads in step after an occurrence's people changed (an empty
+   * list: it no longer counts for anyone). Nothing to do when no workloads were read yet: they will
+   * be read from the database, which already has the change.
+   */
+  private void noteAssigned(
+      ChoreSchedule schedule, UUID occurrenceId, LocalDate day, List<UUID> assignees) {
+    Map<UUID, EffortLedger.Workloads> run = balancedRun.get();
+    EffortLedger.Workloads cached = run == null ? null : run.get(schedule.getHousehold().getId());
+    if (cached != null) {
+      cached.assigned(occurrenceId, day, schedule.getChore().getDifficulty(), assignees);
+    }
   }
 
   private boolean isAwayPaused(UUID occurrenceId) {
@@ -3698,6 +3861,11 @@ public class OccurrenceService {
   }
 
   private List<UUID> selectedAssignees(ChoreSchedule schedule, LocalDate date, Set<UUID> away) {
+    return selectedAssignees(schedule, date, away, null);
+  }
+
+  private List<UUID> selectedAssignees(
+      ChoreSchedule schedule, LocalDate date, Set<UUID> away, UUID exclude) {
     int needed = peopleNeeded(schedule);
     List<UUID> pool = new ArrayList<>(participantIds(schedule));
     if (schedule.getAssignmentStrategy() == AssignmentStrategy.FIXED) {
@@ -3710,8 +3878,15 @@ public class OccurrenceService {
           .toList();
     }
     pool.removeIf(away::contains);
+    if (schedule.getAssignmentStrategy() == AssignmentStrategy.BALANCED) {
+      // Only active members can be picked; they are kept in participant order for ties.
+      pool = new ArrayList<>(activeMembersOnly(schedule.getHousehold().getId(), pool));
+    }
     // With fewer people available than needed, as many as are available do it.
     int available = Math.min(needed, pool.size());
+    if (schedule.getAssignmentStrategy() == AssignmentStrategy.BALANCED) {
+      return available == 0 ? List.of() : balancedPick(schedule, pool, date, available, exclude);
+    }
     if (schedule.getAssignmentStrategy() == AssignmentStrategy.RANDOM) {
       Collections.shuffle(pool, RANDOM);
       return List.copyOf(pool.subList(0, available));

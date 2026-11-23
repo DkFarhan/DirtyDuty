@@ -1915,8 +1915,9 @@ class HouseholdControllerIntegrationTest {
         choreId);
     jdbcTemplate.update(
         """
-                INSERT INTO chore_completions (household_id, assignment_id, completed_by_user_id)
-                VALUES (?, ?, ?)
+                INSERT INTO chore_completions (household_id, assignment_id, completed_by_user_id,
+                    effort_points)
+                VALUES (?, ?, ?, 1)
                 """,
         householdId,
         assignmentId,
@@ -2767,8 +2768,9 @@ class HouseholdControllerIntegrationTest {
         UUID.fromString(owner.userId()));
     jdbcTemplate.update(
         """
-                INSERT INTO chore_completions (household_id, assignment_id, completed_by_user_id, completed_at)
-                VALUES (?, ?, ?, NOW())
+                INSERT INTO chore_completions (household_id, assignment_id, completed_by_user_id, completed_at,
+                    effort_points)
+                VALUES (?, ?, ?, NOW(), 1)
                 """,
         householdId,
         priorWeekAssignmentId,
@@ -3718,8 +3720,9 @@ class HouseholdControllerIntegrationTest {
         UUID.fromString(removedUser.userId()));
     jdbcTemplate.update(
         """
-                INSERT INTO chore_completions (household_id, assignment_id, completed_by_user_id)
-                VALUES (?, ?, ?)
+                INSERT INTO chore_completions (household_id, assignment_id, completed_by_user_id,
+                    effort_points)
+                VALUES (?, ?, ?, 1)
                 """,
         householdId,
         historicalAssignmentId,

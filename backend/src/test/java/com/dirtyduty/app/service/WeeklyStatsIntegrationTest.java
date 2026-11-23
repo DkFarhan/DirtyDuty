@@ -336,7 +336,7 @@ class WeeklyStatsIntegrationTest {
   private void markCompletedBy(UUID occurrence, UUID user, OffsetDateTime at) {
     jdbc.update(
         "INSERT INTO chore_completions (household_id, assignment_id, completed_by_user_id, "
-            + "completed_at) VALUES (?, ?, ?, ?)",
+            + "completed_at, effort_points) VALUES (?, ?, ?, ?, 1)",
         householdId,
         occurrence,
         user,
