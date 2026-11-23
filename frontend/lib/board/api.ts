@@ -36,6 +36,8 @@ export type BoardPost = {
   startTime: string | null
   endTime: string | null
   pinned: boolean
+  /** Notified everyone even during quiet hours. Absent from older responses. */
+  urgent?: boolean
   notifyMode: NotifyMode
   recipientUserIds: string[]
   authorUserId: string | null
@@ -123,6 +125,8 @@ export type BoardPostInput = {
   pinned: boolean
   notifyMode: NotifyMode
   recipientUserIds: string[]
+  /** On create: notifies everyone even during quiet hours (one an hour per member). */
+  urgent?: boolean
 }
 
 const base = (householdId: string) => `/api/households/${householdId}/board`

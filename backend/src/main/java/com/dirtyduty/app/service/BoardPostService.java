@@ -56,6 +56,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class BoardPostService {
   static final Duration REMIND_REPEAT_WINDOW = Duration.ofHours(2);
+  static final Duration URGENT_WINDOW = Duration.ofHours(1);
   static final Duration HEADS_UP_LIFETIME = Duration.ofDays(7);
   static final Duration PAST_RETENTION = Duration.ofDays(30);
   static final LocalTime EVENING_REMINDER = LocalTime.of(19, 0);
@@ -79,7 +80,7 @@ public class BoardPostService {
       """
       p.id, p.household_id, p.author_user_id, p.type, p.title, p.details, p.event_date,
       p.start_time, p.end_time, p.pinned, p.notify_mode, p.handler_user_id, p.fixed_at,
-      p.fixed_by_user_id, p.last_reminded_at, p.past_at, p.edited_at, p.created_at
+      p.fixed_by_user_id, p.last_reminded_at, p.past_at, p.edited_at, p.created_at, p.urgent
       """;
 
   /** Active, unpinned posts whose time is up (household {@code h} joined on {@code p}). */
@@ -208,12 +209,16 @@ public class BoardPostService {
     Draft draft = validate(request, actor, null);
     UUID postId = UUID.randomUUID();
     OffsetDateTime now = now();
+    boolean urgent = request != null && Boolean.TRUE.equals(request.urgent());
+    if (urgent) {
+      requireUrgentAllowance(actor, now);
+    }
     jdbc.update(
         """
             INSERT INTO board_posts
                 (id, household_id, author_user_id, type, title, details, event_date, start_time,
-                 end_time, pinned, notify_mode, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 end_time, pinned, notify_mode, created_at, updated_at, urgent)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
         postId,
         householdId,
@@ -227,7 +232,8 @@ public class BoardPostService {
         draft.pinned(),
         draft.notifyMode(),
         now,
-        now);
+        now,
+        urgent);
     replaceRecipients(postId, draft.recipients());
     PostRow post = requirePost(householdId, postId, false);
     for (UUID recipient : notifyRecipients(post, actor.members().keySet(), Set.of())) {
@@ -819,6 +825,30 @@ public class BoardPostService {
         postId);
   }
 
+  /**
+   * One urgent post per member per hour (across households): "You can post one urgent post an hour.
+   * Try again at 3:40 PM."
+   */
+  private void requireUrgentAllowance(Actor actor, OffsetDateTime now) {
+    List<OffsetDateTime> recent =
+        jdbc.query(
+            """
+                SELECT created_at FROM board_posts
+                WHERE author_user_id=? AND urgent AND created_at > ?
+                ORDER BY created_at LIMIT 1
+                """,
+            (rs, row) -> rs.getObject("created_at", OffsetDateTime.class),
+            actor.userId(),
+            now.minus(URGENT_WINDOW));
+    if (!recent.isEmpty()) {
+      OffsetDateTime again = recent.getFirst().plus(URGENT_WINDOW);
+      throw new DuplicateResourceException(
+          "You can post one urgent post an hour. Try again at "
+              + TIME_FORMAT.format(again.atZoneSameInstant(actor.zone()))
+              + ".");
+    }
+  }
+
   // ---- Access ----------------------------------------------------------------------------------
 
   /** Writers take the household row FOR UPDATE, like every other household mutation. */
@@ -1022,6 +1052,7 @@ public class BoardPostService {
         post.startTime(),
         post.endTime(),
         post.pinned(),
+        post.urgent(),
         post.notifyMode(),
         "PICKED".equals(post.notifyMode()) ? List.copyOf(recipients) : List.of(),
         author == null ? null : author.userId(),
@@ -1068,7 +1099,8 @@ public class BoardPostService {
         rs.getObject("last_reminded_at", OffsetDateTime.class),
         rs.getObject("past_at", OffsetDateTime.class),
         rs.getObject("edited_at", OffsetDateTime.class),
-        rs.getObject("created_at", OffsetDateTime.class));
+        rs.getObject("created_at", OffsetDateTime.class),
+        rs.getBoolean("urgent"));
   }
 
   private static Array uuidArray(java.sql.Connection connection, List<UUID> ids)
@@ -1094,7 +1126,8 @@ public class BoardPostService {
       OffsetDateTime lastRemindedAt,
       OffsetDateTime pastAt,
       OffsetDateTime editedAt,
-      OffsetDateTime createdAt) {}
+      OffsetDateTime createdAt,
+      boolean urgent) {}
 
   private record Member(UUID userId, String name, String role) {}
 

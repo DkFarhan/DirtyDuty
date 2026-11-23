@@ -21,6 +21,8 @@ export type PostFormValues = {
   notifyMode: NotifyMode
   recipients: string[]
   pinned: boolean
+  /** New posts only: notifies everyone even during quiet hours. */
+  urgent: boolean
   touched: PostField[]
 }
 
@@ -35,6 +37,7 @@ export function initialPostValues(): PostFormValues {
     notifyMode: "EVERYONE",
     recipients: [],
     pinned: false,
+    urgent: false,
     touched: [],
   }
 }
@@ -55,6 +58,7 @@ export function valuesFromPost(post: BoardPost): PostFormValues {
     notifyMode: post.notifyMode,
     recipients: post.recipientUserIds,
     pinned: post.pinned,
+    urgent: post.urgent ?? false,
     // An existing post's fields are the author's own: suggestions never overwrite them.
     touched: ["type", "details"],
   }
@@ -134,6 +138,8 @@ export function buildPostRequest(
       pinned: values.pinned,
       notifyMode: values.notifyMode,
       recipientUserIds: values.notifyMode === "PICKED" ? values.recipients : [],
+      // Urgent is about the creation push, so it's set once, when posting.
+      ...(original ? {} : { urgent: values.urgent }),
     },
   }
 }

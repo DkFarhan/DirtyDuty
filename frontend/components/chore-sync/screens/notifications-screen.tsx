@@ -60,6 +60,10 @@ const notificationStyles: Array<[NotificationStyle, string]> = [
   ["MINIMAL", "Minimal"],
 ]
 
+/** Quiet hours start at 10 PM and end at 8 AM until someone picks other times. */
+const DEFAULT_QUIET_START = "22:00"
+const DEFAULT_QUIET_END = "08:00"
+
 export function NotificationsScreen({ theme = "light" }: { theme?: Exclude<Theme, "system"> }) {
   const { returnFromNotifications, openBoardPost, openBoardLists } = useChoreSync()
   const {
@@ -370,6 +374,11 @@ export function NotificationsScreen({ theme = "light" }: { theme?: Exclude<Theme
     }
   }
 
+  const quietHoursInvalid = Boolean(
+    preferences?.quietHoursEnabled &&
+    preferences.quietHoursStart &&
+    preferences.quietHoursStart === preferences.quietHoursEnd,
+  )
   const updatePreference = <K extends keyof NotificationPreferences>(
     key: K,
     value: NotificationPreferences[K],
@@ -661,35 +670,73 @@ export function NotificationsScreen({ theme = "light" }: { theme?: Exclude<Theme
                     )}
                   </div>
                 )}
-              <div className="grid grid-cols-1 gap-3 py-4 min-[390px]:grid-cols-2">
-                <label className="text-xs font-semibold text-slate-500">
-                  Quiet hours start
-                  <input
-                    aria-label="Quiet hours start"
-                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white p-2 text-sm text-slate-800 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-                    onChange={(event) =>
-                      updatePreference("quietHoursStart", event.target.value || null)
+              <SettingsRow
+                description="Hold pushes for a few hours, like overnight."
+                label="Quiet hours"
+              >
+                <input
+                  aria-label="Quiet hours"
+                  checked={preferences.quietHoursEnabled}
+                  className="h-5 w-5 shrink-0 accent-teal-600"
+                  onChange={(event) => {
+                    const on = event.target.checked
+                    updatePreference("quietHoursEnabled", on)
+                    // First time on: 10 PM to 8 AM.
+                    if (on && !preferences.quietHoursStart) {
+                      updatePreference("quietHoursStart", DEFAULT_QUIET_START)
                     }
-                    type="time"
-                    value={preferences.quietHoursStart ?? ""}
-                  />
-                </label>
-                <label className="text-xs font-semibold text-slate-500">
-                  Quiet hours end
-                  <input
-                    aria-label="Quiet hours end"
-                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white p-2 text-sm text-slate-800 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-                    onChange={(event) =>
-                      updatePreference("quietHoursEnd", event.target.value || null)
+                    if (on && !preferences.quietHoursEnd) {
+                      updatePreference("quietHoursEnd", DEFAULT_QUIET_END)
                     }
-                    type="time"
-                    value={preferences.quietHoursEnd ?? ""}
-                  />
-                </label>
-              </div>
+                  }}
+                  type="checkbox"
+                />
+              </SettingsRow>
+              {preferences.quietHoursEnabled && (
+                <div className="border-b border-slate-100 py-3 dark:border-slate-700">
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="text-xs font-semibold text-slate-500">
+                      From
+                      <input
+                        aria-label="Quiet hours from"
+                        className="mt-1 h-11 w-full rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-800 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                        onChange={(event) =>
+                          updatePreference(
+                            "quietHoursStart",
+                            event.target.value || DEFAULT_QUIET_START,
+                          )
+                        }
+                        type="time"
+                        value={preferences.quietHoursStart ?? DEFAULT_QUIET_START}
+                      />
+                    </label>
+                    <label className="text-xs font-semibold text-slate-500">
+                      To
+                      <input
+                        aria-label="Quiet hours to"
+                        className="mt-1 h-11 w-full rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-800 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                        onChange={(event) =>
+                          updatePreference("quietHoursEnd", event.target.value || DEFAULT_QUIET_END)
+                        }
+                        type="time"
+                        value={preferences.quietHoursEnd ?? DEFAULT_QUIET_END}
+                      />
+                    </label>
+                  </div>
+                  <p className="mt-2 text-xs leading-relaxed text-slate-500">
+                    Notifications wait until the end of quiet hours. They still appear in the app
+                    right away.
+                  </p>
+                  {quietHoursInvalid && (
+                    <p className="mt-1 text-xs text-rose-600" role="alert">
+                      Quiet hours can&apos;t start and end at the same time.
+                    </p>
+                  )}
+                </div>
+              )}
               <button
                 className="mt-3 w-full rounded-xl bg-teal-600 py-3 text-sm font-bold text-white disabled:opacity-50"
-                disabled={preferencesBusy || !hasPreferencesChanges}
+                disabled={preferencesBusy || !hasPreferencesChanges || quietHoursInvalid}
                 onClick={() => void savePreferences()}
                 type="button"
               >

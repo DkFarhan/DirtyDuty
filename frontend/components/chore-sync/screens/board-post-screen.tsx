@@ -223,7 +223,7 @@ export function BoardPostScreen({ theme = "light" }: { theme?: PreviewTheme }) {
   return (
     <div className={rootClass} data-theme={theme}>
       <HouseholdLiveDesignHeader
-        eyebrow={`Board · ${active ? TYPE_LABELS[post.type] : "Past"}`}
+        eyebrow={`Board · ${active ? TYPE_LABELS[post.type] : "Past"}${post.urgent ? " · Urgent" : ""}`}
         heroDetails={
           // One paragraph: the hero styles its last paragraph as the quiet line under the title.
           <p>

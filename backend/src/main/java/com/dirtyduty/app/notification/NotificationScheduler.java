@@ -59,6 +59,7 @@ public class NotificationScheduler {
   private final MembershipExitCleanupService membershipExitCleanupService;
   private final BoardPostService boardPostService;
   private final BoardListService boardListService;
+  private final QuietHoursRelease quietHoursRelease;
 
   public NotificationScheduler(
       JdbcTemplate jdbc,
@@ -68,7 +69,8 @@ public class NotificationScheduler {
       NotificationTemplateResolver templateResolver,
       MembershipExitCleanupService membershipExitCleanupService,
       BoardPostService boardPostService,
-      BoardListService boardListService) {
+      BoardListService boardListService,
+      QuietHoursRelease quietHoursRelease) {
     this.jdbc = jdbc;
     this.eventService = eventService;
     this.providers = providers;
@@ -77,6 +79,7 @@ public class NotificationScheduler {
     this.membershipExitCleanupService = membershipExitCleanupService;
     this.boardPostService = boardPostService;
     this.boardListService = boardListService;
+    this.quietHoursRelease = quietHoursRelease;
   }
 
   @Scheduled(
@@ -197,6 +200,9 @@ public class NotificationScheduler {
                   ON r.mode=h.reminder_mode AND r.enabled=TRUE
                 WHERE %s AND a.status IN ('PENDING', 'SUBMITTED') AND a.due_at IS NOT NULL
                   AND a.assigned_to_user_id IS NOT NULL
+                UNION
+                SELECT recipient_user_id FROM notification_push_digests
+                WHERE status='PENDING' AND send_at<=NOW()
             ) users
             ORDER BY recipient_user_id
             """
@@ -468,6 +474,10 @@ public class NotificationScheduler {
         provider.deliver(message, item.eventId());
       }
     }
+    // Pushes held for quiet hours: at the end of the window, clean up, collapse and group them;
+    // the one or two that go as themselves are then picked up by the retry pass below.
+    quietHoursRelease.releaseDue(userIds);
+    quietHoursRelease.sendDue(userIds);
     dispatchPushRetries(scope);
   }
 
@@ -524,7 +534,7 @@ public class NotificationScheduler {
                 FROM notifications n
                 JOIN notification_scope s ON s.id=n.id
                 JOIN notification_deliveries d ON d.notification_id=n.id AND d.channel='WEB_PUSH'
-                WHERE d.status IN ('PENDING', 'FAILED')
+                WHERE d.status IN ('PENDING', 'FAILED') AND d.quiet_held_until IS NULL
                   AND (d.push_targets_snapshotted_at IS NULL OR EXISTS (
                       SELECT 1 FROM notification_push_delivery_targets t
                       WHERE t.notification_id=n.id

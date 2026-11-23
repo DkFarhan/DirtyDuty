@@ -100,6 +100,7 @@ describe("post form values", () => {
         pinned: false,
         notifyMode: "EVERYONE",
         recipientUserIds: [],
+        urgent: false,
       },
     })
     const error = (patch: Partial<PostFormValues>) => {

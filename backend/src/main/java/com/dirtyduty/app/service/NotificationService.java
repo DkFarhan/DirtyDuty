@@ -114,6 +114,7 @@ public class NotificationService {
                        COALESCE(chore_completion_enabled, TRUE) AS chore_completion_enabled,
                        COALESCE(household_updates_enabled, TRUE) AS household_updates_enabled,
                        quiet_hours_start, quiet_hours_end,
+                       COALESCE(quiet_hours_enabled, FALSE) AS quiet_hours_enabled,
                        notification_style_override,
                        COALESCE(household_default.notification_style, 'NORMAL') AS household_notification_style,
                        COALESCE(funny_notifications_enabled, FALSE) AS funny_notifications_enabled,
@@ -139,6 +140,7 @@ public class NotificationService {
                 rs.getBoolean("household_updates_enabled"),
                 rs.getObject("quiet_hours_start", java.time.LocalTime.class),
                 rs.getObject("quiet_hours_end", java.time.LocalTime.class),
+                rs.getBoolean("quiet_hours_enabled"),
                 rs.getString("notification_style_override"),
                 rs.getString("household_notification_style"),
                 rs.getBoolean("funny_notifications_enabled"),
@@ -153,15 +155,27 @@ public class NotificationService {
     if ((request.quietHoursStart() == null) != (request.quietHoursEnd() == null)) {
       throw new InvalidHouseholdException("Both quiet hours start and end must be provided.");
     }
+    java.time.LocalTime quietStart = request.quietHoursStart();
+    java.time.LocalTime quietEnd = request.quietHoursEnd();
+    boolean quietEnabled =
+        request.quietHoursEnabled() == null ? quietStart != null : request.quietHoursEnabled();
+    if (quietEnabled && quietStart == null) {
+      // Turned on without times: 10 PM to 8 AM.
+      quietStart = java.time.LocalTime.of(22, 0);
+      quietEnd = java.time.LocalTime.of(8, 0);
+    }
+    if (quietStart != null && quietStart.equals(quietEnd)) {
+      throw new InvalidHouseholdException("Quiet hours can't start and end at the same time.");
+    }
     UUID userId = currentUserId(authentication);
     jdbc.update(
         """
                 INSERT INTO notification_preferences
                     (user_id, chore_assigned_enabled, chore_reminders_enabled, overdue_enabled,
                      chore_completion_enabled, household_updates_enabled, quiet_hours_start, quiet_hours_end,
-                     notification_style_override, funny_notifications_enabled,
+                     quiet_hours_enabled, notification_style_override, funny_notifications_enabled,
                      competitive_notifications_enabled, push_enabled, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
                 ON CONFLICT (user_id) DO UPDATE SET
                     chore_assigned_enabled=EXCLUDED.chore_assigned_enabled,
                     chore_reminders_enabled=EXCLUDED.chore_reminders_enabled,
@@ -170,6 +184,7 @@ public class NotificationService {
                     household_updates_enabled=EXCLUDED.household_updates_enabled,
                     quiet_hours_start=EXCLUDED.quiet_hours_start,
                     quiet_hours_end=EXCLUDED.quiet_hours_end,
+                    quiet_hours_enabled=EXCLUDED.quiet_hours_enabled,
                     notification_style_override=EXCLUDED.notification_style_override,
                     funny_notifications_enabled=EXCLUDED.funny_notifications_enabled,
                     competitive_notifications_enabled=EXCLUDED.competitive_notifications_enabled,
@@ -182,12 +197,24 @@ public class NotificationService {
         request.overdueEnabled(),
         request.choreCompletionEnabled(),
         request.householdUpdatesEnabled(),
-        request.quietHoursStart(),
-        request.quietHoursEnd(),
+        quietStart,
+        quietEnd,
+        quietEnabled,
         request.notificationStyleOverride(),
         request.funnyNotificationsEnabled(),
         request.competitiveNotificationsEnabled(),
         request.pushEnabled());
+    if (!quietEnabled) {
+      // Turned off overnight: what was held goes now, cleaned up and grouped as in the morning.
+      jdbc.update(
+          """
+              UPDATE notification_deliveries d SET next_attempt_at=NOW()
+              FROM notifications n
+              WHERE d.notification_id=n.id AND n.recipient_user_id=?
+                AND d.quiet_held_until IS NOT NULL AND d.status IN ('PENDING', 'FAILED')
+              """,
+          userId);
+    }
     return preferences(authentication);
   }
 
