@@ -6,6 +6,7 @@ import {
   ArrowUp,
   Check,
   ChevronRight,
+  Scale,
   Shuffle,
   UserRound,
   UsersRound,
@@ -34,9 +35,9 @@ function nameFor(member: Member, viewerId: string) {
 const MAX_SEGMENTS = 5
 
 /**
- * "Who does it?": Just me, Take turns (with a people-and-order picker), Specific people, or Mix
- * it up. Only combinations the backend accepts are offered: "When it's needed" chores rotate or
- * have one fixed person, and only calendar kinds have more than one person each time.
+ * "Who does it?": Just me, Take turns (with a people-and-order picker), Balanced, Specific people,
+ * or Mix it up. Only combinations the backend accepts are offered: "When it's needed" chores rotate
+ * or have one fixed person, and only calendar kinds have more than one person each time.
  */
 export function WhoSheet({
   values,
@@ -87,6 +88,7 @@ export function WhoSheet({
       ...members.map((member) => member.userId).filter((userId) => !people.includes(userId)),
     ]
     const rotation = values.who === "TURNS"
+    const balanced = values.who === "BALANCED"
     const toggle = (userId: string) => {
       const selected = people.includes(userId)
       if (selected && people.length <= 1) {
@@ -118,14 +120,16 @@ export function WhoSheet({
         intro={
           rotation
             ? "Tick everyone who takes a turn. The order is who goes first."
-            : "Tick everyone it can be picked from."
+            : balanced
+              ? "Tick everyone it can go to."
+              : "Tick everyone it can be picked from."
         }
         key={panel}
         onBack={() => setPanel("main")}
         onClose={onClose}
         returnFocusTo={returnFocusTo}
         theme={theme}
-        title={rotation ? "Who takes turns?" : "Who can be picked?"}
+        title={rotation ? "Who takes turns?" : balanced ? "Who's included?" : "Who can be picked?"}
       >
         <div aria-label={rotation ? "Rotation order" : "People"} role="group">
           {ordered.map((userId) => {
@@ -382,6 +386,15 @@ export function WhoSheet({
       icon: <UsersRound size={18} />,
     },
     {
+      value: "BALANCED",
+      title: "Balanced",
+      hint: asNeeded
+        ? "Not available for chores done when needed"
+        : "Whoever has done the least work lately",
+      icon: <Scale size={18} />,
+      disabled: asNeeded,
+    },
+    {
       value: "SOMEONE",
       title: "Specific people",
       hint:
@@ -463,7 +476,15 @@ export function WhoSheet({
                   )}
                 </span>
               </button>
-              {selected && (option.value === "TURNS" || option.value === "RANDOM") && peopleSummary}
+              {selected && option.value === "BALANCED" && !option.disabled && (
+                <p className={styles.optionNote}>Uses each chore&apos;s effort (in More options)</p>
+              )}
+              {selected &&
+                !option.disabled &&
+                (option.value === "TURNS" ||
+                  option.value === "BALANCED" ||
+                  option.value === "RANDOM") &&
+                peopleSummary}
             </li>
           )
         })}

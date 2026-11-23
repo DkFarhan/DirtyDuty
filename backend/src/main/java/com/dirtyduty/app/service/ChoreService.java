@@ -47,6 +47,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ChoreService {
+  static final String BALANCED_NOT_FOR_AS_NEEDED =
+      "Balanced isn't available for When needed chores. Choose Take turns instead.";
 
   static final int MAX_CATEGORIES = 40;
   static final int MAX_CATEGORY_NAME_LENGTH = 40;
@@ -375,6 +377,9 @@ public class ChoreService {
         request.assignmentStrategy() == null
             ? AssignmentStrategy.MANUAL
             : request.assignmentStrategy();
+    if (kind == ScheduleKind.AS_NEEDED && strategy == AssignmentStrategy.BALANCED) {
+      throw new InvalidHouseholdException(BALANCED_NOT_FOR_AS_NEEDED);
+    }
     if (kind == ScheduleKind.AS_NEEDED
         && strategy != AssignmentStrategy.ROUND_ROBIN
         && strategy != AssignmentStrategy.FIXED) {
@@ -582,7 +587,8 @@ public class ChoreService {
             "Choose a fixed assignee from the selected participants before activating this chore.");
       }
     } else if (strategy == AssignmentStrategy.ROUND_ROBIN
-        || strategy == AssignmentStrategy.RANDOM) {
+        || strategy == AssignmentStrategy.RANDOM
+        || strategy == AssignmentStrategy.BALANCED) {
       if (participantIds.size() < peopleNeeded) {
         throw new InvalidHouseholdException(
             "Rotation and random pools must contain at least People Needed members.");
@@ -592,7 +598,7 @@ public class ChoreService {
       }
     } else if (!participantIds.isEmpty() || fixedAssigneeId != null) {
       throw new InvalidHouseholdException(
-          "Participants are only valid for FIXED, ROUND_ROBIN or RANDOM assignment.");
+          "Participants are only valid for FIXED, ROUND_ROBIN, RANDOM or BALANCED assignment.");
     }
     for (UUID participantId : participantIds) {
       validateActiveMember(householdId, participantId);

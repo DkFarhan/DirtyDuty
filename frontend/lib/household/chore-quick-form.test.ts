@@ -641,3 +641,66 @@ describe("editing", () => {
     expect(whoLabel(someone, members, "farhan")).toBe("Rubayet")
   })
 })
+
+describe("Balanced", () => {
+  const four = [...members, { userId: "sam", displayName: "Sam" }]
+
+  it("labels the Who row and writes the summary", () => {
+    const balanced = withField(named(), "who", {
+      who: "BALANCED",
+      participants: four.map((member) => member.userId),
+    })
+    expect(whoLabel(balanced, four, "farhan")).toBe("Balanced · everyone")
+    expect(whoLabel(withParticipants(balanced, ["farhan", "rubayet"], four), four, "farhan")).toBe(
+      "Balanced · 2 people",
+    )
+    expect(
+      summaryParts(balanced, four, "guest")
+        .map((part) => part.text)
+        .join(""),
+    ).toBe(
+      "Every week on Saturday by 6 PM. Goes to whoever has done the least work lately, among Farhan, Rubayet, Abubakar and Sam.",
+    )
+    const two = withField(balanced, "who", { peopleNeeded: 2 })
+    expect(whoLabel(two, four, "farhan")).toBe("Balanced · 2 at a time")
+    expect(text(two, four)).toBe(
+      "Every week on Saturday by 6 PM. Goes to the two who have done the least work lately, among you, Rubayet, Abubakar and Sam.",
+    )
+  })
+
+  it("maps to BALANCED with one or two each time, both ways", () => {
+    for (const peopleNeeded of [1, 2]) {
+      const values = withField(named(), "who", { who: "BALANCED", peopleNeeded })
+      const schedule = requestFor(values).schedule
+      expect(schedule).toMatchObject({
+        assignmentStrategy: "BALANCED",
+        peopleNeeded,
+        fixedAssigneeUserId: null,
+        participantUserIds: ["farhan", "rubayet", "abu"],
+      })
+      const loaded = valuesFromChore(
+        { ...savedChore, schedule: { ...savedChore.schedule!, ...schedule, active: true } },
+        context,
+      )
+      expect(loaded.values).toMatchObject({ who: "BALANCED", peopleNeeded })
+      expect(requestFor(loaded.values).schedule).toMatchObject(schedule)
+    }
+  })
+
+  it("works with After it's done, one at a time", () => {
+    let values = withField(named(), "who", { who: "BALANCED", peopleNeeded: 2 })
+    values = withOften(values, "AFTER_COMPLETION")
+    expect(values.who).toBe("BALANCED")
+    expect(requestFor(values).schedule).toMatchObject({
+      kind: "AFTER_COMPLETION",
+      assignmentStrategy: "BALANCED",
+      peopleNeeded: 1,
+    })
+  })
+
+  it("is never paired with When it's needed, which keeps its turns", () => {
+    const values = withOften(withField(named(), "who", { who: "BALANCED" }), "AS_NEEDED")
+    expect(values.who).toBe("TURNS")
+    expect(requestFor(values).schedule).toMatchObject({ assignmentStrategy: "ROUND_ROBIN" })
+  })
+})

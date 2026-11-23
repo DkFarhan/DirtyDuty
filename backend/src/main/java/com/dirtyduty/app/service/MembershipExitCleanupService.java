@@ -102,7 +102,7 @@ public class MembershipExitCleanupService {
               AND (
                 fixed_assignee_user_id=?
                 OR (
-                  assignment_strategy IN ('FIXED', 'ROUND_ROBIN', 'RANDOM')
+                  assignment_strategy IN ('FIXED', 'ROUND_ROBIN', 'RANDOM', 'BALANCED')
                   AND jsonb_exists(strategy_config->'participantUserIds', ?)
                 )
                   OR id IN (

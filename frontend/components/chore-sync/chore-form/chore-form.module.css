@@ -815,6 +815,14 @@
   background: var(--accent);
 }
 
+.optionNote {
+  margin: -4px 0 0;
+  padding: 0 12px 8px 60px;
+  color: var(--secondary-text);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .optionPanel {
   display: flex;
   flex-direction: column;

@@ -416,7 +416,7 @@ class AwayModeIntegrationTest {
     UUID completed = occurrenceOn(mine, today);
     jdbc.update(
         "INSERT INTO chore_completions (household_id, assignment_id, completed_by_user_id, "
-            + "completed_at, attempt_number) VALUES (?, ?, ?, ?, 1)",
+            + "completed_at, attempt_number, effort_points) VALUES (?, ?, ?, ?, 1, 1)",
         householdId,
         completed,
         ana,

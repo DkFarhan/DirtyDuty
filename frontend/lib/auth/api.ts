@@ -163,6 +163,7 @@ const CHORE_KIND_MESSAGES = new Set([
   "An interval after it's done doesn't apply to When needed chores.",
   'Choose "at least every" between 1 and 30 days.',
   "A When needed chore either rotates or has one fixed person.",
+  "Balanced isn't available for When needed chores. Choose Take turns instead.",
   "Choose who does this chore: one fixed person, random, or a rotation.",
   "This chore type is done by one person at a time.",
   "This schedule never produces a date. Check its start date and active months.",

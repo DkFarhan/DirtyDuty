@@ -35,7 +35,7 @@ export type OftenChoice =
  * The "Who" sheet's options. SOMEONE is "Specific people": one person, or several who do it
  * together every time.
  */
-export type WhoChoice = "ME" | "TURNS" | "SOMEONE" | "RANDOM"
+export type WhoChoice = "ME" | "TURNS" | "BALANCED" | "SOMEONE" | "RANDOM"
 
 export type EndMode = "NEVER" | "DATE" | "COUNT"
 
@@ -75,11 +75,11 @@ export type QuickValues = {
   keptRule: string | null
   keptEndsOn: string | null
   who: WhoChoice
-  /** Rotation order for TURNS; the pool for RANDOM. */
+  /** Rotation order for TURNS; the pool for BALANCED and RANDOM. */
   participants: string[]
   /** The ticked people for SOMEONE ("Specific people"); they all do it together. */
   specificPeople: string[]
-  /** People per occurrence for TURNS and RANDOM; only calendar kinds use more than one. */
+  /** People per occurrence for TURNS, BALANCED and RANDOM; only calendar kinds use more than one. */
   peopleNeeded: number
   priority: ChorePriority
   difficulty: number
@@ -312,7 +312,7 @@ export function valuesFromChore(chore: Chore, context: QuickContext): LoadedQuic
       shortfall = { needed: savedNeeded, left: people.length }
     }
   } else {
-    who = strategy === "RANDOM" ? "RANDOM" : "TURNS"
+    who = strategy === "RANDOM" ? "RANDOM" : strategy === "BALANCED" ? "BALANCED" : "TURNS"
     peopleNeeded = savedNeeded
     if (savedNeeded > 1 && people.length < savedNeeded) {
       shortfall = { needed: savedNeeded, left: people.length }
@@ -342,7 +342,7 @@ export function valuesFromChore(chore: Chore, context: QuickContext): LoadedQuic
       keptRule,
       keptEndsOn,
       who,
-      participants: who === "TURNS" || who === "RANDOM" ? people : base.participants,
+      participants: usesPool(who) ? people : base.participants,
       specificPeople: who === "SOMEONE" ? people : [],
       peopleNeeded,
       priority: chore.defaultPriority,
@@ -363,13 +363,21 @@ export function allowsGroups(often: OftenChoice) {
   return !isOpenCopy(often)
 }
 
+/** Take turns, Balanced and Mix it up pick from a pool of people ("Change" for who's included). */
+export function usesPool(who: WhoChoice) {
+  return who === "TURNS" || who === "BALANCED" || who === "RANDOM"
+}
+
 /**
- * "Mix it up" doesn't fit "When it's needed", and the open-copy kinds are done by one person: a
- * rotation drops to one at a time and Specific people keeps only the first ticked person.
+ * "Mix it up" and "Balanced" don't fit "When it's needed" (it keeps its turns), and the open-copy
+ * kinds are done by one person: a rotation drops to one at a time and Specific people keeps only
+ * the first ticked person.
  */
 function compatibleWho(values: QuickValues): QuickValues {
   let next = values
-  if (next.often === "AS_NEEDED" && next.who === "RANDOM") next = { ...next, who: "TURNS" }
+  if (next.often === "AS_NEEDED" && (next.who === "RANDOM" || next.who === "BALANCED")) {
+    next = { ...next, who: "TURNS" }
+  }
   if (!allowsGroups(next.often)) {
     if (next.peopleNeeded !== 1) next = { ...next, peopleNeeded: 1 }
     if (next.specificPeople.length > 1) {
@@ -646,6 +654,7 @@ function assignmentFor(
           }
     }
     case "TURNS":
+    case "BALANCED":
     case "RANDOM": {
       const needed = openCopy ? 1 : Math.max(1, values.peopleNeeded)
       if (people.length < needed) {
@@ -656,7 +665,12 @@ function assignmentFor(
         }
       }
       return {
-        assignmentStrategy: values.who === "TURNS" ? "ROUND_ROBIN" : "RANDOM",
+        assignmentStrategy:
+          values.who === "TURNS"
+            ? "ROUND_ROBIN"
+            : values.who === "BALANCED"
+              ? "BALANCED"
+              : "RANDOM",
         peopleNeeded: needed,
         fixedAssigneeUserId: null,
         participantUserIds: people,
@@ -903,6 +917,8 @@ export function whoLabel(values: QuickValues, members: Member[], viewerId: strin
       return specificLabel(values, members, viewerId)
     case "TURNS":
       return count === 0 ? "Take turns · nobody yet" : `Take turns · ${pool}`
+    case "BALANCED":
+      return count === 0 ? "Balanced · nobody yet" : `Balanced · ${pool}`
     case "RANDOM":
       return count === 0 ? "Mix it up · nobody yet" : `Mix it up · ${pool}`
   }
@@ -1040,6 +1056,22 @@ export function summaryParts(
               ? [strong(eachTime), plain(", taking turns between "), strong(joinNames(names))]
               : [plain("Turns between "), strong(joinNames(names))]
       if (names.length > 1) who.push(plain("."))
+      break
+    case "BALANCED":
+      who =
+        names.length === 0
+          ? [plain("Choose who's included.")]
+          : names.length === 1
+            ? [strong(capitalize(names[0])), plain(names[0] === "you" ? " do it." : " does it.")]
+            : [
+                plain(
+                  each > 1
+                    ? `Goes to the ${numberWord(each)} who have done the least work lately, among `
+                    : "Goes to whoever has done the least work lately, among ",
+                ),
+                strong(joinNames(names)),
+                plain("."),
+              ]
       break
     case "RANDOM":
       who =
