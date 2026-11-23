@@ -11,7 +11,8 @@ import { HouseholdScreenView, type HouseholdVisualTheme } from "../redesign/hous
 import { createHouseholdApplicationViewModel } from "../redesign/household-application-adapter"
 
 export function HouseholdScreen({ theme = "light" }: { theme?: HouseholdVisualTheme }) {
-  const { state, navigate, pendingAccountDeletionUserId, clearAccountDeletion } = useChoreSync()
+  const { state, navigate, pendingAccountDeletionUserId, clearAccountDeletion, openAwayMode } =
+    useChoreSync()
   const { households, activeHousehold, refresh, removeHousehold } = useHouseholds()
   const household = activeHousehold ?? households[0]
   const [inviteOpen, setInviteOpen] = useState(false)
@@ -89,11 +90,15 @@ export function HouseholdScreen({ theme = "light" }: { theme?: HouseholdVisualTh
       if (!household) return
       setOpenMemberMenuId(null)
       setMemberActionError(null)
+      if (action === "away") {
+        openAwayMode({ userId: member.userId, displayName: member.displayName }, "household")
+        return
+      }
       setPendingMemberAction({ action, member })
       if (action !== "transfer") return
       setConfirmText("")
     },
-    [household],
+    [household, openAwayMode],
   )
 
   const commitMemberAction = useCallback(async () => {

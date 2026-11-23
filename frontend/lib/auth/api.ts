@@ -131,6 +131,20 @@ const BOARD_MESSAGES = [
   /^You can post one urgent post an hour\. Try again at \d{1,2}:\d{2} (AM|PM)\.$/,
 ]
 
+/** Away mode's date checks and states (E10), shown as the server words them. */
+const AWAY_MESSAGES = new Set([
+  "Choose when you're away from.",
+  "Choose when you're back.",
+  "Away mode can't start in the past.",
+  "The end date can't be before the start date.",
+  "Choose an end date from today on.",
+  "Away mode can last up to 90 days.",
+  "There are already away dates set. Change those instead.",
+  "Away mode isn't on.",
+  "Away mode has already started. Use I'm back now instead.",
+  "Only owners and admins can set away mode for someone else.",
+])
+
 /** Notification settings the server checks when they're saved. */
 const PREFERENCE_MESSAGES = new Set([
   "Quiet hours can't start and end at the same time.",
@@ -227,6 +241,17 @@ function messageFor(
     "message" in payload &&
     typeof payload.message === "string" &&
     BOARD_MESSAGES.some((pattern) => pattern.test(payload.message as string))
+  ) {
+    return payload.message
+  }
+  if (
+    (status === 400 || status === 403) &&
+    /^\/api\/households\/[^/]+\/members\/[^/]+\/away(\/(preview|end))?$/.test(path) &&
+    payload !== null &&
+    typeof payload === "object" &&
+    "message" in payload &&
+    typeof payload.message === "string" &&
+    AWAY_MESSAGES.has(payload.message)
   ) {
     return payload.message
   }

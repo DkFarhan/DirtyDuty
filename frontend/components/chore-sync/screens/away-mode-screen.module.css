@@ -1,0 +1,229 @@
+/* Away mode (E10): A1 set dates, A2 active. Builds on the chore-form card, chip and footer styles. */
+
+.page {
+  --away-chip-ink: var(--away-ink);
+  --away-chip-bg: var(--away-soft);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.dateGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.dateField {
+  position: relative;
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  border: 1.5px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface-soft);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.dateField svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.dateField:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.dateField[data-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.dateText {
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dateNative {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.dateError {
+  margin: 10px 0 0;
+}
+
+.pick[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface-strong));
+  font-weight: 750;
+}
+
+.effects {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.effectsHeading {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.effectsEmpty {
+  margin: 4px 0 8px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.effectSkeleton {
+  height: 120px;
+  border-radius: 14px;
+  background: var(--surface-soft);
+}
+
+.effectList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.effect {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.effectCopy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.effectCopy strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.effectCopy small {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.effectCopy small svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.levelNote {
+  display: flex;
+  gap: 10px;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.levelNote svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--accent);
+}
+
+.toggleLabel {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+/* A2 */
+
+.dateChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 4px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--away-chip-bg);
+  color: var(--away-chip-ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.statusRows {
+  padding: 4px 16px;
+}
+
+.statusRow,
+.linkRow {
+  display: flex;
+  width: 100%;
+  min-height: 60px;
+  align-items: center;
+  gap: 12px;
+}
+
+.statusRow + .statusRow {
+  border-top: 1px solid var(--line);
+}
+
+.linkRow {
+  padding: 4px 16px;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.statusLabel {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.statusValue {
+  max-width: 55%;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13.5px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chevron {
+  color: var(--muted);
+}
+
+.footnote {
+  margin: 4px 12px 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: center;
+}

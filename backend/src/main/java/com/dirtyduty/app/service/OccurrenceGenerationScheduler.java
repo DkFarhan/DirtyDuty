@@ -29,6 +29,7 @@ public class OccurrenceGenerationScheduler {
 
   private final JdbcTemplate jdbc;
   private final OccurrenceService occurrenceService;
+  private final AwayModeService awayModeService;
   private final TaskScheduler taskScheduler;
   private final boolean enabled;
   private final Duration startupDelay;
@@ -36,11 +37,13 @@ public class OccurrenceGenerationScheduler {
   public OccurrenceGenerationScheduler(
       JdbcTemplate jdbc,
       OccurrenceService occurrenceService,
+      AwayModeService awayModeService,
       TaskScheduler taskScheduler,
       @Value("${app.chores.generation.enabled:true}") boolean enabled,
       @Value("${app.chores.generation.startup-delay:60000}") long startupDelayMillis) {
     this.jdbc = jdbc;
     this.occurrenceService = occurrenceService;
+    this.awayModeService = awayModeService;
     this.taskScheduler = taskScheduler;
     this.enabled = enabled;
     this.startupDelay = Duration.ofMillis(Math.max(0, startupDelayMillis));
@@ -63,6 +66,15 @@ public class OccurrenceGenerationScheduler {
 
   /** Generates every eligible household once. Called directly by tests. */
   public Result run() {
+    // Away mode first: members back today are brought level before their turns are planned, and
+    // "Until I'm back" periods remind their member the day before they end.
+    for (UUID householdId : awayModeService.householdsNeedingMaintenance()) {
+      try {
+        awayModeService.maintain(householdId);
+      } catch (RuntimeException exception) {
+        logFailure(householdId, exception);
+      }
+    }
     List<UUID> householdIds =
         jdbc.queryForList(
             """

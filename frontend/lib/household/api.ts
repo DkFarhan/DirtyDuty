@@ -46,6 +46,9 @@ export type HouseholdMemberDTO = {
   joinedAt: string
   assignedThisWeek: number
   completedThisWeek: number
+  /** Their current or upcoming away period (Away mode), inclusive household dates. */
+  awayStartsOn?: string | null
+  awayEndsOn?: string | null
 }
 
 export type HouseholdMemberRemovalResponse = {

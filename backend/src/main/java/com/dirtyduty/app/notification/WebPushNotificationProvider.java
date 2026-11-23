@@ -469,6 +469,9 @@ public class WebPushNotificationProvider implements NotificationDeliveryProvider
   }
 
   static String targetPath(NotificationMessage notification) {
+    if ("AWAY_MODE_ENDING".equals(notification.type())) {
+      return "/?screen=away-mode";
+    }
     if ("CHORE_ASSIGNMENT".equals(notification.referenceType())
         && notification.referenceId() != null) {
       return "/?screen=my-chores&assignmentId=" + notification.referenceId();

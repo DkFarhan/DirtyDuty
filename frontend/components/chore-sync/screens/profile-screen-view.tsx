@@ -1,6 +1,7 @@
 "use client"
 
 import type { ReactNode } from "react"
+import { Plane } from "lucide-react"
 import type { Profile } from "@/lib/profile/api"
 import type { Theme } from "@/components/theme/theme-provider"
 import type { Screen } from "@/lib/chore-sync/types"
@@ -83,6 +84,10 @@ export interface ProfileScreenViewProps {
   onRetryNotifications: () => void
   onSignOut: () => void
   onPrimaryNavigate: (destination: Screen) => void
+  /** Away mode's row: "Off", or "Until Sun, Nov 30" while on; null hides the row. */
+  awayValue?: string | null
+  awayOn?: boolean
+  onAway?: () => void
 }
 
 const preferences = [
@@ -157,6 +162,9 @@ export function ProfileScreenView({
   onRetryNotifications,
   onSignOut,
   onPrimaryNavigate,
+  awayValue = null,
+  awayOn = false,
+  onAway,
 }: ProfileScreenViewProps) {
   return (
     <div className={`${styles.route} ${styles.profile} ${styles[theme]}`} data-profile-redesign>
@@ -217,6 +225,27 @@ export function ProfileScreenView({
         <div className={styles.profileGrid}>
           <section aria-labelledby="preferences-heading" className={styles.preferencesCard}>
             <h2 id="preferences-heading">Settings</h2>
+            {awayValue !== null && onAway && (
+              <button
+                className={styles.preferenceRow}
+                data-away={awayOn ? "on" : "off"}
+                onClick={onAway}
+                type="button"
+              >
+                <span
+                  className={`${styles.preferenceIcon} ${awayOn ? styles.awayOn : styles.away}`}
+                >
+                  <Plane aria-hidden="true" />
+                </span>
+                <span className={styles.preferenceTitle}>Away mode</span>
+                <span className={awayOn ? styles.awayValueOn : styles.awayValue}>{awayValue}</span>
+                <ProfileAsset
+                  className={styles.chevronAsset}
+                  name="settings-chevron"
+                  theme={theme}
+                />
+              </button>
+            )}
             {preferences.map(({ title, icon, destination, tone }) => (
               <button
                 className={styles.preferenceRow}

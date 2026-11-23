@@ -1,4 +1,5 @@
 import type { HouseholdMemberDTO, Household } from "@/lib/household/api"
+import { awayTag, todayIn } from "@/lib/household/away"
 import type {
   HouseholdMemberViewModel,
   HouseholdScreenViewModel,
@@ -29,9 +30,14 @@ function progressPercent(completed: number, assigned: number) {
   return Math.min(100, Math.max(0, Math.round((completed / assigned) * 100)))
 }
 
-function mapMember(member: HouseholdMemberDTO, currentUserId: string): HouseholdMemberViewModel {
+function mapMember(
+  member: HouseholdMemberDTO,
+  currentUserId: string,
+  today: string,
+): HouseholdMemberViewModel {
   return {
     ...member,
+    awayTag: awayTag(member.awayStartsOn ?? null, member.awayEndsOn ?? null, today),
     isCurrentUser: member.userId === currentUserId,
     joinedLabel: joinedLabel(member.joinedAt),
     progressPercent: progressPercent(member.completedThisWeek, member.assignedThisWeek),
@@ -51,6 +57,8 @@ export function createHouseholdApplicationViewModel(
     status: input.status,
     errorMessage: input.errorMessage ?? undefined,
     refreshError: input.refreshError ?? undefined,
-    members: input.members.map((member) => mapMember(member, input.currentUserId)),
+    members: input.members.map((member) =>
+      mapMember(member, input.currentUserId, todayIn(input.household?.timezone ?? "UTC")),
+    ),
   }
 }

@@ -101,4 +101,39 @@ describe("ProfileScreenView", () => {
     expect(onRetryNotifications).toHaveBeenCalledOnce()
     expect(onSignOut).toHaveBeenCalledOnce()
   })
+  it("shows the Away mode row off, and on in violet with its end date", () => {
+    const onAway = vi.fn()
+    const props = {
+      error: "",
+      initials: "R",
+      isSubmitting: false,
+      notificationError: "",
+      onEdit: vi.fn(),
+      onNavigate: vi.fn(),
+      onNotifications: vi.fn(),
+      onPrimaryNavigate: vi.fn(),
+      onRetryNotifications: vi.fn(),
+      onRetryProfile: vi.fn(),
+      onSignOut: vi.fn(),
+      profile,
+      theme: "light" as const,
+      unreadCount: 0,
+      onAway,
+    }
+    const { rerender } = render(<ProfileScreenView {...props} awayValue="Off" />)
+    const row = screen.getByRole("button", { name: /Away mode/ })
+    expect(row.textContent).toContain("Off")
+    expect(row.getAttribute("data-away")).toBe("off")
+    fireEvent.click(row)
+    expect(onAway).toHaveBeenCalledTimes(1)
+
+    rerender(<ProfileScreenView {...props} awayOn awayValue="Until Sun, Nov 30" />)
+    const on = screen.getByRole("button", { name: /Away mode/ })
+    expect(on.textContent).toContain("Until Sun, Nov 30")
+    expect(on.getAttribute("data-away")).toBe("on")
+
+    // Without a household there's no row.
+    rerender(<ProfileScreenView {...props} awayValue={null} />)
+    expect(screen.queryByRole("button", { name: /Away mode/ })).toBeNull()
+  })
 })

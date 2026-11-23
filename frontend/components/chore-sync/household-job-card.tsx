@@ -1,5 +1,6 @@
 "use client"
 
+import { AwayNote } from "./away-note"
 import { useEffect, useId, useState } from "react"
 import { Bell, BellCheck, Calendar, Check, CircleAlert, Clock } from "lucide-react"
 import type { HouseholdJobViewModel } from "@/lib/household/household-jobs"
@@ -80,6 +81,7 @@ export function HouseholdJobCard({
             />
           )}
         </div>
+        <AwayNote note={job.awayNote} />
         <h3 className={styles.title}>{job.title}</h3>
         <ul className={styles.meta}>
           <li>

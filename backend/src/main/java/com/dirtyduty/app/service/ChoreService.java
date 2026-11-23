@@ -436,9 +436,11 @@ public class ChoreService {
                 || peopleNeeded(schedule.getStrategyConfig()) != peopleNeeded
                 || !participantIds(schedule.getStrategyConfig()).equals(validatedParticipants));
     // Rotation baselines for the open-copy kinds: a newcomer starts level with the lowest count.
+    // A calendar rotation keeps only what away mode stored ("level on return") for people still in
+    // it.
     Map<String, Integer> turnOffsets =
         kind == ScheduleKind.CALENDAR
-            ? null
+            ? keptCalendarOffsets(schedule, validatedParticipants, kindChanged)
             : occurrenceService.rebaseTurnOffsets(
                 schedule, validatedParticipants, schedule.getId() == null || kindChanged);
     schedule.setKind(kind);
@@ -472,6 +474,22 @@ public class ChoreService {
     }
     choreScheduleRepository.saveAndFlush(schedule);
     occurrenceService.synchronizeSchedule(schedule, assignmentConfigChanged, true);
+  }
+
+  private static Map<String, Integer> keptCalendarOffsets(
+      ChoreSchedule schedule, List<UUID> participants, boolean kindChanged) {
+    if (schedule.getId() == null || kindChanged) {
+      return null;
+    }
+    Map<String, Integer> kept = new java.util.LinkedHashMap<>();
+    OccurrenceService.turnOffsets(schedule.getStrategyConfig())
+        .forEach(
+            (userId, offset) -> {
+              if (participants.contains(userId) && offset != 0) {
+                kept.put(userId.toString(), offset);
+              }
+            });
+    return kept.isEmpty() ? null : kept;
   }
 
   /** Settings checks for AFTER_COMPLETION and AS_NEEDED, with messages the form can show. */

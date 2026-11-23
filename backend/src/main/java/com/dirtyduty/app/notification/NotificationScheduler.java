@@ -1,5 +1,6 @@
 package com.dirtyduty.app.notification;
 
+import com.dirtyduty.app.service.AwayPeriods;
 import com.dirtyduty.app.service.BoardListService;
 import com.dirtyduty.app.service.BoardPostService;
 import com.dirtyduty.app.service.MembershipExitCleanupService;
@@ -60,6 +61,7 @@ public class NotificationScheduler {
   private final BoardPostService boardPostService;
   private final BoardListService boardListService;
   private final QuietHoursRelease quietHoursRelease;
+  private final AwayPeriods awayPeriods;
 
   public NotificationScheduler(
       JdbcTemplate jdbc,
@@ -70,7 +72,8 @@ public class NotificationScheduler {
       MembershipExitCleanupService membershipExitCleanupService,
       BoardPostService boardPostService,
       BoardListService boardListService,
-      QuietHoursRelease quietHoursRelease) {
+      QuietHoursRelease quietHoursRelease,
+      AwayPeriods awayPeriods) {
     this.jdbc = jdbc;
     this.eventService = eventService;
     this.providers = providers;
@@ -80,6 +83,7 @@ public class NotificationScheduler {
     this.boardPostService = boardPostService;
     this.boardListService = boardListService;
     this.quietHoursRelease = quietHoursRelease;
+    this.awayPeriods = awayPeriods;
   }
 
   @Scheduled(
@@ -443,7 +447,8 @@ public class NotificationScheduler {
           || !isAssignmentActive(item)
           || !isBoardReminderLive(item)
           || !isBoardListPushLive(item)
-          || !membershipExitCleanupService.isRecipientActiveForNotification(item.id())) {
+          || !membershipExitCleanupService.isRecipientActiveForNotification(item.id())
+          || isHeldForAway(item)) {
         cancelNotification(item.id());
         continue;
       }
@@ -571,7 +576,8 @@ public class NotificationScheduler {
           || !isAssignmentActive(item)
           || !isBoardReminderLive(item)
           || !isBoardListPushLive(item)
-          || !membershipExitCleanupService.isRecipientActiveForNotification(item.id())) {
+          || !membershipExitCleanupService.isRecipientActiveForNotification(item.id())
+          || isHeldForAway(item)) {
         cancelNotification(item.id());
         continue;
       }
@@ -675,6 +681,16 @@ public class NotificationScheduler {
       return true;
     }
     return boardListService.claimDeferredPush(item.referenceId(), item.scheduledAt());
+  }
+
+  /** An away member gets no chore notifications for their away days (E10). */
+  private boolean isHeldForAway(PendingNotification item) {
+    return awayPeriods.suppresses(
+        item.type(),
+        item.referenceType(),
+        item.referenceId(),
+        item.recipientUserId(),
+        OffsetDateTime.now(ZoneOffset.UTC));
   }
 
   private boolean isChoreReminder(String type) {

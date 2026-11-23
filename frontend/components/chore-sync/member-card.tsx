@@ -1,6 +1,6 @@
 import type { HouseholdMemberDTO } from "@/lib/household/api"
 
-export type MemberAction = "promote" | "demote" | "remove" | "transfer"
+export type MemberAction = "away" | "promote" | "demote" | "remove" | "transfer"
 
 export function getMemberActionOptions({
   member,
@@ -14,6 +14,11 @@ export function getMemberActionOptions({
   const actions: { label: string; action: MemberAction }[] = []
   const isOwner = currentUserRole === "OWNER"
   const isAdmin = currentUserRole === "ADMIN"
+
+  // Away mode: owners and admins can set it for any member (yours is on Profile).
+  if ((isOwner || isAdmin) && !isCurrentUser) {
+    actions.push({ label: `Set ${member.displayName} as away`, action: "away" })
+  }
 
   if (isOwner && !isCurrentUser) {
     if (member.role === "MEMBER") {

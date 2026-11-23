@@ -25,6 +25,7 @@ export type Screen =
   | "appearance"
   | "privacy-security"
   | "help-support"
+  | "away-mode"
   | "legal-acceptance"
 
 export type ChoreStatus = "pending" | "completed"
