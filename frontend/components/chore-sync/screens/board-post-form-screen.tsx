@@ -18,6 +18,7 @@ import {
   Package,
   PartyPopper,
   Pin,
+  Siren,
   Plane,
   Sparkles,
   Text,
@@ -522,6 +523,29 @@ export function BoardPostFormScreen({ theme = "light" }: { theme?: PreviewTheme 
               <Pin size={18} />
             </span>
             <span>Pin to house info</span>
+            <span aria-hidden="true" className={formStyles.switch} />
+          </button>
+        </div>
+      )}
+      {!editing && (
+        <div className={formStyles.rowWrap}>
+          <button
+            aria-checked={values.urgent}
+            aria-describedby="board-urgent-hint"
+            className={`${formStyles.toggleRow} ${styles.pinRow} ${styles.urgentRow}`}
+            onClick={() => update({ ...values, urgent: !values.urgent })}
+            role="switch"
+            type="button"
+          >
+            <span aria-hidden="true" className={formStyles.tile}>
+              <Siren size={18} />
+            </span>
+            <span>
+              <span className={styles.urgentTitle}>Urgent</span>
+              <span className={styles.urgentHint} id="board-urgent-hint">
+                Notifies everyone even during quiet hours
+              </span>
+            </span>
             <span aria-hidden="true" className={formStyles.switch} />
           </button>
         </div>

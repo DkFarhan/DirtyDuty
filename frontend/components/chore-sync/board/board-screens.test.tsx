@@ -2,6 +2,7 @@
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { ApiError } from "@/lib/auth/api"
 import type { Board, BoardPost } from "@/lib/board/api"
 
 const mocks = vi.hoisted(() => ({
@@ -191,9 +192,69 @@ describe("Board", () => {
         pinned: false,
         notifyMode: "EVERYONE",
         recipientUserIds: [],
+        urgent: false,
       },
     ])
     await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith("board"))
+  })
+
+  it("posts an urgent heads-up that notifies everyone even during quiet hours", async () => {
+    await renderForm()
+    fireEvent.change(titleInput(), { target: { value: "Water leak in the hall" } })
+    const urgent = screen.getByRole("switch", { name: /Urgent/ })
+    expect(urgent.getAttribute("aria-checked")).toBe("false")
+    expect(urgent.textContent).toContain("Notifies everyone even during quiet hours")
+
+    // One urgent post an hour: the server's message shows as written.
+    mocks.create.mockRejectedValueOnce(
+      new ApiError("You can post one urgent post an hour. Try again at 3:40 PM.", 409, "conflict"),
+    )
+    fireEvent.click(urgent)
+    expect(urgent.getAttribute("aria-checked")).toBe("true")
+    fireEvent.click(screen.getByRole("button", { name: "Post" }))
+    expect(
+      await screen.findByText("You can post one urgent post an hour. Try again at 3:40 PM."),
+    ).toBeTruthy()
+    expect(mocks.create.mock.calls[0][1]).toMatchObject({ urgent: true })
+
+    fireEvent.click(screen.getByRole("button", { name: "Post" }))
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith("board"))
+    expect(mocks.create.mock.calls[1][1]).toMatchObject({ urgent: true })
+  })
+
+  it("labels an urgent post on its card", () => {
+    const post = eventPost({
+      id: "urgent-1",
+      type: "HEADS_UP",
+      eventDate: null,
+      startTime: null,
+      urgent: true,
+      title: "Water leak",
+    })
+    render(
+      <BoardScreenView
+        busyIds={[]}
+        feedback={null}
+        groups={groupBoard([post])}
+        householdName="Apt 1501"
+        onCompose={vi.fn()}
+        onFix={vi.fn()}
+        onGotIt={vi.fn()}
+        onMakeChore={vi.fn()}
+        onNavigate={vi.fn()}
+        onOpenPast={vi.fn()}
+        onOpenPost={vi.fn()}
+        onRetry={vi.fn()}
+        pastCount={0}
+        status="loaded"
+        theme="dark"
+        unseenCount={0}
+        viewerIsAdmin={false}
+      />,
+    )
+    expect(
+      within(screen.getByRole("article", { name: "Water leak" })).getByText("Urgent"),
+    ).toBeTruthy()
   })
 
   it("notifies only the people picked, and needs at least one", async () => {

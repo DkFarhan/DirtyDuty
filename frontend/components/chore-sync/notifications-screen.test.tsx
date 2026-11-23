@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { clearCsrfToken } from "@/lib/auth/api"
 import { ChoreSyncProvider } from "@/lib/chore-sync/store"
-import type { Notification } from "@/lib/notifications/api"
+import type { Notification, NotificationPreferences } from "@/lib/notifications/api"
 import { removeBrowserPushSubscription } from "@/lib/notifications/push"
 import { NotificationsScreen } from "./screens/notifications-screen"
 
@@ -68,7 +68,7 @@ const notifications = [
     createdAt: "2026-09-28T12:00:00Z",
   },
 ]
-const preferences = {
+const preferences: NotificationPreferences = {
   choreAssignedEnabled: true,
   choreRemindersEnabled: true,
   overdueEnabled: true,
@@ -76,6 +76,7 @@ const preferences = {
   householdUpdatesEnabled: true,
   quietHoursStart: "21:30:00",
   quietHoursEnd: "06:30:00",
+  quietHoursEnabled: true,
   notificationStyleOverride: null,
   householdNotificationStyle: "NORMAL",
   funnyNotificationsEnabled: false,
@@ -163,6 +164,60 @@ describe("notifications screen", () => {
     clearCsrfToken()
   })
 
+  it("turns quiet hours on with 10 PM to 8 AM, explains them, and saves them", async () => {
+    currentPreferences = {
+      ...preferences,
+      quietHoursStart: null,
+      quietHoursEnd: null,
+      quietHoursEnabled: false,
+    }
+    render(
+      <ChoreSyncProvider>
+        <NotificationsScreen />
+      </ChoreSyncProvider>,
+    )
+
+    const toggle = await screen.findByRole("checkbox", { name: "Quiet hours" })
+    expect(toggle).toHaveProperty("checked", false)
+    expect(screen.queryByLabelText("Quiet hours from")).toBeNull()
+
+    fireEvent.click(toggle)
+    expect(screen.getByLabelText("Quiet hours from")).toHaveProperty("value", "22:00")
+    expect(screen.getByLabelText("Quiet hours to")).toHaveProperty("value", "08:00")
+    expect(
+      screen.getByText(
+        "Notifications wait until the end of quiet hours. They still appear in the app right away.",
+      ),
+    ).toBeTruthy()
+
+    // A window needs different start and end times.
+    fireEvent.change(screen.getByLabelText("Quiet hours to"), { target: { value: "22:00" } })
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Quiet hours can't start and end at the same time.",
+    )
+    expect(screen.getByRole("button", { name: "Save preferences" })).toHaveProperty(
+      "disabled",
+      true,
+    )
+    fireEvent.change(screen.getByLabelText("Quiet hours to"), { target: { value: "07:30" } })
+    fireEvent.click(screen.getByRole("button", { name: "Save preferences" }))
+    expect(await screen.findByRole("status")).toHaveProperty("textContent", "Preferences saved.")
+    const saveRequest = fetchMock.mock.calls.find(
+      ([url, init]) =>
+        String(url).endsWith("/api/notifications/preferences") && init?.method === "PUT",
+    )
+    const body = JSON.parse(String(saveRequest?.[1]?.body))
+    expect(body).toMatchObject({
+      quietHoursEnabled: true,
+      quietHoursStart: "22:00:00",
+      quietHoursEnd: "07:30:00",
+    })
+
+    // Off hides the times but keeps them for next time.
+    fireEvent.click(screen.getByRole("checkbox", { name: "Quiet hours" }))
+    expect(screen.queryByLabelText("Quiet hours from")).toBeNull()
+  })
+
   it("renders read and unread states, marks a notification read and saves preferences", async () => {
     render(
       <ChoreSyncProvider>
@@ -182,7 +237,7 @@ describe("notifications screen", () => {
     expect(screen.getByText("Unread")).toBeTruthy()
     const markAsRead = screen.getByRole("button", { name: "Mark Kitchen chore due as read" })
     expect(markAsRead.textContent).toBe("Mark as read")
-    expect(screen.getByLabelText("Quiet hours start")).toHaveProperty("value", "21:30")
+    expect(screen.getByLabelText("Quiet hours from")).toHaveProperty("value", "21:30")
 
     fireEvent.click(markAsRead)
     await waitFor(() =>

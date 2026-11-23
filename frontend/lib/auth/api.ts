@@ -128,7 +128,14 @@ const BOARD_MESSAGES = [
   /^Keep the note to 60 characters\.$/,
   /^[^\n]{1,80} is already on this list\.$/,
   /^This action isn't available\.$/,
+  /^You can post one urgent post an hour\. Try again at \d{1,2}:\d{2} (AM|PM)\.$/,
 ]
+
+/** Notification settings the server checks when they're saved. */
+const PREFERENCE_MESSAGES = new Set([
+  "Quiet hours can't start and end at the same time.",
+  "Both quiet hours start and end must be provided.",
+])
 
 /** Chore type settings checked when a chore is saved. */
 const CHORE_KIND_MESSAGES = new Set([
@@ -220,6 +227,18 @@ function messageFor(
     "message" in payload &&
     typeof payload.message === "string" &&
     BOARD_MESSAGES.some((pattern) => pattern.test(payload.message as string))
+  ) {
+    return payload.message
+  }
+  if (
+    status === 400 &&
+    method === "PUT" &&
+    path === "/api/notifications/preferences" &&
+    payload !== null &&
+    typeof payload === "object" &&
+    "message" in payload &&
+    typeof payload.message === "string" &&
+    PREFERENCE_MESSAGES.has(payload.message)
   ) {
     return payload.message
   }

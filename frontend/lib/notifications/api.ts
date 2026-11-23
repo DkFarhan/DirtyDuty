@@ -25,6 +25,8 @@ export type NotificationPreferences = {
   householdUpdatesEnabled: boolean
   quietHoursStart: string | null
   quietHoursEnd: string | null
+  /** Pushes wait until the end of quiet hours (in-app rows still appear right away). */
+  quietHoursEnabled: boolean
   notificationStyleOverride: NotificationStyle | null
   householdNotificationStyle: NotificationStyle
   funnyNotificationsEnabled: boolean
@@ -105,6 +107,7 @@ function normalizePreferences(preferences: NotificationPreferences): Notificatio
     pushEnabled: preferences.pushEnabled ?? false,
     quietHoursStart: preferences.quietHoursStart?.slice(0, 5) ?? null,
     quietHoursEnd: preferences.quietHoursEnd?.slice(0, 5) ?? null,
+    quietHoursEnabled: preferences.quietHoursEnabled ?? false,
   }
 }
 
@@ -125,6 +128,7 @@ function serializePreferences(
       preferences.quietHoursEnd && preferences.quietHoursEnd.length === 5
         ? `${preferences.quietHoursEnd}:00`
         : preferences.quietHoursEnd,
+    quietHoursEnabled: preferences.quietHoursEnabled,
     notificationStyleOverride: preferences.notificationStyleOverride,
     funnyNotificationsEnabled: preferences.funnyNotificationsEnabled,
     competitiveNotificationsEnabled: preferences.competitiveNotificationsEnabled,

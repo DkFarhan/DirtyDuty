@@ -10,6 +10,7 @@ public record NotificationPreferencesResponse(
     boolean householdUpdatesEnabled,
     LocalTime quietHoursStart,
     LocalTime quietHoursEnd,
+    boolean quietHoursEnabled,
     String notificationStyleOverride,
     String householdNotificationStyle,
     boolean funnyNotificationsEnabled,

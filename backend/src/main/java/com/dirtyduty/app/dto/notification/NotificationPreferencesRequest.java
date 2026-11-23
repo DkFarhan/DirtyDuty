@@ -11,6 +11,10 @@ public record NotificationPreferencesRequest(
     boolean householdUpdatesEnabled,
     LocalTime quietHoursStart,
     LocalTime quietHoursEnd,
+    /*
+     * Null (older clients): on when both times are given. On without times starts at 10 PM–8 AM.
+     */
+    Boolean quietHoursEnabled,
     @Pattern(regexp = "NORMAL|FUNNY|MOTIVATIONAL|COMPETITIVE|MINIMAL")
         String notificationStyleOverride,
     boolean funnyNotificationsEnabled,

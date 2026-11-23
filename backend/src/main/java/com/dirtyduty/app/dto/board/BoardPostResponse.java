@@ -20,6 +20,8 @@ public record BoardPostResponse(
     LocalTime startTime,
     LocalTime endTime,
     boolean pinned,
+    /* Notified everyone even during quiet hours. */
+    boolean urgent,
     String notifyMode,
     List<UUID> recipientUserIds,
     UUID authorUserId,

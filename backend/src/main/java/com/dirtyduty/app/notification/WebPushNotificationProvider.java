@@ -31,6 +31,7 @@ public class WebPushNotificationProvider implements NotificationDeliveryProvider
   private final JdbcTemplate jdbc;
   private final NotificationCooldownService cooldownService;
   private final WebPushClient webPushClient;
+  private final QuietHoursService quietHours;
   private final ObjectMapper objectMapper;
   private final String publicKey;
   private final String privateKey;
@@ -40,12 +41,14 @@ public class WebPushNotificationProvider implements NotificationDeliveryProvider
       JdbcTemplate jdbc,
       NotificationCooldownService cooldownService,
       WebPushClient webPushClient,
+      QuietHoursService quietHours,
       @Value("${app.notifications.web-push.public-key:}") String publicKey,
       @Value("${app.notifications.web-push.private-key:}") String privateKey,
       @Value("${app.notifications.web-push.subject:mailto:support@dirtyduty.app}") String subject) {
     this.jdbc = jdbc;
     this.cooldownService = cooldownService;
     this.webPushClient = webPushClient;
+    this.quietHours = quietHours;
     this.objectMapper = new ObjectMapper();
     this.publicKey = publicKey;
     this.privateKey = privateKey;
@@ -137,6 +140,22 @@ public class WebPushNotificationProvider implements NotificationDeliveryProvider
       setDeliveryStatus(notificationId, "CANCELLED", "Push notifications are disabled.", false);
       return;
     }
+    // Quiet hours hold the push (every type, here once) until the end of the recipient's window;
+    // the in-app row is already there. The morning release then cleans up, collapses and groups
+    // everything held for the person (QuietHoursRelease). Targets are snapshotted only on send.
+    OffsetDateTime holdUntil = quietHours.holdUntil(notificationId);
+    if (holdUntil != null) {
+      jdbc.update(
+          """
+              UPDATE notification_deliveries
+              SET quiet_held_until=?, next_attempt_at=?, last_error='Held for quiet hours.'
+              WHERE notification_id=? AND channel='WEB_PUSH'
+              """,
+          holdUntil,
+          holdUntil,
+          notificationId);
+      return;
+    }
     if (deliveryState.targetsSnapshottedAt() == null) {
       jdbc.update(
           """
@@ -225,9 +244,94 @@ public class WebPushNotificationProvider implements NotificationDeliveryProvider
         recordTargetResult(notificationId, subscription.id(), "FAILED", "INTERRUPTED", false);
         logger.warn("Web Push target delivery was interrupted.");
         break;
+      } catch (IllegalArgumentException exception) {
+        // A stored subscription whose keys can't be decoded will never work: drop it, and never
+        // let it fail the request that triggered the push (e.g. creating a post).
+        recordTargetResult(
+            notificationId, subscription.id(), "CANCELLED", "INVALID_SUBSCRIPTION", false);
+        jdbc.update("UPDATE push_subscriptions SET active=FALSE WHERE id=?", subscription.id());
+        logger.warn("Web Push target has an invalid subscription key; it was deactivated.");
       }
     }
     updateAggregateDeliveryStatus(notificationId);
+  }
+
+  /**
+   * Sends one grouped morning push (push only: there is no notification row behind it) to every
+   * active subscription of the person. Returns SENT when any subscription accepted it, CANCELLED
+   * when push is off or there is nowhere to send it, FAILED otherwise.
+   */
+  public String sendDigest(UUID recipientUserId, String title, String body, String targetPath) {
+    if (!isConfigured()) {
+      return "CANCELLED";
+    }
+    Boolean enabled =
+        jdbc.queryForObject(
+            "SELECT COALESCE((SELECT push_enabled FROM notification_preferences WHERE user_id=?), FALSE)",
+            Boolean.class,
+            recipientUserId);
+    if (!Boolean.TRUE.equals(enabled)) {
+      return "CANCELLED";
+    }
+    List<Subscription> subscriptions =
+        jdbc.query(
+            """
+                SELECT id, endpoint, public_key, auth_secret FROM push_subscriptions
+                WHERE user_id=? AND active=TRUE ORDER BY id
+                """,
+            (rs, row) ->
+                new Subscription(
+                    rs.getObject("id", UUID.class),
+                    rs.getString("endpoint"),
+                    rs.getString("public_key"),
+                    rs.getString("auth_secret")),
+            recipientUserId);
+    if (subscriptions.isEmpty()) {
+      return "CANCELLED";
+    }
+    String payload;
+    try {
+      payload = objectMapper.writeValueAsString(new PushPayload(title, body, targetPath));
+    } catch (JsonProcessingException exception) {
+      throw new IllegalStateException("Unable to serialize a grouped push.", exception);
+    }
+    boolean accepted = false;
+    for (Subscription subscription : subscriptions) {
+      try {
+        int status =
+            webPushClient.send(
+                publicKey,
+                privateKey,
+                subject,
+                subscription.endpoint(),
+                subscription.publicKey(),
+                subscription.authSecret(),
+                payload.getBytes(StandardCharsets.UTF_8));
+        if (status >= 200 && status < 300) {
+          accepted = true;
+          jdbc.update(
+              "UPDATE push_subscriptions SET last_used_at=NOW() WHERE id=?", subscription.id());
+        } else if (status == 404 || status == 410) {
+          jdbc.update("UPDATE push_subscriptions SET active=FALSE WHERE id=?", subscription.id());
+        } else {
+          logger.warn("Grouped Web Push was rejected (HTTP {}).", status);
+        }
+      } catch (IOException
+          | GeneralSecurityException
+          | JoseException
+          | ExecutionException exception) {
+        logger.warn("Grouped Web Push failed (provider error).");
+      } catch (InterruptedException exception) {
+        Thread.currentThread().interrupt();
+        logger.warn("Grouped Web Push was interrupted.");
+        break;
+      } catch (IllegalArgumentException exception) {
+        jdbc.update("UPDATE push_subscriptions SET active=FALSE WHERE id=?", subscription.id());
+        logger.warn(
+            "Grouped Web Push skipped a subscription with an invalid key; it was deactivated.");
+      }
+    }
+    return accepted ? "SENT" : "FAILED";
   }
 
   public PushTestResult sendTest(

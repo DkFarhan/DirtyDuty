@@ -11,6 +11,7 @@ import {
   Phone,
   Pin,
   Plus,
+  Siren,
   StickyNote,
   Trash2,
   Wifi,
@@ -144,6 +145,16 @@ function GotItButton({
   )
 }
 
+/** Sent to everyone even during quiet hours. */
+function UrgentChip({ post }: { post: BoardPost }) {
+  return post.urgent ? (
+    <span className={styles.chip} data-tone="urgent">
+      <Siren aria-hidden="true" size={13} strokeWidth={2.2} />
+      Urgent
+    </span>
+  ) : null
+}
+
 function Edited({ post }: { post: BoardPost }) {
   return post.editedAt ? <span className={styles.edited}> · Edited</span> : null
 }
@@ -203,6 +214,7 @@ function ProblemCard(props: CardProps) {
           <Wrench aria-hidden="true" size={13} strokeWidth={2.2} />
           Problem
         </span>
+        <UrgentChip post={post} />
         <span className={styles.grow} />
         <OccurrenceMoreButton
           className={styles.more}
@@ -260,6 +272,7 @@ function EventCard(props: CardProps) {
         <div>
           <div className={styles.top}>
             <span className={styles.eventEyebrow}>{eventEyebrow(post)}</span>
+            <UrgentChip post={post} />
             <OccurrenceMoreButton
               className={styles.more}
               onClick={() => onOpenPost(post.id)}
@@ -314,6 +327,7 @@ function HeadsUpCard(props: CardProps) {
             Heads-up
           </span>
         )}
+        <UrgentChip post={post} />
         <span className={styles.grow} />
         <span className={styles.when}>{timeAgo(post.createdAt, now)}</span>
       </div>
