@@ -135,10 +135,33 @@ public class MembershipExitCleanupService {
     int pausedSchedules = reconcileSchedules(scheduleIds, userId);
     entityManager.flush();
     reconcileAssignments(householdId, userId);
+    cleanupAway(householdId, userId);
     cleanupBoard(householdId, userId);
     cancelMemberNotifications(householdId, userId);
     entityManager.flush();
     return pausedSchedules;
+  }
+
+  /**
+   * A member who leaves (or deletes their account) takes their away periods with them, with the
+   * Board heads-ups they posted; occurrences stop saying they covered for them.
+   */
+  private void cleanupAway(UUID householdId, UUID userId) {
+    jdbc.update(
+        """
+            DELETE FROM board_posts WHERE id IN (
+                SELECT board_post_id FROM member_away_periods
+                WHERE household_id=? AND user_id=? AND board_post_id IS NOT NULL)
+            """,
+        householdId,
+        userId);
+    jdbc.update(
+        "DELETE FROM member_away_periods WHERE household_id=? AND user_id=?", householdId, userId);
+    jdbc.update(
+        "UPDATE chore_assignments SET away_from_user_id=NULL"
+            + " WHERE household_id=? AND away_from_user_id=?",
+        householdId,
+        userId);
   }
 
   @Transactional(propagation = Propagation.MANDATORY)

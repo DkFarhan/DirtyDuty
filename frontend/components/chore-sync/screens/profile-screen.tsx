@@ -6,12 +6,16 @@ import { useAuth } from "@/lib/auth/auth-context"
 import { useChoreSync } from "@/lib/chore-sync/store"
 import { notificationApi } from "@/lib/notifications/api"
 import { profileApi, type Profile } from "@/lib/profile/api"
+import { awayApi, awayRowValue, type AwayPeriod } from "@/lib/household/away"
+import { useHouseholds } from "@/lib/household/household-context"
 import { notificationResource, useDataSync } from "@/lib/data-sync/data-sync-context"
 import type { Theme } from "@/components/theme/theme-provider"
 import { ProfileScreenView } from "./profile-screen-view"
 
 export function ProfileScreen({ theme = "light" }: { theme?: Exclude<Theme, "system"> }) {
-  const { state, navigate, openNotifications } = useChoreSync()
+  const { state, navigate, openNotifications, openAwayMode } = useChoreSync()
+  const { activeHousehold } = useHouseholds()
+  const [away, setAway] = useState<{ period: AwayPeriod | null } | null>(null)
   const { logout } = useAuth()
   const [profile, setProfile] = useState<Profile | null>(null)
   const [unreadCount, setUnreadCount] = useState(0)
@@ -56,6 +60,22 @@ export function ProfileScreen({ theme = "light" }: { theme?: Exclude<Theme, "sys
     void loadProfile()
   }, [loadProfile])
   useEffect(() => {
+    if (!activeHousehold || !state.currentUser.id) return
+    let live = true
+    awayApi
+      .status(activeHousehold.id, state.currentUser.id)
+      .then((result) => {
+        if (live) setAway({ period: result.period })
+      })
+      .catch(() => {
+        // The row still opens Away mode, which shows its own error.
+        if (live) setAway({ period: null })
+      })
+    return () => {
+      live = false
+    }
+  }, [activeHousehold, state.currentUser.id])
+  useEffect(() => {
     void loadNotificationCount()
     return () => {
       notificationRequestSequence.current += 1
@@ -94,6 +114,9 @@ export function ProfileScreen({ theme = "light" }: { theme?: Exclude<Theme, "sys
       profile={profile}
       theme={theme}
       unreadCount={unreadCount}
+      awayOn={Boolean(away?.period)}
+      awayValue={activeHousehold ? (away ? awayRowValue(away.period) : "") : null}
+      onAway={() => openAwayMode(null, "profile")}
     />
   )
 }

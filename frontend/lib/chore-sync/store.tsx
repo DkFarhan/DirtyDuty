@@ -14,6 +14,9 @@ const validReturnScreens = new Set<Screen>([
   "household-settings",
 ])
 
+/** Whose away mode the Away mode screen shows: yourself (null) or a member an admin picked. */
+export type AwayTarget = { userId: string; displayName: string } | null
+
 /**
  * A chore the Board asks Create a chore to start with: the title, and for an event a one-time date
  * and time. Saving or leaving the form returns to {@link returnTo}.
@@ -45,6 +48,10 @@ interface ChoreSyncContextValue {
   /** A list the Board should open (Home's Shopping row, a "needed today" notification). */
   requestedBoardListId: string | null
   choreDraft: ChoreDraft | null
+  /** Whose away mode is open, and where Back goes. */
+  awayTarget: AwayTarget
+  awayReturn: Screen
+  openAwayMode: (target: AwayTarget, returnTo: Screen) => void
   pendingAccountDeletionUserId: string | null
   navigate: (screen: Screen, adminTab?: "members" | "chores") => void
   beginAccountDeletion: (userId: string) => void
@@ -85,6 +92,8 @@ export function ChoreSyncProvider({
   const [boardTab, setBoardTab] = useState<"posts" | "lists">("posts")
   const [requestedBoardListId, setRequestedBoardListId] = useState<string | null>(null)
   const [choreDraft, setChoreDraft] = useState<ChoreDraft | null>(null)
+  const [awayTarget, setAwayTarget] = useState<AwayTarget>(null)
+  const [awayReturn, setAwayReturn] = useState<Screen>("profile")
   const [notificationReturnScreen, setNotificationReturnScreen] = useState<Screen | null>(null)
   const [pendingAccountDeletionUserId, setPendingAccountDeletionUserId] = useState<string | null>(
     null,
@@ -151,6 +160,12 @@ export function ChoreSyncProvider({
     setScreen("board")
   }, [])
 
+  const openAwayMode = useCallback((target: AwayTarget, returnTo: Screen) => {
+    setAwayTarget(target)
+    setAwayReturn(returnTo)
+    setScreen("away-mode")
+  }, [])
+
   const startChoreDraft = useCallback((draft: ChoreDraft) => {
     setChoreDraft(draft)
     setScreen("create-chore")
@@ -170,6 +185,7 @@ export function ChoreSyncProvider({
     setBoardTab("posts")
     setRequestedBoardListId(null)
     setChoreDraft(null)
+    setAwayTarget(null)
     setPendingAccountDeletionUserId(null)
   }, [])
 
@@ -200,6 +216,9 @@ export function ChoreSyncProvider({
       boardTab,
       requestedBoardListId,
       choreDraft,
+      awayTarget,
+      awayReturn,
+      openAwayMode,
       pendingAccountDeletionUserId,
       navigate,
       beginAccountDeletion,
@@ -230,6 +249,9 @@ export function ChoreSyncProvider({
       boardTab,
       requestedBoardListId,
       choreDraft,
+      awayTarget,
+      awayReturn,
+      openAwayMode,
       pendingAccountDeletionUserId,
       navigate,
       beginAccountDeletion,

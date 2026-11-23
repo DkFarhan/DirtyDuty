@@ -12,6 +12,7 @@ const authenticatedScreens = new Set<Screen>([
   "board-post",
   "board-post-form",
   "board-past",
+  "away-mode",
   "household",
   "admin",
   "create-chore",

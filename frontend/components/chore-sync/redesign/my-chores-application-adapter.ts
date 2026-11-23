@@ -10,6 +10,7 @@ import {
   isHouseholdJob,
 } from "@/lib/household/household-jobs"
 import { hasOccurrenceActions, movedFromLabel } from "@/lib/household/occurrence-actions"
+import { awayNote } from "@/lib/household/away"
 import { assignmentAssigneeNames, assignmentDate } from "../chore-card"
 import type {
   MyChoreCompletedViewModel,
@@ -87,6 +88,7 @@ function mapUpcoming(
     overdue: assignment.status === "PENDING" && assignment.overdue,
     status: assignment.status,
     movedFrom: movedFromLabel(assignment),
+    awayNote: awayNote(assignment, input.currentUserId),
     hasActions: hasOccurrenceActions(assignment),
     canComplete:
       assignment.status === "PENDING" &&

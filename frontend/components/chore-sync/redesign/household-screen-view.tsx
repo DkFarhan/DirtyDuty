@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef } from "react"
-import { X } from "lucide-react"
+import { X, Plane } from "lucide-react"
 import type { HouseholdMemberDTO } from "@/lib/household/api"
 import { useDialogFocus } from "../use-dialog-focus"
 import { getMemberActionCopy, getMemberActionOptions, type MemberAction } from "../member-card"
@@ -18,6 +18,8 @@ export interface HouseholdMemberViewModel extends HouseholdMemberDTO {
   isCurrentUser: boolean
   joinedLabel: string
   progressPercent: number
+  /** "Away until Sun" while away (or "Away from Fri" before), else null. */
+  awayTag?: string | null
 }
 
 export interface HouseholdScreenViewModel {
@@ -185,6 +187,12 @@ function MemberRow({
             {roleTitle(member.role)}
           </span>
           {member.isCurrentUser && <span className={styles.youChip}>You</span>}
+          {member.awayTag && (
+            <span className={styles.awayChip} data-testid="member-away-tag">
+              <Plane aria-hidden="true" size={12} />
+              {member.awayTag}
+            </span>
+          )}
         </div>
         <p className={styles.joinedLabel}>{member.joinedLabel}</p>
       </div>

@@ -1,5 +1,6 @@
 "use client"
 
+import { AwayNote } from "../away-note"
 import { Fragment, type CSSProperties, type ReactNode } from "react"
 import type { HouseholdJobViewModel } from "@/lib/household/household-jobs"
 import { HouseholdJobCard } from "../household-job-card"
@@ -23,6 +24,8 @@ export interface HomeChoreViewModel {
   status?: "PENDING" | "COMPLETED" | "CANCELLED" | "SKIPPED"
   /** "Moved from Tue" when moved to another day. */
   movedFrom?: string | null
+  /** "Sam is away, so it skipped to you" (Away mode). */
+  awayNote?: string | null
   /** The viewer may move, skip, undo or reassign this occurrence. */
   hasActions?: boolean
   completedBy?: string | null
@@ -40,6 +43,8 @@ export interface HomeUpcomingChoreViewModel {
   timeLabel: string
   skipped?: boolean
   movedFrom?: string | null
+  /** "Sam is away, so it skipped to you" (Away mode). */
+  awayNote?: string | null
   hasActions?: boolean
   feedback?: CardFeedbackView
 }
@@ -168,6 +173,7 @@ function ChoreCard({
             </>
           )}
         </p>
+        <AwayNote note={chore.awayNote} />
         {showActions && (
           <OccurrenceMoreButton
             className={styles.cardMoreButton}
@@ -580,6 +586,7 @@ export function HomeScreenView({
                                   </>
                                 )}
                               </p>
+                              <AwayNote note={chore.awayNote} />
                             </div>
                             <time className={styles.upcomingTime}>{chore.timeLabel}</time>
                             {chore.hasActions && onOpenChoreActions && (

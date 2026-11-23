@@ -385,6 +385,29 @@
   background: rgba(131, 105, 166, 0.14);
 }
 
+.preferenceIcon.away {
+  color: var(--accent-strong);
+}
+
+.preferenceIcon.awayOn {
+  border-color: transparent;
+  color: var(--away-ink);
+  background: var(--away-soft);
+}
+
+.awayValue,
+.awayValueOn {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.awayValueOn {
+  color: var(--away-ink);
+  font-weight: 700;
+}
+
 .preferenceTitle {
   min-width: 0;
   flex: 1;

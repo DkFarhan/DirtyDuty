@@ -39,6 +39,7 @@ import { BoardScreen } from "./screens/board-screen"
 import { BoardPostScreen } from "./screens/board-post-screen"
 import { BoardPostFormScreen } from "./screens/board-post-form-screen"
 import { BoardPastScreen } from "./screens/board-past-screen"
+import { AwayModeScreen } from "./screens/away-mode-screen"
 
 const authenticationScreens = new Set<Screen>([
   "login",
@@ -60,6 +61,7 @@ const screenTargets = new Map<string, Screen>([
   ["admin", "admin"],
   ["privacy-security", "privacy-security"],
   ["legal-acceptance", "legal-acceptance"],
+  ["away-mode", "away-mode"],
 ])
 
 function ScreenRouter() {
@@ -277,6 +279,8 @@ function ScreenRouter() {
       return <PrivacySecurityScreen theme={resolvedTheme} />
     case "help-support":
       return <HelpSupportScreen theme={resolvedTheme} />
+    case "away-mode":
+      return <AwayModeScreen theme={resolvedTheme} />
     case "legal-acceptance":
       return <LegalAcceptanceScreen />
     default:

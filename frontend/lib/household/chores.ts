@@ -110,6 +110,8 @@ export type AssignmentDTO = {
   kind?: ScheduleKind
   /** Whose turn the open occurrence is ("After it's done" and "When needed"). */
   turn?: { userId: string; displayName: string } | null
+  /** Whose slot this covers because they're away (Away mode). */
+  awayFrom?: { userId: string; displayName: string } | null
   /** The latest completion before this one. */
   lastDone?: { at: string; byUserId: string; byDisplayName: string } | null
   /** "Needs doing" flag on an open "When needed" occurrence. */

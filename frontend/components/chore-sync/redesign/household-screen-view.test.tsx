@@ -220,8 +220,10 @@ describe("Household screen presentation", () => {
     fireEvent.keyDown(document, { key: "Escape" })
     view.rerender(<HouseholdScreenView {...props} openMemberMenuId={null} />)
 
+    // Owners and admins have a menu for every other member now (Set … as away), so the trigger
+    // is found by member id.
     expect(document.activeElement).toBe(
-      screen.getByRole("button", { name: "Actions for Farhan Habib" }),
+      document.querySelector(`[data-member-action-trigger="${member.userId}"]`),
     )
   })
 })

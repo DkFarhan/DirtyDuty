@@ -1,6 +1,7 @@
 import type { CardFeedbackView } from "./card-feedback"
 import type { AssignmentDTO } from "./chores"
 import { describeChoreSchedule } from "./recurrence"
+import { awayNote } from "./away"
 
 /**
  * "When needed" chores ("household jobs"): what a card says about whose turn it is, when it was
@@ -12,6 +13,8 @@ export type HouseholdJobViewModel = {
   category: string
   /** "Your turn" or "Sam's turn". */
   turnLabel: string
+  /** "Sam is away, so it skipped to you" when the turn moved for Away mode, else null. */
+  awayNote: string | null
   /** The first letter of whose turn it is, for the avatar; null on your turn or nobody's. */
   turnInitial: string | null
   yourTurn: boolean
@@ -191,6 +194,7 @@ export function householdJobView(
     title: assignment.title,
     category: assignment.categoryName ?? "Household job",
     turnLabel: !turn ? "Nobody's turn yet" : yourTurn ? "Your turn" : `${turnName}'s turn`,
+    awayNote: awayNote(assignment, viewerId),
     turnInitial: turnName && !yourTurn ? turnName.charAt(0).toUpperCase() : null,
     yourTurn,
     lastDoneLabel: lastDone

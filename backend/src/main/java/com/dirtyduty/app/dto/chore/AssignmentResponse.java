@@ -18,6 +18,9 @@ import java.util.UUID;
  * occurrence is, {@code lastDone} the latest completion of the chore before this occurrence, {@code
  * flag} the current "Needs doing" flag (AS_NEEDED, open only), and {@code repeat} the interval or
  * backstop setting. These are null for calendar chores.
+ *
+ * <p>{@code awayFrom} is the member whose slot this pending occurrence covers because they are away
+ * (Away mode); the card says "{awayFrom} is away, so it skipped to {first assignee}".
  */
 public record AssignmentResponse(
     UUID id,
@@ -45,7 +48,8 @@ public record AssignmentResponse(
     Person turn,
     LastDone lastDone,
     Flag flag,
-    Repeat repeat) {
+    Repeat repeat,
+    Person awayFrom) {
 
   public record Person(UUID userId, String displayName) {}
 

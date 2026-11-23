@@ -47,6 +47,9 @@
 
 :root {
   color-scheme: light;
+  /* Away mode: a soft violet, only for away tags and notes. */
+  --away-ink: #5a45a8;
+  --away-soft: #ece7ff;
   /* Screens ask for the Libre Baskerville serif by this name; next/font loads it as the
      Household serif on <html>. Defined once here so every screen gets it. */
   --font-libre-baskerville: var(--font-household-serif);
@@ -86,6 +89,8 @@
 
 .dark {
   color-scheme: dark;
+  --away-ink: #c9b8ff;
+  --away-soft: #2b2a4a;
   --background: oklch(0.15 0.006 255);
   --foreground: oklch(0.96 0.004 255);
   --card: oklch(0.21 0.007 255);

@@ -337,8 +337,9 @@ class OpenCopyChoreKindsIntegrationTest {
       turns.add(turn);
       complete(open, turn);
     }
-    // Ben starts level with Ana (1), so the turns stay one each instead of Ben catching up.
-    assertThat(turns).containsExactly(home.ana(), home.ben(), home.owner(), home.ana());
+    // Ben starts level with Ana (1), so the turns stay one each instead of Ben catching up. On
+    // that tie Ben goes first (never done counts as longest ago), then whoever did it longest ago.
+    assertThat(turns).containsExactly(home.ben(), home.ana(), home.owner(), home.ben());
   }
 
   @Test

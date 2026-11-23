@@ -1,5 +1,6 @@
 "use client"
 
+import { AwayNote } from "../away-note"
 import type { HomeNavigationDestination, HomeVisualTheme } from "./home-screen-view"
 import { BottomNav } from "../bottom-nav"
 import type { HouseholdJobViewModel } from "@/lib/household/household-jobs"
@@ -27,6 +28,8 @@ export interface MyChoreUpcomingViewModel {
   canComplete?: boolean
   /** "Moved from Tue" when moved to another day. */
   movedFrom?: string | null
+  /** "Sam is away, so it skipped to you" (Away mode). */
+  awayNote?: string | null
   /** The viewer may move, skip, undo or reassign this occurrence. */
   hasActions?: boolean
   /** The result of the last action taken from this card, shown under it. */
@@ -134,6 +137,7 @@ function UpcomingCard({
             </>
           )}
         </p>
+        <AwayNote note={chore.awayNote} />
         {showActions && (
           <OccurrenceMoreButton
             className={styles.upcomingMoreButton}
@@ -207,6 +211,7 @@ function AttentionCard({
             </>
           )}
         </p>
+        <AwayNote note={chore.awayNote} />
         {showActions && (
           <OccurrenceMoreButton
             className={styles.attentionMoreButton}

@@ -21,6 +21,7 @@ import org.springframework.scheduling.TaskScheduler;
 class OccurrenceGenerationSchedulerTest {
   private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
   private final OccurrenceService occurrenceService = mock(OccurrenceService.class);
+  private final AwayModeService awayModeService = mock(AwayModeService.class);
   private final TaskScheduler taskScheduler = mock(TaskScheduler.class);
 
   private final UUID failing = UUID.randomUUID();
@@ -72,6 +73,7 @@ class OccurrenceGenerationSchedulerTest {
   }
 
   private OccurrenceGenerationScheduler scheduler(boolean enabled) {
-    return new OccurrenceGenerationScheduler(jdbc, occurrenceService, taskScheduler, enabled, 0);
+    return new OccurrenceGenerationScheduler(
+        jdbc, occurrenceService, awayModeService, taskScheduler, enabled, 0);
   }
 }

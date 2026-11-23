@@ -6,6 +6,7 @@ import {
 } from "@/lib/household/card-feedback"
 import { categoryWithRepeat, householdJobView } from "@/lib/household/household-jobs"
 import { hasOccurrenceActions, movedFromLabel } from "@/lib/household/occurrence-actions"
+import { awayNote } from "@/lib/household/away"
 import type { PushHealthState } from "@/lib/notifications/push-health"
 import { assignmentAssigneeNames, assignmentDate, assignmentTime } from "../chore-card"
 import {
@@ -121,6 +122,7 @@ function mapChore(
       assignment.flag && assignment.status === "PENDING"
         ? householdJobView(assignment, input.currentUserId, input.householdTimezone).flagLabel
         : movedFromLabel(assignment),
+    awayNote: awayNote(assignment, input.currentUserId),
     hasActions: hasOccurrenceActions(assignment),
     completedBy: assignment.completedByDisplayName,
     overdue: assignment.overdue && assignment.status === "PENDING",
@@ -199,6 +201,7 @@ export function createHomeApplicationViewModel(
       timeLabel: assignmentTime(assignment, input.householdTimezone) ?? "",
       skipped: assignment.status === "SKIPPED",
       movedFrom: movedFromLabel(assignment),
+      awayNote: awayNote(assignment, input.currentUserId),
       hasActions: hasOccurrenceActions(assignment),
       feedback: feedbackFor(assignment, feedback, "card"),
     })),

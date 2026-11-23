@@ -48,7 +48,8 @@ import org.springframework.transaction.annotation.Transactional;
  * pinned post never does, and unpinning one that would already be Past moves it there at that
  * moment. {@code past_at} is set lazily whenever the household's board is read, and by {@link
  * #runRetention()} from the nightly retention job, which also hard-deletes posts that have been
- * Past for 30 days.
+ * Past for 30 days. Away mode's heads-up stays until its {@code active_until} day has ended instead
+ * of for 7 days.
  *
  * <p>Lock order matches the rest of the app: the household row first (FOR UPDATE for writes, FOR
  * SHARE for reads so they still wait for a member exit), then post rows, then notification rows.
@@ -88,7 +89,9 @@ public class BoardPostService {
       """
       p.past_at IS NULL AND NOT p.pinned AND (
           (p.type='EVENT' AND ((p.event_date + 1)::timestamp AT TIME ZONE h.timezone) <= ?)
-          OR (p.type='HEADS_UP' AND p.created_at + INTERVAL '7 days' <= ?)
+          OR (p.type='HEADS_UP' AND CASE WHEN p.active_until IS NULL
+                  THEN p.created_at + INTERVAL '7 days'
+                  ELSE (p.active_until + 1)::timestamp AT TIME ZONE h.timezone END <= ?)
           OR (p.type='PROBLEM' AND p.fixed_at IS NOT NULL)
       )
       """;
@@ -335,6 +338,74 @@ public class BoardPostService {
     jdbc.update("DELETE FROM board_posts WHERE id=?", postId);
   }
 
+  // ---- Away mode's heads-up (E10) ---------------------------------------------------------------
+
+  /**
+   * Posts the heads-up for an away period as {@code authorId}: nobody is notified (notify NONE),
+   * and it stays on the Board until {@code activeUntil} has ended. Called with the household
+   * locked.
+   */
+  @Transactional
+  public UUID postAwayNotice(
+      UUID householdId, UUID authorId, String title, String details, LocalDate activeUntil) {
+    UUID postId = UUID.randomUUID();
+    OffsetDateTime now = now();
+    jdbc.update(
+        """
+            INSERT INTO board_posts
+                (id, household_id, author_user_id, type, title, details, pinned, notify_mode,
+                 created_at, updated_at, active_until)
+            VALUES (?, ?, ?, 'HEADS_UP', ?, ?, FALSE, 'NONE', ?, ?, ?)
+            """,
+        postId,
+        householdId,
+        authorId,
+        title,
+        details,
+        now,
+        now,
+        activeUntil);
+    return postId;
+  }
+
+  /** Keeps the away heads-up in step with changed dates (brought back if it had gone to Past). */
+  @Transactional
+  public void updateAwayNotice(UUID postId, String title, String details, LocalDate activeUntil) {
+    jdbc.update(
+        """
+            UPDATE board_posts SET title=?, details=?, active_until=?, past_at=NULL, updated_at=?
+            WHERE id=? AND type='HEADS_UP' AND NOT pinned
+            """,
+        title,
+        details,
+        activeUntil,
+        now(),
+        postId);
+  }
+
+  /** Ending away mode early: the heads-up moves to Past now. */
+  @Transactional
+  public void endAwayNotice(UUID postId, LocalDate activeUntil) {
+    OffsetDateTime now = now();
+    jdbc.update(
+        """
+            UPDATE board_posts SET active_until=?,
+                past_at=CASE WHEN pinned THEN NULL ELSE COALESCE(past_at, ?) END, updated_at=?
+            WHERE id=? AND type='HEADS_UP'
+            """,
+        activeUntil,
+        now,
+        now,
+        postId);
+  }
+
+  /** Removing upcoming away dates removes their heads-up. */
+  @Transactional
+  public void deleteAwayNotice(UUID postId) {
+    cancelPendingNotifications(postId, null);
+    jdbc.update("DELETE FROM board_posts WHERE id=?", postId);
+  }
+
   // ---- Seen and Got it -------------------------------------------------------------------------
 
   /**
@@ -559,7 +630,9 @@ public class BoardPostService {
             UPDATE board_posts p
             SET past_at = CASE p.type
                     WHEN 'EVENT' THEN (p.event_date + 1)::timestamp AT TIME ZONE h.timezone
-                    WHEN 'HEADS_UP' THEN p.created_at + INTERVAL '7 days'
+                    WHEN 'HEADS_UP' THEN CASE WHEN p.active_until IS NULL
+                        THEN p.created_at + INTERVAL '7 days'
+                        ELSE (p.active_until + 1)::timestamp AT TIME ZONE h.timezone END
                     ELSE p.fixed_at
                 END,
                 updated_at = ?
