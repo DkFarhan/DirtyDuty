@@ -1,4 +1,5 @@
 import { categoryIcon as categoryEmoji, type AssignmentDTO } from "@/lib/household/chores"
+import { cardRequestView } from "@/lib/household/requests"
 import {
   feedbackFor,
   unplacedFeedbackError,
@@ -89,6 +90,7 @@ function mapUpcoming(
     status: assignment.status,
     movedFrom: movedFromLabel(assignment),
     awayNote: awayNote(assignment, input.currentUserId),
+    request: cardRequestView(assignment, input.currentUserId),
     hasActions: hasOccurrenceActions(assignment),
     canComplete:
       assignment.status === "PENDING" &&

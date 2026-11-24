@@ -1,5 +1,6 @@
 "use client"
 
+import { focusRequestOnHome } from "@/lib/household/requests"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ApiError } from "@/lib/auth/api"
 import {
@@ -65,7 +66,7 @@ const DEFAULT_QUIET_START = "22:00"
 const DEFAULT_QUIET_END = "08:00"
 
 export function NotificationsScreen({ theme = "light" }: { theme?: Exclude<Theme, "system"> }) {
-  const { returnFromNotifications, openBoardPost, openBoardLists } = useChoreSync()
+  const { returnFromNotifications, openBoardPost, openBoardLists, navigate } = useChoreSync()
   const {
     state: pushHealth,
     refresh: refreshPushHealth,
@@ -505,6 +506,20 @@ export function NotificationsScreen({ theme = "light" }: { theme?: Exclude<Theme
                           type="button"
                         >
                           Open post
+                        </button>
+                      )}
+                      {item.referenceType === "CHORE_REQUEST" && item.referenceId && (
+                        <button
+                          aria-label={`Open request: ${item.title}`}
+                          className={profileStyles.notificationMarkRead}
+                          onClick={() => {
+                            if (!read) void markRead(item)
+                            focusRequestOnHome(item.referenceId!)
+                            navigate("dashboard")
+                          }}
+                          type="button"
+                        >
+                          Open request
                         </button>
                       )}
                       {item.referenceType === "BOARD_LIST" && item.referenceId && (

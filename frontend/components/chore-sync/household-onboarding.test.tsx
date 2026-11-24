@@ -127,6 +127,8 @@ describe("household onboarding", () => {
       "http://localhost:8080/api/households",
       "http://localhost:8080/api/households/home-1/dashboard",
       "http://localhost:8080/api/notifications/unread-count",
+      // Open hand-off and swap requests for the "Requests for you" card (E11).
+      "http://localhost:8080/api/households/home-1/requests",
     ])
   })
 

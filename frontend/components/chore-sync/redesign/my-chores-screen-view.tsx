@@ -1,6 +1,9 @@
 "use client"
 
+import type { CardRequestView } from "@/lib/household/requests"
 import { AwayNote } from "../away-note"
+import { CancelRequestButton, RequestNote, WaitingChip } from "../requests/request-card-status"
+import type { ReactNode } from "react"
 import type { HomeNavigationDestination, HomeVisualTheme } from "./home-screen-view"
 import { BottomNav } from "../bottom-nav"
 import type { HouseholdJobViewModel } from "@/lib/household/household-jobs"
@@ -30,6 +33,8 @@ export interface MyChoreUpcomingViewModel {
   movedFrom?: string | null
   /** "Sam is away, so it skipped to you" (Away mode). */
   awayNote?: string | null
+  /** Hand-off and swap requests: waiting chip, accepted note, Cancel request (E11). */
+  request?: CardRequestView
   /** The viewer may move, skip, undo or reassign this occurrence. */
   hasActions?: boolean
   /** The result of the last action taken from this card, shown under it. */
@@ -76,6 +81,10 @@ export interface MyChoresScreenViewProps {
   onFlagJob?: (choreId: string) => void
   onRetry: () => void
   onNavigate: (destination: HomeNavigationDestination) => void
+  /** "Requests for you" (E11), at the top of the page when there are open requests. */
+  requestsSection?: ReactNode
+  /** Cancels the viewer's own open request from their card. */
+  onCancelRequest?: (requestId: string, choreId: string) => void
 }
 
 function UpcomingCard({
@@ -85,6 +94,7 @@ function UpcomingCard({
   completing,
   onComplete,
   onOpenActions,
+  onCancelRequest,
 }: {
   chore: MyChoreUpcomingViewModel
   index: number
@@ -92,14 +102,17 @@ function UpcomingCard({
   completing: boolean
   onComplete: (choreId: string) => void
   onOpenActions?: (choreId: string) => void
+  onCancelRequest?: (requestId: string, choreId: string) => void
 }) {
+  const cancelRequestId = onCancelRequest ? (chore.request?.cancelRequestId ?? null) : null
+  const withRequest = Boolean(chore.request)
   const canComplete =
     chore.canComplete !== false && chore.status !== "COMPLETED" && chore.status !== "CANCELLED"
   const showActions = Boolean(chore.hasActions && onOpenActions)
   return (
     <>
       <article
-        className={`${styles.upcomingCard} ${index % 2 === 1 ? styles.alternateUpcomingCard : ""} ${showActions ? styles.upcomingCardWithActions : ""}`}
+        className={`${styles.upcomingCard} ${index % 2 === 1 ? styles.alternateUpcomingCard : ""} ${showActions ? styles.upcomingCardWithActions : ""} ${withRequest ? styles.upcomingCardWithRequest : ""} ${cancelRequestId ? styles.upcomingCardWithCancel : ""}`}
         data-chore-id={chore.id}
         data-occurrence-card={chore.id}
         id={`assignment-${chore.id}`}
@@ -138,6 +151,12 @@ function UpcomingCard({
           )}
         </p>
         <AwayNote note={chore.awayNote} />
+        {chore.request && (
+          <div className={styles.upcomingRequest}>
+            <RequestNote kind={chore.request.noteKind} label={chore.request.noteLabel} />
+            <WaitingChip label={chore.request.waitingLabel} />
+          </div>
+        )}
         {showActions && (
           <OccurrenceMoreButton
             className={styles.upcomingMoreButton}
@@ -163,6 +182,13 @@ function UpcomingCard({
             {completing ? "Completing..." : "Complete"}
           </button>
         )}
+        {cancelRequestId && (
+          <CancelRequestButton
+            className={styles.upcomingCancelRequest}
+            onCancel={() => onCancelRequest?.(cancelRequestId, chore.id)}
+            title={chore.title}
+          />
+        )}
       </article>
       <CardFeedbackMessage
         className={styles.cardFeedback}
@@ -179,18 +205,21 @@ function AttentionCard({
   completing,
   onComplete,
   onOpenActions,
+  onCancelRequest,
 }: {
   chore: MyChoreUpcomingViewModel
   theme: HomeVisualTheme
   completing: boolean
   onComplete: (choreId: string) => void
   onOpenActions?: (choreId: string) => void
+  onCancelRequest?: (requestId: string, choreId: string) => void
 }) {
   const showActions = Boolean(chore.hasActions && onOpenActions)
+  const cancelRequestId = onCancelRequest ? (chore.request?.cancelRequestId ?? null) : null
   return (
     <>
       <article
-        className={`${styles.attentionCard} ${showActions ? styles.attentionCardWithActions : ""}`}
+        className={`${styles.attentionCard} ${showActions ? styles.attentionCardWithActions : ""} ${chore.request ? styles.attentionCardWithRequest : ""} ${cancelRequestId ? styles.attentionCardWithCancel : ""}`}
         data-chore-id={chore.id}
         data-occurrence-card={chore.id}
         id={`assignment-${chore.id}`}
@@ -212,6 +241,19 @@ function AttentionCard({
           )}
         </p>
         <AwayNote note={chore.awayNote} />
+        {chore.request && (
+          <div className={styles.attentionRequest}>
+            <RequestNote kind={chore.request.noteKind} label={chore.request.noteLabel} />
+            <WaitingChip label={chore.request.waitingLabel} />
+          </div>
+        )}
+        {cancelRequestId && (
+          <CancelRequestButton
+            className={styles.attentionCancelRequest}
+            onCancel={() => onCancelRequest?.(cancelRequestId, chore.id)}
+            title={chore.title}
+          />
+        )}
         {showActions && (
           <OccurrenceMoreButton
             className={styles.attentionMoreButton}
@@ -344,6 +386,8 @@ export function MyChoresScreenView({
   onFlagJob,
   onRetry,
   onNavigate,
+  requestsSection,
+  onCancelRequest,
 }: MyChoresScreenViewProps) {
   const jobs = viewModel.householdJobs ?? []
   const upcomingCount =
@@ -388,6 +432,8 @@ export function MyChoresScreenView({
               </div>
             </div>
           </header>
+
+          <div className={styles.requestsCard}>{requestsSection}</div>
 
           <div aria-label="Chore lists" className={styles.tabs} role="tablist">
             {(["upcoming", "completed"] as const).map((value) => (
@@ -490,6 +536,7 @@ export function MyChoresScreenView({
                                 viewModel.attentionChore.id,
                               )}
                               onComplete={onCompleteChore}
+                              onCancelRequest={onCancelRequest}
                               onOpenActions={onOpenChoreActions}
                               theme={theme}
                             />
@@ -508,6 +555,7 @@ export function MyChoresScreenView({
                                 index={index}
                                 key={chore.id}
                                 onComplete={onCompleteChore}
+                                onCancelRequest={onCancelRequest}
                                 onOpenActions={onOpenChoreActions}
                                 theme={theme}
                               />

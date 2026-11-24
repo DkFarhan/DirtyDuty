@@ -2,7 +2,17 @@
 
 import { useEffect, useId, useRef, useState } from "react"
 import { createPortal } from "react-dom"
-import { CalendarClock, Check, Ellipsis, RotateCcw, SkipForward, UsersRound, X } from "lucide-react"
+import {
+  ArrowLeftRight,
+  CalendarClock,
+  Check,
+  Ellipsis,
+  Handshake,
+  RotateCcw,
+  SkipForward,
+  UsersRound,
+  X,
+} from "lucide-react"
 import { ApiError } from "@/lib/auth/api"
 import { choreApi, type AssignmentDTO } from "@/lib/household/chores"
 import {
@@ -11,11 +21,19 @@ import {
   movedFromLabel,
   type OccurrenceAction,
 } from "@/lib/household/occurrence-actions"
+import {
+  dayShort,
+  REQUEST_MENU_FOOTNOTE,
+  requestMenuItems,
+  whenLabel,
+  type ChoreRequestDTO,
+} from "@/lib/household/requests"
+import { HandoffPanel, SwapPanel } from "./requests/request-panels"
 import { useDialogFocus } from "./use-dialog-focus"
 import styles from "./occurrence-action-sheet.module.css"
 
 type Theme = "dark" | "light"
-type Panel = "menu" | "move" | "skip" | "reassign"
+type Panel = "menu" | "move" | "skip" | "reassign" | "handoff" | "swap"
 
 /**
  * The quiet "More" icon button in a chore card's top-right corner; opens the occurrence action
@@ -56,6 +74,8 @@ export function OccurrenceActionSheet({
   viewerId,
   onClose,
   onSubmit,
+  onRequestSent,
+  onCancelRequest,
 }: {
   assignment: AssignmentDTO
   householdId: string
@@ -65,6 +85,10 @@ export function OccurrenceActionSheet({
   viewerId?: string
   onClose: () => void
   onSubmit: (action: OccurrenceAction) => void
+  /** A hand-off or swap request was sent from the sheet (E11). */
+  onRequestSent?: (request: ChoreRequestDTO, message: string) => void
+  /** Cancels the viewer's own open request on this chore (E11). */
+  onCancelRequest?: (requestId: string) => void
 }) {
   const actions = assignment.actions
   const [panel, setPanel] = useState<Panel>("menu")
@@ -138,6 +162,9 @@ export function OccurrenceActionSheet({
   }, [assignment.choreId, assignment.kind, householdId, members, panel])
 
   if (!actions) return null
+  const requestItems = onRequestSent ? requestMenuItems(assignment.requests) : []
+  const requestPanel = panel === "handoff" || panel === "swap"
+  const myOpenRequest = assignment.requests?.open?.mine ? assignment.requests.open : null
   const names = assignment.assignees
     .map((assignee) => (assignee.userId === viewerId ? "You" : assignee.displayName))
     .join(" and ")
@@ -207,21 +234,77 @@ export function OccurrenceActionSheet({
         tabIndex={-1}
       >
         <span aria-hidden="true" className={styles.handle} />
-        <p className={styles.eyebrow}>{dayLabel(assignment.scheduledFor)}</p>
-        <h2 className={styles.title} id={titleId}>
-          {assignment.title}
-        </h2>
-        <p className={styles.subtitle}>
-          {assignment.status === "SKIPPED"
-            ? "Skipped"
-            : names
-              ? `Assigned to ${names}`
-              : "No one is assigned"}
-          {moved ? `. ${moved}` : ""}
-        </p>
+        {requestPanel ? (
+          <>
+            <h2 className={styles.title} id={titleId}>
+              {panel === "swap"
+                ? "Swap for which chore?"
+                : assignment.requests?.passTurn
+                  ? "Who should take your turn?"
+                  : "Who should take it?"}
+            </h2>
+            <p className={styles.subtitle}>
+              {panel === "swap"
+                ? `You give: ${assignment.title} · ${dayShort(assignment.scheduledFor)}`
+                : `${assignment.title} · ${whenLabel(assignment, householdTimezone)}`}
+            </p>
+          </>
+        ) : (
+          <>
+            <p className={styles.eyebrow}>{dayLabel(assignment.scheduledFor)}</p>
+            <h2 className={styles.title} id={titleId}>
+              {assignment.title}
+            </h2>
+            <p className={styles.subtitle}>
+              {assignment.status === "SKIPPED"
+                ? "Skipped"
+                : names
+                  ? `Assigned to ${names}`
+                  : "No one is assigned"}
+              {moved ? `. ${moved}` : ""}
+            </p>
+          </>
+        )}
 
         {panel === "menu" && (
           <ul className={styles.menu}>
+            {myOpenRequest && onCancelRequest && (
+              <li>
+                <button
+                  className={styles.menuItem}
+                  onClick={() => onCancelRequest(myOpenRequest.id)}
+                  type="button"
+                >
+                  <X aria-hidden="true" size={20} />
+                  <span className={styles.menuCopy}>
+                    <span>Cancel request</span>
+                    <span className={styles.menuHint}>
+                      {myOpenRequest.waitingFor
+                        ? `Waiting for ${myOpenRequest.waitingFor.displayName}`
+                        : "Waiting for anyone to take it"}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            )}
+            {requestItems.map((item) => {
+              const Icon = item.kind === "swap" ? ArrowLeftRight : Handshake
+              return (
+                <li key={item.kind}>
+                  <button
+                    className={styles.menuItem}
+                    onClick={() => setPanel(item.kind)}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={20} />
+                    <span className={styles.menuCopy}>
+                      <span>{item.title}</span>
+                      <span className={styles.menuHint}>{item.hint}</span>
+                    </span>
+                  </button>
+                </li>
+              )
+            })}
             {actions.canMove && (
               <li>
                 <button className={styles.menuItem} onClick={() => setPanel("move")} type="button">
@@ -267,6 +350,26 @@ export function OccurrenceActionSheet({
               </li>
             )}
           </ul>
+        )}
+        {panel === "menu" && requestItems.length > 0 && (
+          <p className={styles.menuFootnote}>{REQUEST_MENU_FOOTNOTE}</p>
+        )}
+
+        {panel === "handoff" && (
+          <HandoffPanel
+            assignment={assignment}
+            householdId={householdId}
+            householdTimezone={householdTimezone}
+            onSent={(request, message) => onRequestSent?.(request, message)}
+          />
+        )}
+        {panel === "swap" && (
+          <SwapPanel
+            assignment={assignment}
+            householdId={householdId}
+            householdTimezone={householdTimezone}
+            onSent={(request, message) => onRequestSent?.(request, message)}
+          />
         )}
 
         {panel === "move" && (

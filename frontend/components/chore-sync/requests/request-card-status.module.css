@@ -1,0 +1,70 @@
+/* Request chip, note and Cancel button on chore cards (E11). Colours come from the theme tokens in
+   globals.css; a card screen may set the Cancel button's colours. The doubled classes outrank a
+   card's own paragraph rules (e.g. Home's ".upcomingCopy p"). */
+
+.chip.chip {
+  display: inline-flex;
+  max-width: 100%;
+  box-sizing: border-box;
+  align-items: center;
+  gap: 5px;
+  margin: 6px 0 0;
+  padding: 3px 10px;
+  border: 1px solid var(--request-chip-border);
+  border-radius: 999px;
+  background: var(--request-chip-bg);
+  color: var(--request-chip-ink);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip svg,
+.note svg {
+  flex: 0 0 auto;
+}
+
+.note.note {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 4px 0 0;
+  color: var(--request-note-ink);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.cancel {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 14px;
+  border: 1px solid var(--request-cancel-border, rgb(137 212 208 / 35%));
+  border-radius: 13px;
+  background: var(--request-cancel-bg, transparent);
+  color: var(--request-cancel-text, currentColor);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.cancel:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.cancel:focus-visible {
+  outline: 2px solid var(--request-note-ink);
+  outline-offset: 2px;
+}

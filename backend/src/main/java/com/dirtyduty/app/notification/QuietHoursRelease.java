@@ -255,6 +255,17 @@ public class QuietHoursRelease {
                   Boolean.class,
                   item.referenceId()));
       case "BOARD_LIST" -> neededToday(item).isEmpty();
+      // An ask or "nobody took it" about a request that has closed (E11).
+      case "CHORE_REQUEST" ->
+          item.type().startsWith("REQUEST_")
+              && !"REQUEST_ACCEPTED".equals(item.type())
+              && !"REQUEST_DECLINED".equals(item.type())
+              && !"REQUEST_EXPIRED".equals(item.type())
+              && !Boolean.TRUE.equals(
+                  jdbc.queryForObject(
+                      "SELECT EXISTS(SELECT 1 FROM chore_requests WHERE id=? AND status='OPEN')",
+                      Boolean.class,
+                      item.referenceId()));
       default -> false;
     };
   }

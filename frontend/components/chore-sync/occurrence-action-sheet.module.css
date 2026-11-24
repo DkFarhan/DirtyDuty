@@ -158,6 +158,29 @@
   color: var(--accent);
 }
 
+.menuCopy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 0;
+}
+
+.menuHint {
+  color: var(--secondary-text);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.menuFootnote {
+  margin: 14px 8px 0;
+  color: var(--secondary-text);
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: center;
+}
+
 .dangerItem {
   color: var(--danger);
 }

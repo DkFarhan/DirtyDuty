@@ -62,6 +62,7 @@ public class NotificationScheduler {
   private final BoardListService boardListService;
   private final QuietHoursRelease quietHoursRelease;
   private final AwayPeriods awayPeriods;
+  private final com.dirtyduty.app.service.ChoreRequestService choreRequests;
 
   public NotificationScheduler(
       JdbcTemplate jdbc,
@@ -73,7 +74,8 @@ public class NotificationScheduler {
       BoardPostService boardPostService,
       BoardListService boardListService,
       QuietHoursRelease quietHoursRelease,
-      AwayPeriods awayPeriods) {
+      AwayPeriods awayPeriods,
+      com.dirtyduty.app.service.ChoreRequestService choreRequests) {
     this.jdbc = jdbc;
     this.eventService = eventService;
     this.providers = providers;
@@ -84,6 +86,7 @@ public class NotificationScheduler {
     this.boardListService = boardListService;
     this.quietHoursRelease = quietHoursRelease;
     this.awayPeriods = awayPeriods;
+    this.choreRequests = choreRequests;
   }
 
   @Scheduled(
@@ -91,6 +94,9 @@ public class NotificationScheduler {
       initialDelayString = "${app.notifications.scheduler-initial-delay:0}")
   @Transactional
   public void run() {
+    // Hand-off and swap requests past their deadline (or whose chores changed) close first, each
+    // household in its own transaction, before this pass takes any lock (E11).
+    choreRequests.maintain();
     // Lock order: affected households, recipient users, notifications/deliveries, then push
     // subscriptions updated by providers. Every processing query is restricted to these locks.
     List<UUID> householdIds =
@@ -593,7 +599,9 @@ public class NotificationScheduler {
             """
                 SELECT CASE
                     WHEN ? IN ('CHORE_ASSIGNED', 'CHORE_OCCURRENCE_MOVED', 'CHORE_OCCURRENCE_SKIPPED',
-                               'CHORE_TURN')
+                               'CHORE_TURN',
+                               'REQUEST_HANDOFF_ASK', 'REQUEST_SWAP_ASK', 'REQUEST_ACCEPTED',
+                               'REQUEST_DECLINED', 'REQUEST_UNCLAIMED', 'REQUEST_EXPIRED')
                         THEN COALESCE(p.chore_assigned_enabled, TRUE)
                     WHEN ? IN ('CHORE_DUE_SOON', 'CHORE_DUE_NOW', 'CHORE_NEEDS_DOING')
                         THEN COALESCE(p.chore_reminders_enabled, TRUE)

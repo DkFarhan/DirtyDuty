@@ -21,6 +21,8 @@ import java.util.UUID;
  *
  * <p>{@code awayFrom} is the member whose slot this pending occurrence covers because they are away
  * (Away mode); the card says "{awayFrom} is away, so it skipped to {first assignee}".
+ *
+ * <p>{@code requests} covers hand-off and swap requests (E11).
  */
 public record AssignmentResponse(
     UUID id,
@@ -49,7 +51,29 @@ public record AssignmentResponse(
     LastDone lastDone,
     Flag flag,
     Repeat repeat,
-    Person awayFrom) {
+    Person awayFrom,
+    Requests requests) {
+
+  /**
+   * Hand-off and swap requests (E11) for this viewer. {@code canAsk}: they do it and may ask
+   * someone to take it ("Pass my turn" when {@code passTurn}, a When needed chore); {@code
+   * canSwap}: they may offer a trade. {@code open} is the open request it is in; {@code note} says
+   * it was taken over from, or swapped with, someone.
+   */
+  public record Requests(
+      boolean canAsk, boolean canSwap, boolean passTurn, OpenRequest open, Note note) {}
+
+  /**
+   * @param mine whether the viewer made it
+   * @param waitingFor who it was asked of, or null for anyone
+   */
+  public record OpenRequest(
+      UUID id, String type, boolean mine, Person waitingFor, Person requester) {}
+
+  /**
+   * @param type TAKEN_OVER or SWAPPED
+   */
+  public record Note(String type, Person with) {}
 
   public record Person(UUID userId, String displayName) {}
 

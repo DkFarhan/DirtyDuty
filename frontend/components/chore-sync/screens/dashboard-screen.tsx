@@ -34,6 +34,9 @@ import {
   type OccurrenceAction,
 } from "@/lib/household/occurrence-actions"
 import { OccurrenceActionSheet } from "../occurrence-action-sheet"
+import { RequestsCard } from "../requests/requests-card"
+import { useChoreRequests } from "../requests/use-chore-requests"
+import { takeRequestFocus } from "@/lib/household/requests"
 import { getLocalDateKey } from "../week-summary"
 import { usePushSubscriptionHealth } from "@/lib/notifications/push-health"
 import {
@@ -439,6 +442,32 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
     return () => window.clearTimeout(timer)
   }, [cardFeedbackState])
 
+  // Hand-off and swap requests (E11): the card at the top, and Cancel request on my own cards.
+  const requests = useChoreRequests(household?.id ?? null, household?.timezone ?? "UTC")
+  const [focusRequestId] = useState(() => takeRequestFocus())
+  const requestCount = requests.items.length
+  useEffect(() => {
+    if (!focusRequestId || requestCount === 0) return
+    const target =
+      document.querySelector<HTMLElement>(`[data-request-id="${focusRequestId}"]`) ??
+      document.getElementById("requests-for-you")
+    target?.scrollIntoView({ block: "center" })
+  }, [focusRequestId, requestCount])
+  const cancelRequest = async (requestId: string, choreId: string, surface: CardSurface) => {
+    const assignment = findDashboardAssignment(dashboardRef.current, choreId)
+    const failure = await requests.cancel(requestId)
+    if (assignment) {
+      setCardFeedback(
+        cardFeedback(
+          assignment,
+          failure ?? "Request cancelled. It's still yours.",
+          failure ? "error" : "success",
+          surface,
+        ),
+      )
+    }
+  }
+
   const setInviteOpen = useCallback((open: boolean) => {
     if (!open) setInviteHousehold(null)
   }, [])
@@ -493,6 +522,17 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
           )
         }
         onCompleteChore={(id, surface) => void completeAssignment(id, surface)}
+        onCancelRequest={(requestId, choreId) => void cancelRequest(requestId, choreId, "card")}
+        requestsSection={
+          <RequestsCard
+            busyId={requests.busyId}
+            feedback={requests.feedback}
+            items={requests.items}
+            onAccept={requests.accept}
+            onDecline={requests.decline}
+            theme={theme === "dark" ? "dark" : "light"}
+          />
+        }
         onOpenChoreActions={(id, surface = "card") => {
           setActionSurface(surface)
           setActionTargetId(id)
@@ -517,6 +557,19 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
             const target = actionTargetId
             setActionTargetId(null)
             void performOccurrenceAction(target, action, actionSurface)
+          }}
+          onRequestSent={(_, message) => {
+            const assignment = findDashboardAssignment(currentDashboard, actionTargetId)
+            setActionTargetId(null)
+            if (assignment) {
+              setCardFeedback(cardFeedback(assignment, message, "success", actionSurface))
+            }
+            requests.invalidate()
+          }}
+          onCancelRequest={(requestId) => {
+            const target = actionTargetId
+            setActionTargetId(null)
+            void cancelRequest(requestId, target, actionSurface)
           }}
           theme={theme}
         />

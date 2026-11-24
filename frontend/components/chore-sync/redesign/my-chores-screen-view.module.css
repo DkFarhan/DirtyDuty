@@ -1472,3 +1472,82 @@
 .jobList > p[data-card-feedback] {
   margin: -4px 0 0;
 }
+
+/* Hand-off and swap requests (E11): the note or "Waiting for…" chip gets its own line under the
+   date, everything below moves down, and Cancel request gets a full-width row at the bottom. */
+.upcomingRequest,
+.attentionRequest {
+  position: absolute;
+  right: 15px;
+  overflow: hidden;
+}
+
+.upcomingRequest {
+  top: 78px;
+  left: 63px;
+}
+
+.attentionRequest {
+  top: 108px;
+  left: 16px;
+}
+
+.upcomingRequest > p,
+.attentionRequest > p {
+  margin: 0;
+}
+
+.upcomingCardWithRequest {
+  height: 168px;
+}
+
+.upcomingCardWithRequest
+  :is(.upcomingDivider, .upcomingAssignees, .upcomingDuration, .inlineCompleteButton) {
+  transform: translateY(28px);
+}
+
+.upcomingCardWithCancel {
+  height: 222px;
+}
+
+.upcomingCancelRequest,
+.attentionCancelRequest {
+  --request-cancel-border: var(--upcoming-border);
+  --request-cancel-text: var(--upcoming-title);
+
+  position: absolute;
+  right: 15px;
+  bottom: 13px;
+  left: 13px;
+}
+
+.attentionCardWithRequest {
+  height: 256px;
+}
+
+.attentionCardWithRequest
+  :is(.attentionClock, .attentionDuration, .attentionAssignees, .attentionCompleteButton) {
+  transform: translateY(28px);
+}
+
+.attentionCardWithCancel {
+  height: 310px;
+}
+
+.attentionCancelRequest {
+  --request-cancel-border: var(--attention-border);
+  --request-cancel-text: var(--attention-body);
+
+  right: 16px;
+  bottom: 14px;
+  left: 16px;
+}
+
+/* "Requests for you" (E11): under the header, above the tabs. Hidden when there is none. */
+.requestsCard {
+  margin: 22px 16px 0;
+}
+
+.requestsCard:empty {
+  display: none;
+}

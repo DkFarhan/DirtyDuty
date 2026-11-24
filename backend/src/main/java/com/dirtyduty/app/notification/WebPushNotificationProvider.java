@@ -476,6 +476,11 @@ public class WebPushNotificationProvider implements NotificationDeliveryProvider
         && notification.referenceId() != null) {
       return "/?screen=my-chores&assignmentId=" + notification.referenceId();
     }
+    if ("CHORE_REQUEST".equals(notification.referenceType())
+        && notification.referenceId() != null) {
+      // Hand-off and swap requests (E11) open Home with the request in view.
+      return "/?screen=dashboard&requestId=" + notification.referenceId();
+    }
     if ("BOARD_POST".equals(notification.referenceType()) && notification.referenceId() != null) {
       return "/?screen=board&postId=" + notification.referenceId();
     }
