@@ -1,6 +1,8 @@
 "use client"
 
+import type { CardRequestView } from "@/lib/household/requests"
 import { AwayNote } from "../away-note"
+import { CancelRequestButton, RequestNote, WaitingChip } from "../requests/request-card-status"
 import { Fragment, type CSSProperties, type ReactNode } from "react"
 import type { HouseholdJobViewModel } from "@/lib/household/household-jobs"
 import { HouseholdJobCard } from "../household-job-card"
@@ -26,6 +28,8 @@ export interface HomeChoreViewModel {
   movedFrom?: string | null
   /** "Sam is away, so it skipped to you" (Away mode). */
   awayNote?: string | null
+  /** Hand-off and swap requests: waiting chip, accepted note, Cancel request (E11). */
+  request?: CardRequestView
   /** The viewer may move, skip, undo or reassign this occurrence. */
   hasActions?: boolean
   completedBy?: string | null
@@ -45,6 +49,8 @@ export interface HomeUpcomingChoreViewModel {
   movedFrom?: string | null
   /** "Sam is away, so it skipped to you" (Away mode). */
   awayNote?: string | null
+  /** Hand-off and swap requests: waiting chip, accepted note, Cancel request (E11). */
+  request?: CardRequestView
   hasActions?: boolean
   feedback?: CardFeedbackView
 }
@@ -114,6 +120,10 @@ export interface HomeScreenViewProps {
   onNavigate: (destination: HomeNavigationDestination) => void
   /** The Board section, shown at the very end of Home after every chore section. */
   boardSection?: ReactNode
+  /** "Requests for you" (E11), at the top of the page when there are open requests. */
+  requestsSection?: ReactNode
+  /** Cancels the viewer's own open request from their card. */
+  onCancelRequest?: (requestId: string, choreId: string) => void
 }
 
 function percentage(completedCount: number, totalCount: number) {
@@ -130,6 +140,7 @@ function ChoreCard({
   theme,
   onComplete,
   onOpenActions,
+  onCancelRequest,
   attention = false,
   today = false,
 }: {
@@ -137,6 +148,7 @@ function ChoreCard({
   theme: HomeVisualTheme
   onComplete: (choreId: string) => void
   onOpenActions?: (choreId: string) => void
+  onCancelRequest?: (requestId: string, choreId: string) => void
   attention?: boolean
   today?: boolean
 }) {
@@ -146,6 +158,7 @@ function ChoreCard({
     chore.status !== "CANCELLED" &&
     chore.status !== "SKIPPED"
   const showActions = Boolean(chore.hasActions && onOpenActions)
+  const cancelRequestId = onCancelRequest ? (chore.request?.cancelRequestId ?? null) : null
   const showBadge = Boolean(chore.overdue || (attention && chore.status === undefined))
   const cardClassName = [
     styles.attentionCard,
@@ -174,6 +187,8 @@ function ChoreCard({
           )}
         </p>
         <AwayNote note={chore.awayNote} />
+        <RequestNote kind={chore.request?.noteKind} label={chore.request?.noteLabel} />
+        <WaitingChip label={chore.request?.waitingLabel} />
         {showActions && (
           <OccurrenceMoreButton
             className={styles.cardMoreButton}
@@ -195,17 +210,28 @@ function ChoreCard({
         )}
         {chore.status === "CANCELLED" && <p className={styles.choreStatus}>Cancelled</p>}
         {chore.status === "SKIPPED" && <p className={styles.choreStatus}>Skipped</p>}
-        {canComplete && (
-          <button
-            aria-busy={chore.completing}
-            className={styles.completeButton}
-            disabled={chore.completing}
-            onClick={() => onComplete(chore.id)}
-            type="button"
-          >
-            {!chore.completing && <span aria-hidden="true" className={styles.completeIcon} />}
-            {chore.completing ? "Completing..." : "Mark complete"}
-          </button>
+        {(canComplete || cancelRequestId) && (
+          <div className={cancelRequestId ? styles.cardActionRow : undefined}>
+            {canComplete && (
+              <button
+                aria-busy={chore.completing}
+                className={styles.completeButton}
+                disabled={chore.completing}
+                onClick={() => onComplete(chore.id)}
+                type="button"
+              >
+                {!chore.completing && <span aria-hidden="true" className={styles.completeIcon} />}
+                {chore.completing ? "Completing..." : cancelRequestId ? "Done" : "Mark complete"}
+              </button>
+            )}
+            {cancelRequestId && (
+              <CancelRequestButton
+                className={styles.cancelRequestButton}
+                onCancel={() => onCancelRequest?.(cancelRequestId, chore.id)}
+                title={chore.title}
+              />
+            )}
+          </div>
         )}
       </article>
       <CardFeedbackMessage feedback={chore.feedback} theme={theme} />
@@ -247,6 +273,8 @@ export function HomeScreenView({
   onOpenNotifications,
   onNavigate,
   boardSection,
+  requestsSection,
+  onCancelRequest,
 }: HomeScreenViewProps) {
   const householdProgress = percentage(
     viewModel.householdWeek.completedCount,
@@ -367,6 +395,8 @@ export function HomeScreenView({
           </section>
         )}
 
+        <div className={styles.requestsCard}>{requestsSection}</div>
+
         <section aria-label="Household weekly progress" className={styles.householdHero}>
           <span aria-hidden="true" className={styles.householdAmbient} />
           <p className={styles.heroEyebrow}>EVERYONE AT HOME&nbsp;&nbsp; / &nbsp;&nbsp;THIS WEEK</p>
@@ -484,6 +514,7 @@ export function HomeScreenView({
                       attention
                       chore={chore}
                       key={chore.id}
+                      onCancelRequest={onCancelRequest}
                       onComplete={onCompleteChore}
                       onOpenActions={onOpenChoreActions}
                     />
@@ -514,6 +545,7 @@ export function HomeScreenView({
                       theme={theme}
                       chore={chore}
                       key={chore.id}
+                      onCancelRequest={onCancelRequest}
                       onComplete={onCompleteChore}
                       onOpenActions={onOpenChoreActions}
                       today
@@ -587,6 +619,11 @@ export function HomeScreenView({
                                 )}
                               </p>
                               <AwayNote note={chore.awayNote} />
+                              <RequestNote
+                                kind={chore.request?.noteKind}
+                                label={chore.request?.noteLabel}
+                              />
+                              <WaitingChip label={chore.request?.waitingLabel} />
                             </div>
                             <time className={styles.upcomingTime}>{chore.timeLabel}</time>
                             {chore.hasActions && onOpenChoreActions && (

@@ -50,6 +50,11 @@
   /* Away mode: a soft violet, only for away tags and notes. */
   --away-ink: #5a45a8;
   --away-soft: #ece7ff;
+  /* Hand-off and swap requests (E11): the amber "Waiting for…" chip and the accent note. */
+  --request-chip-bg: #fff1d6;
+  --request-chip-border: #f0c776;
+  --request-chip-ink: #8a5a00;
+  --request-note-ink: #0d706c;
   /* Screens ask for the Libre Baskerville serif by this name; next/font loads it as the
      Household serif on <html>. Defined once here so every screen gets it. */
   --font-libre-baskerville: var(--font-household-serif);
@@ -91,6 +96,10 @@
   color-scheme: dark;
   --away-ink: #c9b8ff;
   --away-soft: #2b2a4a;
+  --request-chip-bg: #3d2f14;
+  --request-chip-border: #8a6620;
+  --request-chip-ink: #f5c867;
+  --request-note-ink: #7ae8da;
   --background: oklch(0.15 0.006 255);
   --foreground: oklch(0.96 0.004 255);
   --card: oklch(0.21 0.007 255);

@@ -112,6 +112,8 @@ export type AssignmentDTO = {
   turn?: { userId: string; displayName: string } | null
   /** Whose slot this covers because they're away (Away mode). */
   awayFrom?: { userId: string; displayName: string } | null
+  /** Hand-off and swap requests (E11) for this viewer. */
+  requests?: AssignmentRequests | null
   /** The latest completion before this one. */
   lastDone?: { at: string; byUserId: string; byDisplayName: string } | null
   /** "Needs doing" flag on an open "When needed" occurrence. */
@@ -123,6 +125,26 @@ export type AssignmentDTO = {
     /** "HH:mm" or null. */
     dueTime: string | null
   } | null
+}
+
+/**
+ * Hand-off and swap requests on one occurrence, for the viewer: whether they may ask someone to
+ * take it ("Pass my turn" for a When needed chore) or offer a swap, the open request it is in, and
+ * the note an accepted one left ("Taken over from Farhan", "Swapped with Rubayet").
+ */
+export type AssignmentRequests = {
+  canAsk: boolean
+  canSwap: boolean
+  passTurn: boolean
+  open: {
+    id: string
+    type: "HANDOFF" | "SWAP"
+    mine: boolean
+    /** Who it was asked of; null for anyone. */
+    waitingFor: { userId: string; displayName: string } | null
+    requester: { userId: string; displayName: string }
+  } | null
+  note: { type: "TAKEN_OVER" | "SWAPPED"; with: { userId: string; displayName: string } } | null
 }
 
 export type OccurrenceActions = {
@@ -163,7 +185,7 @@ export type HouseholdDashboard = {
 
 export { categoryIcon } from "./category-icons"
 
-function householdPath(householdId: string) {
+export function householdPath(householdId: string) {
   return `/api/households/${encodeURIComponent(householdId)}`
 }
 

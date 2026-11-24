@@ -66,6 +66,7 @@ public class OccurrenceService {
   private final NotificationEventService notificationEventService;
   private final AwayPeriods awayPeriods;
   private final EffortLedger effortLedger;
+  private final ChoreRequestService choreRequests;
   private final int horizonDays;
 
   /**
@@ -86,6 +87,7 @@ public class OccurrenceService {
       NotificationEventService notificationEventService,
       AwayPeriods awayPeriods,
       EffortLedger effortLedger,
+      ChoreRequestService choreRequests,
       @Value("${app.chores.occurrence-horizon-days:30}") int horizonDays) {
     if (horizonDays < 1 || horizonDays > 90) {
       throw new IllegalArgumentException("Occurrence horizon must be between 1 and 90 days.");
@@ -98,6 +100,7 @@ public class OccurrenceService {
     this.notificationEventService = notificationEventService;
     this.awayPeriods = awayPeriods;
     this.effortLedger = effortLedger;
+    this.choreRequests = choreRequests;
     this.horizonDays = horizonDays;
   }
 
@@ -117,6 +120,10 @@ public class OccurrenceService {
     boolean ownsRun = beginBalancedRun();
     try {
       synchronizeInRun(schedule, updatePendingAssignees, userInitiatedEdit);
+      if (ownsRun) {
+        // An edit, pause, archive or re-plan may have changed a chore someone asked about (E11).
+        choreRequests.closeChanged(schedule.getHousehold().getId(), null);
+      }
     } finally {
       endBalancedRun(ownsRun);
     }
@@ -2442,6 +2449,7 @@ public class OccurrenceService {
               java.util.Map.of("chore_name", title),
               recipients));
     }
+    choreRequests.closeChanged(householdId, actor.getUser().getId());
     return assignmentResponse(assignmentId, actor.getUser().getId());
   }
 
@@ -2605,6 +2613,7 @@ public class OccurrenceService {
             occurrence.title() + " moved",
             "notification_message",
             occurrence.title() + " moved to " + newDate));
+    choreRequests.closeChanged(householdId, context.actorId());
     return assignmentResponse(occurrence.id(), context.actorId());
   }
 
@@ -2645,6 +2654,7 @@ public class OccurrenceService {
             occurrence.title() + " skipped",
             "notification_message",
             occurrence.title() + " on " + day + " was skipped"));
+    choreRequests.closeChanged(householdId, context.actorId());
     return assignmentResponse(occurrence.id(), context.actorId());
   }
 
@@ -2743,6 +2753,7 @@ public class OccurrenceService {
           occurrence.title(),
           context.actorId(),
           chosen.stream().filter(userId -> !previous.contains(userId)).toList());
+      choreRequests.closeChanged(householdId, context.actorId());
       return assignmentResponse(occurrence.id(), context.actorId());
     }
     announceOccurrenceAssignment(
@@ -2752,6 +2763,7 @@ public class OccurrenceService {
         occurrence.scheduledFor(),
         context.actorId(),
         chosen.stream().filter(userId -> !previous.contains(userId)).toList());
+    choreRequests.closeChanged(householdId, context.actorId());
     return assignmentResponse(occurrence.id(), context.actorId());
   }
 
@@ -3122,6 +3134,7 @@ public class OccurrenceService {
     boolean ownsRun = beginBalancedRun();
     try {
       generateHouseholdInRun(householdId);
+      choreRequests.closeChanged(householdId, null);
     } finally {
       endBalancedRun(ownsRun);
     }
@@ -3174,6 +3187,7 @@ public class OccurrenceService {
     boolean ownsRun = beginBalancedRun();
     try {
       replanForAwayInRun(householdId);
+      choreRequests.closeChanged(householdId, null);
     } finally {
       endBalancedRun(ownsRun);
     }
@@ -3450,7 +3464,9 @@ public class OccurrenceService {
                            viewer_participant,
                        ld.completed_at last_done_at, ld.completed_by_user_id last_done_by_id,
                        ld.display_name last_done_by,
-                       a.away_from_user_id, au.display_name away_from_name
+                       a.away_from_user_id, au.display_name away_from_name,
+                       a.metadata->'requestNote'->>'type' request_note_type,
+                       a.metadata->'requestNote'->>'userId' request_note_user
                 FROM chore_assignments a
                 LEFT JOIN users au ON au.id=a.away_from_user_id
                 JOIN chores ch ON ch.id=a.chore_id
@@ -3594,7 +3610,18 @@ public class OccurrenceService {
         pending && !assignees.isEmpty() && rs.getObject("away_from_user_id") != null
             ? new AssignmentResponse.Person(
                 rs.getObject("away_from_user_id", UUID.class), rs.getString("away_from_name"))
-            : null);
+            : null,
+        choreRequests.stateFor(
+            id,
+            viewerId,
+            dbStatus,
+            kind,
+            // Past its deadline it's too late to ask anyone.
+            viewerAssigned && !overdue,
+            rs.getString("request_note_type"),
+            rs.getString("request_note_user") == null
+                ? null
+                : UUID.fromString(rs.getString("request_note_user"))));
   }
 
   /**

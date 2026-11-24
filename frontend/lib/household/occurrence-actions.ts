@@ -11,7 +11,10 @@ export type OccurrenceAction =
 export function hasOccurrenceActions(assignment: AssignmentDTO) {
   const actions = assignment.actions
   return Boolean(
-    actions && (actions.canMove || actions.canSkip || actions.canUnskip || actions.canReassign),
+    (actions && (actions.canMove || actions.canSkip || actions.canUnskip || actions.canReassign)) ||
+    // Asking someone to take it, or to swap (E11), lives in the same menu.
+    assignment.requests?.canAsk ||
+    assignment.requests?.open?.mine,
   )
 }
 

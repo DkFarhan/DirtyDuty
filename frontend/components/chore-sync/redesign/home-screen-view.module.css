@@ -656,6 +656,15 @@
   margin: 14px 16px 0;
 }
 
+/* "Requests for you" (E11): under the notices, with the page's 16px sides. */
+.requestsCard {
+  margin: 14px 16px;
+}
+
+.requestsCard:empty {
+  display: none;
+}
+
 .pushNotice {
   display: flex;
   align-items: flex-start;
@@ -886,6 +895,33 @@
 .lightTheme .completeButton {
   background: #10756f;
   color: #fff;
+}
+
+/* Done and Cancel request side by side while the viewer's request is open (E11). */
+.cardActionRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.cardActionRow .completeButton {
+  margin-top: 0;
+}
+
+.cancelRequestButton {
+  --request-cancel-border: color-mix(in srgb, var(--accent) 45%, transparent);
+  --request-cancel-text: var(--main-text, currentColor);
+
+  width: 100%;
+  min-height: 47px;
+  border-radius: 17px;
+  font-size: 14px;
+}
+
+.lightTheme .cancelRequestButton {
+  --request-cancel-bg: #fff;
+  --request-cancel-border: #b8ddd5;
 }
 
 .completeIcon {

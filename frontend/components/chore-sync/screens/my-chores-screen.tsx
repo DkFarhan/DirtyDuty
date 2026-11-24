@@ -26,6 +26,8 @@ import {
   type OccurrenceAction,
 } from "@/lib/household/occurrence-actions"
 import { OccurrenceActionSheet } from "../occurrence-action-sheet"
+import { RequestsCard } from "../requests/requests-card"
+import { useChoreRequests } from "../requests/use-chore-requests"
 import { MyChoresScreenView, type MyChoresTab } from "../redesign/my-chores-screen-view"
 import { createMyChoresApplicationViewModel } from "../redesign/my-chores-application-adapter"
 import type { HomeNavigationDestination, HomeVisualTheme } from "../redesign/home-screen-view"
@@ -374,6 +376,23 @@ export function MyChoresScreen({ theme = "dark" }: { theme?: HomeVisualTheme } =
 
   const actionTarget = upcoming.find((assignment) => assignment.id === actionTargetId) ?? null
 
+  // Hand-off and swap requests (E11): the card at the top, and Cancel request on my own cards.
+  const requests = useChoreRequests(household?.id ?? null, household?.timezone ?? "UTC")
+  const cancelRequest = async (requestId: string, choreId: string, surface: CardSurface) => {
+    const assignment = upcomingRef.current.find((item) => item.id === choreId)
+    const failure = await requests.cancel(requestId)
+    if (assignment) {
+      setCardFeedback(
+        cardFeedback(
+          assignment,
+          failure ?? "Request cancelled. It's still yours.",
+          failure ? "error" : "success",
+          surface,
+        ),
+      )
+    }
+  }
+
   const displayed = tab === "upcoming" ? upcoming : completed
 
   useEffect(() => {
@@ -410,6 +429,17 @@ export function MyChoresScreen({ theme = "dark" }: { theme?: HomeVisualTheme } =
           setActionTargetId(id)
         }}
         onFlagJob={(id) => void flagAssignment(id)}
+        onCancelRequest={(requestId, choreId) => void cancelRequest(requestId, choreId, "card")}
+        requestsSection={
+          <RequestsCard
+            busyId={requests.busyId}
+            feedback={requests.feedback}
+            items={requests.items}
+            onAccept={requests.accept}
+            onDecline={requests.decline}
+            theme={theme === "dark" ? "dark" : "light"}
+          />
+        }
         onNavigate={onNavigate}
         onRetry={() => void loadChores()}
         onSelectTab={setTab}
@@ -428,6 +458,16 @@ export function MyChoresScreen({ theme = "dark" }: { theme?: HomeVisualTheme } =
             const target = actionTarget.id
             setActionTargetId(null)
             void performOccurrenceAction(target, action, actionSurface)
+          }}
+          onRequestSent={(_, message) => {
+            setActionTargetId(null)
+            setCardFeedback(cardFeedback(actionTarget, message, "success", actionSurface))
+            requests.invalidate()
+          }}
+          onCancelRequest={(requestId) => {
+            const target = actionTarget.id
+            setActionTargetId(null)
+            void cancelRequest(requestId, target, actionSurface)
           }}
           theme={theme}
         />

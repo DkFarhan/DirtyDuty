@@ -30,7 +30,9 @@ public class InAppNotificationProvider implements NotificationDeliveryProvider {
             """
                 SELECT CASE
                     WHEN ? IN ('CHORE_ASSIGNED', 'CHORE_OCCURRENCE_MOVED', 'CHORE_OCCURRENCE_SKIPPED',
-                               'CHORE_TURN')
+                               'CHORE_TURN',
+                               'REQUEST_HANDOFF_ASK', 'REQUEST_SWAP_ASK', 'REQUEST_ACCEPTED',
+                               'REQUEST_DECLINED', 'REQUEST_UNCLAIMED', 'REQUEST_EXPIRED')
                         THEN COALESCE(p.chore_assigned_enabled, TRUE)
                     WHEN ? IN ('CHORE_DUE_SOON', 'CHORE_DUE_NOW', 'CHORE_NEEDS_DOING')
                         THEN COALESCE(p.chore_reminders_enabled, TRUE)

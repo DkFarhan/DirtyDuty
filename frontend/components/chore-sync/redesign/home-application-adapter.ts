@@ -1,4 +1,5 @@
 import type { AssignmentDTO, HouseholdDashboard } from "@/lib/household/chores"
+import { cardRequestView } from "@/lib/household/requests"
 import {
   feedbackFor,
   unplacedFeedbackError,
@@ -123,6 +124,7 @@ function mapChore(
         ? householdJobView(assignment, input.currentUserId, input.householdTimezone).flagLabel
         : movedFromLabel(assignment),
     awayNote: awayNote(assignment, input.currentUserId),
+    request: cardRequestView(assignment, input.currentUserId),
     hasActions: hasOccurrenceActions(assignment),
     completedBy: assignment.completedByDisplayName,
     overdue: assignment.overdue && assignment.status === "PENDING",
@@ -202,6 +204,7 @@ export function createHomeApplicationViewModel(
       skipped: assignment.status === "SKIPPED",
       movedFrom: movedFromLabel(assignment),
       awayNote: awayNote(assignment, input.currentUserId),
+      request: cardRequestView(assignment, input.currentUserId),
       hasActions: hasOccurrenceActions(assignment),
       feedback: feedbackFor(assignment, feedback, "card"),
     })),

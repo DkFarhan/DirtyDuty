@@ -145,6 +145,35 @@ const AWAY_MESSAGES = new Set([
   "Only owners and admins can set away mode for someone else.",
 ])
 
+/** Hand-off and swap requests (E11), as the server words them. */
+const REQUEST_MESSAGES = [
+  /^This chore already has an open request\.$/,
+  /^Only someone doing this chore can ask about it\.$/,
+  /^This chore isn't waiting to be done\.$/,
+  /^This chore is already due, so it's too late to ask\.$/,
+  /^Nobody else can take it that day\.$/,
+  /^A When needed chore can't be swapped\. Pass your turn\.$/,
+  /^This request is no longer open\.$/,
+  /^This chore changed, so the request was closed\.$/,
+  /^Already taken by .+\.$/,
+  /^Choose the chore to ask about\.$/,
+  /^Choose a hand-off or a swap\.$/,
+  /^Choose one of their chores to swap for\.$/,
+  /^A hand-off doesn't trade another chore\.$/,
+  /^Choose someone else\.$/,
+  /^They already do this chore\.$/,
+  /^Choose someone in this chore's rotation\.$/,
+  /^Choose someone in this household\.$/,
+  /^They're away that day, so they can't be asked\.$/,
+  /^Choose one of their chores in the next 14 days\.$/,
+  /^You can't take this one\.$/,
+  /^This request is for someone else\.$/,
+  /^You can't answer your own request\.$/,
+  /^Only the person who asked can cancel it\.$/,
+  /^Request was not found in this household\.$/,
+  /^Assignment was not found in this household\.$/,
+]
+
 /** Notification settings the server checks when they're saved. */
 const PREFERENCE_MESSAGES = new Set([
   "Quiet hours can't start and end at the same time.",
@@ -242,6 +271,19 @@ function messageFor(
     "message" in payload &&
     typeof payload.message === "string" &&
     BOARD_MESSAGES.some((pattern) => pattern.test(payload.message as string))
+  ) {
+    return payload.message
+  }
+  if (
+    (status === 400 || status === 403 || status === 404 || status === 409) &&
+    /^\/api\/households\/[^/]+\/(requests(\/[^/]+\/(accept|decline|cancel))?|assignments\/[^/]+\/request-candidates)$/.test(
+      path,
+    ) &&
+    payload !== null &&
+    typeof payload === "object" &&
+    "message" in payload &&
+    typeof payload.message === "string" &&
+    REQUEST_MESSAGES.some((pattern) => pattern.test(payload.message as string))
   ) {
     return payload.message
   }

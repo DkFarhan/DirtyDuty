@@ -79,11 +79,17 @@ public class MembershipExitCleanupService {
   private final EntityManager entityManager;
 
   public MembershipExitCleanupService(
-      JdbcTemplate jdbc, ChoreScheduleRepository scheduleRepository, EntityManager entityManager) {
+      JdbcTemplate jdbc,
+      ChoreScheduleRepository scheduleRepository,
+      EntityManager entityManager,
+      ChoreRequestService choreRequests) {
     this.jdbc = jdbc;
     this.scheduleRepository = scheduleRepository;
     this.entityManager = entityManager;
+    this.choreRequests = choreRequests;
   }
+
+  private final ChoreRequestService choreRequests;
 
   /**
    * Reconciles only current/future PENDING assignments. Past-dated overdue work and SUBMITTED or
@@ -135,6 +141,8 @@ public class MembershipExitCleanupService {
     int pausedSchedules = reconcileSchedules(scheduleIds, userId);
     entityManager.flush();
     reconcileAssignments(householdId, userId);
+    // Their hand-off and swap requests close, and any whose chores just changed (E11).
+    choreRequests.closeForMember(householdId, userId);
     cleanupAway(householdId, userId);
     cleanupBoard(householdId, userId);
     cancelMemberNotifications(householdId, userId);
