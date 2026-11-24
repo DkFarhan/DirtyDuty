@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import type { Chore } from "./chores"
 import { CHORE_SUGGESTIONS } from "./chore-suggestions"
 import {
+  allowsWeekByWeek,
   applySuggestion,
   buildQuickRequest,
   initialQuickValues,
@@ -15,6 +16,7 @@ import {
   withOften,
   withParticipants,
   withTitle,
+  weeksExplanation,
   type QuickContext,
   type QuickValues,
 } from "./chore-quick-form"
@@ -314,6 +316,8 @@ describe("request mapping", () => {
       peopleNeeded: 1,
       fixedAssigneeUserId: null,
       participantUserIds: ["farhan", "rubayet", "abu"],
+      everyone: true,
+      rotationWeeks: null,
       kind: "CALENDAR",
       intervalCount: null,
       intervalUnit: null,
@@ -702,5 +706,89 @@ describe("Balanced", () => {
     const values = withOften(withField(named(), "who", { who: "BALANCED" }), "AS_NEEDED")
     expect(values.who).toBe("TURNS")
     expect(requestFor(values).schedule).toMatchObject({ assignmentStrategy: "ROUND_ROBIN" })
+  })
+})
+
+describe("Week by week and everyone", () => {
+  const weekly = (weeks = 2) =>
+    withField(withOften(named("Wash dishes"), "DAILY", { dueTime: "21:00" }), "who", {
+      who: "WEEKS",
+      rotationWeeks: weeks,
+    })
+
+  it("maps Week by week to a Take turns rotation with a length, both ways", () => {
+    const schedule = requestFor(weekly()).schedule
+    expect(schedule).toMatchObject({
+      assignmentStrategy: "ROUND_ROBIN",
+      peopleNeeded: 1,
+      participantUserIds: ["farhan", "rubayet", "abu"],
+      everyone: true,
+      rotationWeeks: 2,
+    })
+    const loaded = valuesFromChore(
+      { ...savedChore, schedule: { ...schedule, active: true, everyone: true } },
+      context,
+    )
+    expect(loaded.values).toMatchObject({ who: "WEEKS", rotationWeeks: 2, everyone: true })
+    expect(requestFor(loaded.values).schedule).toMatchObject(schedule)
+    expect(whoLabel(loaded.values, members, "farhan")).toBe("Week by week · 2 weeks")
+    expect(whoLabel(weekly(1), members, "farhan")).toBe("Week by week · 1 week")
+  })
+
+  it("leaves Take turns as it was", () => {
+    const loaded = valuesFromChore(
+      {
+        ...savedChore,
+        schedule: { ...requestFor(named()).schedule, rotationWeeks: null, active: true },
+      },
+      context,
+    )
+    expect(loaded.values.who).toBe("TURNS")
+    expect(requestFor(loaded.values).schedule).toMatchObject({
+      assignmentStrategy: "ROUND_ROBIN",
+      rotationWeeks: null,
+    })
+  })
+
+  it("says who has it and for how long", () => {
+    expect(text(weekly())).toBe(
+      "Every day by 9 PM. Week by week: each person has it for 2 weeks, between you, Rubayet and Abubakar.",
+    )
+    expect(weeksExplanation(1)).toEqual({
+      title: "One person all week, then the next",
+      detail:
+        "Good when someone should own it: dishes, the kitchen, the bathroom. Switches on Mondays.",
+    })
+    expect(weeksExplanation(3).title).toBe("One person for 3 weeks, then the next")
+  })
+
+  it("falls back to Take turns for chores that don't repeat on a schedule", () => {
+    for (const often of ["AFTER_COMPLETION", "AS_NEEDED", "ONCE"] as const) {
+      expect(withOften(weekly(), often).who).toBe("TURNS")
+      expect(allowsWeekByWeek(often)).toBe(false)
+    }
+    expect(allowsWeekByWeek("WEEKLY")).toBe(true)
+  })
+
+  it("rejects a length outside 1 to 8 weeks", () => {
+    const result = buildQuickRequest(weekly(9), context)
+    expect(result).toEqual({
+      error: { field: "who", message: "Choose between 1 and 8 weeks for each person." },
+    })
+  })
+
+  it("is everyone by default, a fixed list after Change, and a saved list stays a list", () => {
+    const fresh = named()
+    expect(fresh.everyone).toBe(true)
+    expect(whoLabel(fresh, members, "farhan")).toBe("Take turns · everyone")
+    const changed = withParticipants(fresh, ["farhan", "rubayet", "abu"], members)
+    expect(changed.everyone).toBe(false)
+    expect(requestFor(changed).schedule.everyone).toBeNull()
+    expect(whoLabel(changed, members, "farhan")).toBe("Take turns · 3 people")
+    const saved = valuesFromChore(
+      { ...savedChore, schedule: { ...requestFor(changed).schedule, active: true } },
+      context,
+    )
+    expect(saved.values.everyone).toBe(false)
   })
 })

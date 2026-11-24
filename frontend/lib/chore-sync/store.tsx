@@ -24,6 +24,8 @@ export type AwayTarget = { userId: string; displayName: string } | null
 export type ChoreDraft = {
   title: string
   once?: { date: string; time: string }
+  /** Duplicate chore: the chore whose setup the new one starts from ("<Title> (copy)"). */
+  copyOf?: string
   returnTo: Screen
 }
 

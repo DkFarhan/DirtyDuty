@@ -2,6 +2,9 @@
 
 import type { CardRequestView } from "@/lib/household/requests"
 import { AwayNote } from "../away-note"
+import { MyWeeksRow, WeekChip } from "../week-chip"
+import { StartWithBasics } from "../start-with-basics"
+import type { MyWeeksLine, WeekChipView } from "@/lib/household/week-by-week"
 import { CancelRequestButton, RequestNote, WaitingChip } from "../requests/request-card-status"
 import { Fragment, type CSSProperties, type ReactNode } from "react"
 import type { HouseholdJobViewModel } from "@/lib/household/household-jobs"
@@ -28,6 +31,8 @@ export interface HomeChoreViewModel {
   movedFrom?: string | null
   /** "Sam is away, so it skipped to you" (Away mode). */
   awayNote?: string | null
+  /** Week by week: "Your week · until Sun, Dec 7". */
+  weekChip?: WeekChipView | null
   /** Hand-off and swap requests: waiting chip, accepted note, Cancel request (E11). */
   request?: CardRequestView
   /** The viewer may move, skip, undo or reassign this occurrence. */
@@ -49,6 +54,8 @@ export interface HomeUpcomingChoreViewModel {
   movedFrom?: string | null
   /** "Sam is away, so it skipped to you" (Away mode). */
   awayNote?: string | null
+  /** Week by week: "Your week · until Sun, Dec 7". */
+  weekChip?: WeekChipView | null
   /** Hand-off and swap requests: waiting chip, accepted note, Cancel request (E11). */
   request?: CardRequestView
   hasActions?: boolean
@@ -102,6 +109,13 @@ export interface HomeScreenViewModel {
   flaggingIds?: string[]
   /** Jobs being marked done. */
   completingJobIds?: string[]
+  /** "Your weeks: Kitchen chores": the viewer's Week by week chores this period. */
+  myWeeks?: MyWeeksLine | null
+  /**
+   * A household with no chores yet: "Start with the basics" instead of the week and chore
+   * sections. Owners and admins get the buttons.
+   */
+  basics?: { canManage: boolean; adding: boolean; error: string | null } | null
 }
 
 export interface HomeScreenViewProps {
@@ -124,6 +138,10 @@ export interface HomeScreenViewProps {
   requestsSection?: ReactNode
   /** Cancels the viewer's own open request from their card. */
   onCancelRequest?: (requestId: string, choreId: string) => void
+  /** "Add these 4" on the Start with the basics card. */
+  onAddBasics?: () => void
+  /** "I'll make my own": Quick create. */
+  onMakeOwnChore?: () => void
 }
 
 function percentage(completedCount: number, totalCount: number) {
@@ -187,6 +205,7 @@ function ChoreCard({
           )}
         </p>
         <AwayNote note={chore.awayNote} />
+        <WeekChip chip={chore.weekChip} />
         <RequestNote kind={chore.request?.noteKind} label={chore.request?.noteLabel} />
         <WaitingChip label={chore.request?.waitingLabel} />
         {showActions && (
@@ -275,7 +294,10 @@ export function HomeScreenView({
   boardSection,
   requestsSection,
   onCancelRequest,
+  onAddBasics,
+  onMakeOwnChore,
 }: HomeScreenViewProps) {
+  const basics = viewModel.status === "loaded" ? (viewModel.basics ?? null) : null
   const householdProgress = percentage(
     viewModel.householdWeek.completedCount,
     viewModel.householdWeek.totalCount,
@@ -397,88 +419,107 @@ export function HomeScreenView({
 
         <div className={styles.requestsCard}>{requestsSection}</div>
 
-        <section aria-label="Household weekly progress" className={styles.householdHero}>
-          <span aria-hidden="true" className={styles.householdAmbient} />
-          <p className={styles.heroEyebrow}>EVERYONE AT HOME&nbsp;&nbsp; / &nbsp;&nbsp;THIS WEEK</p>
-          <div className={styles.heroMetric}>
-            <span
-              className={styles.heroFigure}
-              data-digits={String(householdProgress).length}
-              data-testid="hero-figure"
-            >
-              <span className={styles.heroValue}>{householdProgress}</span>
-              <span className={styles.heroPercent}>%</span>
-            </span>
-            <span
-              aria-label={`${householdProgress}% complete`}
-              className={styles.progressOrbit}
-              role="img"
-              style={ringStyle}
-            >
-              <span aria-hidden="true" className={styles.orbitTrack} />
-              {householdProgress === 25 ? (
-                <span aria-hidden="true" className={styles.orbitProgress25} />
-              ) : (
-                <span aria-hidden="true" className={styles.orbitProgress} />
-              )}
-              <span className={styles.orbitCenter}>
-                <span aria-hidden="true" className={styles.orbitGlint} />
-              </span>
-            </span>
-          </div>
-          <p className={styles.householdCompletion}>
-            {viewModel.householdWeek.completedCount} of {viewModel.householdWeek.totalCount} chores
-            completed
-          </p>
-          <div aria-hidden="true" className={styles.heroDivider} />
-          <p className={styles.heroFootnote}>Small steps. A home in sync.</p>
-        </section>
+        {basics && (
+          <StartWithBasics
+            className={styles.basicsCard}
+            adding={basics.adding}
+            canManage={basics.canManage}
+            error={basics.error}
+            onAdd={onAddBasics}
+            onMakeOwn={onMakeOwnChore}
+          />
+        )}
 
-        <section aria-labelledby="personal-week-title" className={styles.personalWeek}>
-          <p className={styles.personalEyebrow}>YOUR WEEK</p>
-          <h2 className={styles.personalTitle} id="personal-week-title">
-            {viewModel.personalWeek.title}
-          </h2>
-          <p className={styles.personalMessage}>{viewModel.personalWeek.message}</p>
-          {viewModel.personalWeek.assignedCount > 0 && (
-            <>
-              <div className={styles.personalProgressLabel}>
-                <span>
-                  {viewModel.personalWeek.completedCount} of {viewModel.personalWeek.assignedCount}{" "}
-                  completed
+        {!basics && (
+          <>
+            <section aria-label="Household weekly progress" className={styles.householdHero}>
+              <span aria-hidden="true" className={styles.householdAmbient} />
+              <p className={styles.heroEyebrow}>
+                EVERYONE AT HOME&nbsp;&nbsp; / &nbsp;&nbsp;THIS WEEK
+              </p>
+              <div className={styles.heroMetric}>
+                <span
+                  className={styles.heroFigure}
+                  data-digits={String(householdProgress).length}
+                  data-testid="hero-figure"
+                >
+                  <span className={styles.heroValue}>{householdProgress}</span>
+                  <span className={styles.heroPercent}>%</span>
                 </span>
-                <span>{personalProgress}%</span>
+                <span
+                  aria-label={`${householdProgress}% complete`}
+                  className={styles.progressOrbit}
+                  role="img"
+                  style={ringStyle}
+                >
+                  <span aria-hidden="true" className={styles.orbitTrack} />
+                  {householdProgress === 25 ? (
+                    <span aria-hidden="true" className={styles.orbitProgress25} />
+                  ) : (
+                    <span aria-hidden="true" className={styles.orbitProgress} />
+                  )}
+                  <span className={styles.orbitCenter}>
+                    <span aria-hidden="true" className={styles.orbitGlint} />
+                  </span>
+                </span>
               </div>
-              <div
-                aria-label={`${personalProgress}% of assigned chores completed`}
-                className={styles.personalProgressTrack}
-                role="img"
-              >
-                <span style={{ width: `${personalProgress}%` }} />
-              </div>
-            </>
-          )}
-          <dl className={styles.personalStats}>
-            <div>
-              <dd>{paddedCount(viewModel.personalWeek.assignedCount)}</dd>
-              <dt>Assigned</dt>
-            </div>
-            <div>
-              <dd>{paddedCount(viewModel.personalWeek.completedCount)}</dd>
-              <dt>Completed</dt>
-            </div>
-            <div>
-              <dd>{paddedCount(viewModel.personalWeek.dueTodayCount)}</dd>
-              <dt>Due today</dt>
-            </div>
-            <div>
-              <dd className={viewModel.personalWeek.overdueCount > 0 ? styles.overdueValue : ""}>
-                {paddedCount(viewModel.personalWeek.overdueCount)}
-              </dd>
-              <dt>Overdue</dt>
-            </div>
-          </dl>
-        </section>
+              <p className={styles.householdCompletion}>
+                {viewModel.householdWeek.completedCount} of {viewModel.householdWeek.totalCount}{" "}
+                chores completed
+              </p>
+              <div aria-hidden="true" className={styles.heroDivider} />
+              <p className={styles.heroFootnote}>Small steps. A home in sync.</p>
+            </section>
+
+            <section aria-labelledby="personal-week-title" className={styles.personalWeek}>
+              <p className={styles.personalEyebrow}>YOUR WEEK</p>
+              <h2 className={styles.personalTitle} id="personal-week-title">
+                {viewModel.personalWeek.title}
+              </h2>
+              <p className={styles.personalMessage}>{viewModel.personalWeek.message}</p>
+              {viewModel.personalWeek.assignedCount > 0 && (
+                <>
+                  <div className={styles.personalProgressLabel}>
+                    <span>
+                      {viewModel.personalWeek.completedCount} of{" "}
+                      {viewModel.personalWeek.assignedCount} completed
+                    </span>
+                    <span>{personalProgress}%</span>
+                  </div>
+                  <div
+                    aria-label={`${personalProgress}% of assigned chores completed`}
+                    className={styles.personalProgressTrack}
+                    role="img"
+                  >
+                    <span style={{ width: `${personalProgress}%` }} />
+                  </div>
+                </>
+              )}
+              <dl className={styles.personalStats}>
+                <div>
+                  <dd>{paddedCount(viewModel.personalWeek.assignedCount)}</dd>
+                  <dt>Assigned</dt>
+                </div>
+                <div>
+                  <dd>{paddedCount(viewModel.personalWeek.completedCount)}</dd>
+                  <dt>Completed</dt>
+                </div>
+                <div>
+                  <dd>{paddedCount(viewModel.personalWeek.dueTodayCount)}</dd>
+                  <dt>Due today</dt>
+                </div>
+                <div>
+                  <dd
+                    className={viewModel.personalWeek.overdueCount > 0 ? styles.overdueValue : ""}
+                  >
+                    {paddedCount(viewModel.personalWeek.overdueCount)}
+                  </dd>
+                  <dt>Overdue</dt>
+                </div>
+              </dl>
+            </section>
+          </>
+        )}
 
         {viewModel.status === "loading" && (
           <div aria-label="Loading home overview" className={styles.loadingState} role="status">
@@ -497,8 +538,9 @@ export function HomeScreenView({
           </div>
         )}
 
-        {viewModel.status === "loaded" && (
+        {viewModel.status === "loaded" && !basics && (
           <>
+            <MyWeeksRow className={styles.myWeeks} line={viewModel.myWeeks} />
             {attentionChores.length > 0 && (
               <section aria-labelledby="attention-title" className={styles.attentionSection}>
                 <SectionHeading
@@ -619,6 +661,7 @@ export function HomeScreenView({
                                 )}
                               </p>
                               <AwayNote note={chore.awayNote} />
+                              <WeekChip chip={chore.weekChip} />
                               <RequestNote
                                 kind={chore.request?.noteKind}
                                 label={chore.request?.noteLabel}

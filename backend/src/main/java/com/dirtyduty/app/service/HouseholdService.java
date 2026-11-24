@@ -39,6 +39,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
@@ -64,6 +65,7 @@ public class HouseholdService {
   private final JdbcTemplate jdbc;
   private final PasswordEncoder passwordEncoder;
   private final Duration invitationExpiration;
+  private final ObjectProvider<OccurrenceService> occurrenceService;
 
   public HouseholdService(
       HouseholdRepository householdRepository,
@@ -75,7 +77,9 @@ public class HouseholdService {
       MembershipExitCleanupService membershipExitCleanupService,
       JdbcTemplate jdbc,
       PasswordEncoder passwordEncoder,
-      @Value("${app.households.invitation-expiration:7d}") Duration invitationExpiration) {
+      @Value("${app.households.invitation-expiration:7d}") Duration invitationExpiration,
+      ObjectProvider<OccurrenceService> occurrenceService) {
+    this.occurrenceService = occurrenceService;
     this.householdRepository = householdRepository;
     this.householdMembershipRepository = householdMembershipRepository;
     this.householdInvitationRepository = householdInvitationRepository;
@@ -385,6 +389,9 @@ public class HouseholdService {
 
     invitation.setUsedAt(now);
     householdInvitationRepository.save(invitation);
+    // Chores shared with everyone take the new member in now (level), not on the next pass.
+    householdMembershipRepository.flush();
+    occurrenceService.getObject().generateHousehold(householdId);
 
     if (rejoining) {
       recordActivityEvent(

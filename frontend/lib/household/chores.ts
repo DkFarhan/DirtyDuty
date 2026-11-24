@@ -50,6 +50,10 @@ export type ChoreSchedule = {
   intervalUnit?: IntervalUnit | null
   /** "Do at least every N days", or null when that deadline is off. */
   backstopDays?: number | null
+  /** The people are every member, including people who join later. Absent from older responses. */
+  everyone?: boolean | null
+  /** Week by week: each person has it for this many weeks; null for other chores. */
+  rotationWeeks?: number | null
 }
 
 export type Chore = {
@@ -77,6 +81,7 @@ export type ChoreRequest = {
   difficulty: number
   estimatedMinutes: number | null
   requiresVerification: boolean
+  /** {@link ChoreSchedule.everyone}: every member, now and later (participantUserIds is ignored). */
   schedule: Omit<ChoreSchedule, "active"> & { backstopEnabled?: boolean | null }
 }
 
@@ -114,6 +119,8 @@ export type AssignmentDTO = {
   awayFrom?: { userId: string; displayName: string } | null
   /** Hand-off and swap requests (E11) for this viewer. */
   requests?: AssignmentRequests | null
+  /** Week by week: whose period this is in, and its last day (YYYY-MM-DD). */
+  week?: { owner: { userId: string; displayName: string }; until: string } | null
   /** The latest completion before this one. */
   lastDone?: { at: string; byUserId: string; byDisplayName: string } | null
   /** "Needs doing" flag on an open "When needed" occurrence. */
@@ -181,6 +188,19 @@ export type HouseholdDashboard = {
   overdue: AssignmentDTO[]
   /** Open "When needed" chores, for every member. Absent from older responses. */
   householdJobs?: AssignmentDTO[]
+  /** Week by week chores the viewer has this period. Absent from older responses. */
+  myWeeks?: MyWeek[]
+  /** Whether the household has any chore (active or paused). Absent from older responses. */
+  hasChores?: boolean
+}
+
+/** A Week by week chore the viewer has until {@link until}; {@link next} takes over after. */
+export type MyWeek = {
+  choreId: string
+  title: string
+  categoryName: string | null
+  until: string
+  next: { userId: string; displayName: string } | null
 }
 
 export { categoryIcon } from "./category-icons"
@@ -197,6 +217,12 @@ export const choreApi = {
     api.get<Chore>(`${householdPath(householdId)}/chores/${encodeURIComponent(choreId)}`),
   create: (householdId: string, request: ChoreRequest) =>
     api.post<Chore>(`${householdPath(householdId)}/chores`, request),
+  /** Whether the household has any chore (active or paused); any member. */
+  status: (householdId: string) =>
+    api.get<{ hasChores: boolean }>(`${householdPath(householdId)}/chore-status`),
+  /** Several chores at once, all or none (owners and admins). */
+  createBatch: (householdId: string, chores: ChoreRequest[]) =>
+    api.post<Chore[]>(`${householdPath(householdId)}/chores/batch`, { chores }),
   update: (householdId: string, choreId: string, request: ChoreRequest) =>
     api.put<Chore>(`${householdPath(householdId)}/chores/${encodeURIComponent(choreId)}`, request),
   pause: (householdId: string, choreId: string) =>

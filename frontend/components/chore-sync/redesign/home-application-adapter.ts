@@ -8,6 +8,8 @@ import {
 import { categoryWithRepeat, householdJobView } from "@/lib/household/household-jobs"
 import { hasOccurrenceActions, movedFromLabel } from "@/lib/household/occurrence-actions"
 import { awayNote } from "@/lib/household/away"
+import { myWeeksLine, weekChip } from "@/lib/household/week-by-week"
+import { showBasics } from "@/lib/household/basics"
 import type { PushHealthState } from "@/lib/notifications/push-health"
 import { assignmentAssigneeNames, assignmentDate, assignmentTime } from "../chore-card"
 import {
@@ -45,6 +47,8 @@ export interface HomeApplicationViewModelInput {
   cardFeedback?: CardFeedback | null
   pushHealth: PushHealthState
   now?: Date
+  /** Start with the basics: whether the viewer may add chores, and the add request's state. */
+  basics?: { canManage: boolean; adding: boolean; error: string | null }
 }
 
 function greetingFor(timeZone: string, date: Date) {
@@ -124,6 +128,7 @@ function mapChore(
         ? householdJobView(assignment, input.currentUserId, input.householdTimezone).flagLabel
         : movedFromLabel(assignment),
     awayNote: awayNote(assignment, input.currentUserId),
+    weekChip: weekChip(assignment, input.currentUserId),
     request: cardRequestView(assignment, input.currentUserId),
     hasActions: hasOccurrenceActions(assignment),
     completedBy: assignment.completedByDisplayName,
@@ -204,6 +209,7 @@ export function createHomeApplicationViewModel(
       skipped: assignment.status === "SKIPPED",
       movedFrom: movedFromLabel(assignment),
       awayNote: awayNote(assignment, input.currentUserId),
+      weekChip: weekChip(assignment, input.currentUserId),
       request: cardRequestView(assignment, input.currentUserId),
       hasActions: hasOccurrenceActions(assignment),
       feedback: feedbackFor(assignment, feedback, "card"),
@@ -262,5 +268,9 @@ export function createHomeApplicationViewModel(
     completingJobIds: (dashboard?.householdJobs ?? [])
       .filter((assignment) => input.completingIds.has(`${input.householdId}:${assignment.id}`))
       .map((assignment) => assignment.id),
+    myWeeks: myWeeksLine(dashboard?.myWeeks),
+    basics: showBasics(dashboard?.hasChores)
+      ? (input.basics ?? { canManage: false, adding: false, error: null })
+      : null,
   }
 }

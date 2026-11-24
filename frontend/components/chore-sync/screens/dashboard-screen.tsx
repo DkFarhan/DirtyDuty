@@ -48,6 +48,7 @@ import { createHomeApplicationViewModel } from "../redesign/home-application-ada
 import { homeBoardRows } from "@/lib/board/board-view"
 import { HomeBoardSection } from "../board/home-board-section"
 import { useBoard } from "../board/use-board"
+import { useStartWithBasics } from "../use-start-with-basics"
 
 export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } = {}) {
   const { state, navigate, openNotifications, openBoardPost, openBoardLists } = useChoreSync()
@@ -474,6 +475,7 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
   const visibleStatus =
     household && dashboardHouseholdId !== household.id && status !== "error" ? "loading" : status
   const currentDashboard = household && dashboardHouseholdId === household.id ? dashboard : null
+  const basics = useStartWithBasics("dashboard")
   const viewModel = createHomeApplicationViewModel({
     dashboard: currentDashboard,
     householdId: household?.id ?? null,
@@ -491,6 +493,7 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
     completingIds,
     flaggingIds,
     pushHealth,
+    basics: { canManage: basics.canManage, adding: basics.adding, error: basics.error },
   })
   const { board } = useBoard(household?.id ?? null)
   const onNavigate = (destination: HomeNavigationDestination) =>
@@ -543,6 +546,8 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
         onPushAction={onPushAction}
         onRetry={() => void loadDashboard()}
         onRetryNotificationCount={() => void loadUnreadCount()}
+        onAddBasics={() => void basics.add()}
+        onMakeOwnChore={basics.makeOwn}
         theme={theme}
         viewModel={viewModel}
       />

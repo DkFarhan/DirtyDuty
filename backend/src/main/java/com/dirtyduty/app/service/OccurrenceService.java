@@ -2,6 +2,7 @@ package com.dirtyduty.app.service;
 
 import com.dirtyduty.app.dto.chore.AssigneeResponse;
 import com.dirtyduty.app.dto.chore.AssignmentResponse;
+import com.dirtyduty.app.dto.chore.ChoreStatusResponse;
 import com.dirtyduty.app.dto.chore.DashboardResponse;
 import com.dirtyduty.app.dto.chore.HouseholdMemberStatsResponse;
 import com.dirtyduty.app.entity.Chore;
@@ -117,9 +118,22 @@ public class OccurrenceService {
   @Transactional
   public void synchronizeSchedule(
       ChoreSchedule schedule, boolean updatePendingAssignees, boolean userInitiatedEdit) {
+    synchronizeSchedule(schedule, updatePendingAssignees, userInitiatedEdit, null);
+  }
+
+  /**
+   * As above; {@code repickFrom}, when set, limits {@code updatePendingAssignees} to occurrences
+   * planned on or after that day (Week by week: whoever has it keeps the current period).
+   */
+  @Transactional
+  public void synchronizeSchedule(
+      ChoreSchedule schedule,
+      boolean updatePendingAssignees,
+      boolean userInitiatedEdit,
+      LocalDate repickFrom) {
     boolean ownsRun = beginBalancedRun();
     try {
-      synchronizeInRun(schedule, updatePendingAssignees, userInitiatedEdit);
+      synchronizeInRun(schedule, updatePendingAssignees, userInitiatedEdit, repickFrom);
       if (ownsRun) {
         // An edit, pause, archive or re-plan may have changed a chore someone asked about (E11).
         choreRequests.closeChanged(schedule.getHousehold().getId(), null);
@@ -145,17 +159,29 @@ public class OccurrenceService {
   }
 
   private void synchronizeInRun(
-      ChoreSchedule schedule, boolean updatePendingAssignees, boolean userInitiatedEdit) {
+      ChoreSchedule schedule,
+      boolean updatePendingAssignees,
+      boolean userInitiatedEdit,
+      LocalDate repickFrom) {
     lockHousehold(schedule.getHousehold().getId());
     jdbc.queryForObject(
         "SELECT id FROM chore_schedules WHERE id=? FOR UPDATE", UUID.class, schedule.getId());
+    ZoneId zone = ZoneId.of(schedule.getTimezone());
+    LocalDate today = LocalDate.now(clock.withZone(zone));
+    boolean everyone = RotationConfig.everyone(schedule.getStrategyConfig());
+    if (everyone && syncEveryone(schedule, today)) {
+      // Someone joined or left: the plan is re-picked with them in or out (Week by week from the
+      // next period, so whoever has it keeps this one).
+      updatePendingAssignees = true;
+      LocalDate boundary = weekByWeekBoundary(schedule, today);
+      repickFrom =
+          repickFrom == null ? boundary : boundary == null ? repickFrom : min(repickFrom, boundary);
+    }
     if (schedule.getKind() != ScheduleKind.CALENDAR) {
       synchronizeOpenCopySchedule(schedule, updatePendingAssignees, userInitiatedEdit);
       return;
     }
     Household household = schedule.getHousehold();
-    ZoneId zone = ZoneId.of(schedule.getTimezone());
-    LocalDate today = LocalDate.now(zone);
     // An open copy left from an "After it's done" or "When needed" kind ends with the kind change.
     cancelOtherKindOpenOccurrences(schedule, today);
     LocalDate limit = today.plusDays(horizonDays);
@@ -342,7 +368,8 @@ public class OccurrenceService {
                         rs.getBoolean("assignees_overridden")),
                 occurrenceId);
         boolean exitCancelled = state.exitCancelled();
-        if (exitCancelled && !userInitiatedEdit) {
+        // A fixed list waits for an edit after someone leaves; "everyone" carries on without them.
+        if (exitCancelled && !userInitiatedEdit && !everyone) {
           continue;
         }
         // A cancelled row coming back is a fresh occurrence: earlier per-date overrides go.
@@ -383,8 +410,10 @@ public class OccurrenceService {
         // Away mode re-picks an occurrence whose people include someone away that day, or that
         // was covered for someone; a manual override (date or people) is never changed.
         boolean awayRelevant = !keepAssignees && !keepDate && awayRelevant(occurrenceId, date);
+        boolean repick =
+            updatePendingAssignees && (repickFrom == null || !date.isBefore(repickFrom));
         if (!keepAssignees
-            && (updatePendingAssignees
+            && (repick
                 || exitCancelled
                 || awayRelevant
                 || (reviving && state.assigneesOverridden()))) {
@@ -1183,6 +1212,11 @@ public class OccurrenceService {
     this.clock = testClock == null ? java.time.Clock.systemUTC() : testClock;
   }
 
+  /** The clock generation plans with (pinned in tests). */
+  java.time.Clock clock() {
+    return clock;
+  }
+
   private boolean scheduleEnabled(ChoreSchedule schedule) {
     return schedule.isActive()
         && schedule.getChore().isActive()
@@ -1861,7 +1895,7 @@ public class OccurrenceService {
       // Exactly the credit generation has been planning with (see calendarStanding).
       int planned = calendarStanding(schedule, period.returnsOn()).getOrDefault(period.userId(), 0);
       int stored =
-          calendarCounts(schedule.getId(), period.returnsOn()).getOrDefault(period.userId(), 0)
+          turnCounts(schedule, period.returnsOn()).getOrDefault(period.userId(), 0)
               + offsets.getOrDefault(period.userId(), 0);
       credit = Math.max(0, planned - stored);
     } else {
@@ -2189,7 +2223,110 @@ public class OccurrenceService {
         todayAssignments,
         weekAssignments,
         overdueAssignments,
-        householdJobs);
+        householdJobs,
+        myWeeks(householdId, viewerId, today),
+        hasChores(householdId));
+  }
+
+  /** Whether the household has any chore, for every member. */
+  @Transactional(readOnly = true)
+  public ChoreStatusResponse choreStatus(UUID householdId, Authentication authentication) {
+    requireActiveMember(householdId, authentication);
+    return new ChoreStatusResponse(hasChores(householdId));
+  }
+
+  private boolean hasChores(UUID householdId) {
+    return Boolean.TRUE.equals(
+        jdbc.queryForObject(
+            "SELECT EXISTS (SELECT 1 FROM chores WHERE household_id=? AND archived_at IS NULL)",
+            Boolean.class,
+            householdId));
+  }
+
+  /**
+   * The active Week by week chores the viewer has this period, with when it ends and who has it
+   * next, in the order their periods end, then by name.
+   */
+  private List<DashboardResponse.MyWeek> myWeeks(UUID householdId, UUID viewerId, LocalDate today) {
+    List<UUID> scheduleIds =
+        jdbc.queryForList(
+            """
+                SELECT s.id FROM chore_schedules s JOIN chores c ON c.id=s.chore_id
+                WHERE s.household_id=? AND s.is_active AND c.is_active AND c.archived_at IS NULL
+                  AND s.kind='CALENDAR' AND s.assignment_strategy='ROUND_ROBIN'
+                  AND jsonb_exists(s.strategy_config, 'rotationWeeks')
+                ORDER BY LOWER(c.title), s.id
+                """,
+            UUID.class,
+            householdId);
+    List<DashboardResponse.MyWeek> result = new ArrayList<>();
+    for (UUID scheduleId : scheduleIds) {
+      ChoreSchedule schedule = scheduleRepository.findById(scheduleId).orElse(null);
+      if (schedule == null || !isWeekByWeek(schedule)) {
+        continue;
+      }
+      int weeks = RotationConfig.weeks(schedule.getStrategyConfig());
+      LocalDate anchor = RotationConfig.startsOn(schedule.getStrategyConfig());
+      if (today.isBefore(anchor)) {
+        // Its first period hasn't started yet (switched this week): nobody has it yet.
+        continue;
+      }
+      LocalDate start = RotationConfig.periodStart(anchor, weeks, today);
+      LocalDate next = start.plusWeeks(weeks);
+      List<UUID> pool = participantIds(schedule);
+      if (pool.isEmpty() || !viewerId.equals(periodOwner(schedule, start, next, pool))) {
+        continue;
+      }
+      UUID nextOwner = periodOwner(schedule, next, next.plusWeeks(weeks), pool);
+      Map<String, Object> chore =
+          jdbc.queryForMap(
+              """
+                  SELECT c.title, cat.name category_name FROM chores c
+                  LEFT JOIN chore_categories cat ON cat.id=c.category_id WHERE c.id=?
+                  """,
+              schedule.getChore().getId());
+      result.add(
+          new DashboardResponse.MyWeek(
+              schedule.getChore().getId(),
+              (String) chore.get("title"),
+              (String) chore.get("category_name"),
+              next.minusDays(1),
+              nextOwner == null || nextOwner.equals(viewerId)
+                  ? null
+                  : new AssignmentResponse.Person(
+                      nextOwner,
+                      jdbc.queryForObject(
+                          "SELECT display_name FROM users WHERE id=?", String.class, nextOwner))));
+    }
+    result.sort(java.util.Comparator.comparing(DashboardResponse.MyWeek::until));
+    return result;
+  }
+
+  /**
+   * Who has the Week by week period {@code [start, end)}: the person on its first planned day that
+   * wasn't given away by hand, else who the rotation would pick for it.
+   */
+  private UUID periodOwner(
+      ChoreSchedule schedule, LocalDate start, LocalDate end, List<UUID> pool) {
+    List<UUID> planned =
+        jdbc.queryForList(
+            """
+                SELECT COALESCE(a.away_from_user_id, a.assigned_to_user_id)
+                FROM chore_assignments a
+                WHERE a.schedule_id=? AND a.kind_snapshot='CALENDAR'
+                  AND a.planned_for>=? AND a.planned_for<?
+                  AND a.status<>'CANCELLED' AND NOT a.assignees_overridden
+                  AND COALESCE(a.away_from_user_id, a.assigned_to_user_id) IS NOT NULL
+                ORDER BY a.planned_for LIMIT 1
+                """,
+            UUID.class,
+            schedule.getId(),
+            start,
+            end);
+    if (!planned.isEmpty()) {
+      return planned.getFirst();
+    }
+    return weekOwner(schedule, start, pool);
   }
 
   /** Open copies of the household's active "When needed" chores, for every member. */
@@ -3466,9 +3603,14 @@ public class OccurrenceService {
                        ld.display_name last_done_by,
                        a.away_from_user_id, au.display_name away_from_name,
                        a.metadata->'requestNote'->>'type' request_note_type,
-                       a.metadata->'requestNote'->>'userId' request_note_user
+                       a.metadata->'requestNote'->>'userId' request_note_user,
+                       s.strategy_config->>'rotationWeeks' rotation_weeks,
+                       s.strategy_config->>'rotationStartsOn' rotation_starts_on,
+                       COALESCE(a.away_from_user_id, a.assigned_to_user_id) week_owner_id,
+                       wo.display_name week_owner_name
                 FROM chore_assignments a
                 LEFT JOIN users au ON au.id=a.away_from_user_id
+                LEFT JOIN users wo ON wo.id=COALESCE(a.away_from_user_id, a.assigned_to_user_id)
                 JOIN chores ch ON ch.id=a.chore_id
                 JOIN households h ON h.id=a.household_id
                 LEFT JOIN chore_schedules s ON s.id=a.schedule_id
@@ -3621,7 +3763,38 @@ public class OccurrenceService {
             rs.getString("request_note_type"),
             rs.getString("request_note_user") == null
                 ? null
-                : UUID.fromString(rs.getString("request_note_user"))));
+                : UUID.fromString(rs.getString("request_note_user"))),
+        pending && !rs.getBoolean("assignees_overridden") ? week(rs) : null);
+  }
+
+  /** Week by week: whose period this occurrence is in, and its last day; null otherwise. */
+  private static AssignmentResponse.Week week(ResultSet rs) throws SQLException {
+    if (!"CALENDAR".equals(rs.getString("kind_snapshot"))
+        || rs.getString("rotation_weeks") == null
+        || rs.getString("rotation_starts_on") == null
+        || rs.getObject("week_owner_id") == null) {
+      return null;
+    }
+    Map<String, Object> config =
+        Map.of(
+            RotationConfig.WEEKS,
+            Integer.parseInt(rs.getString("rotation_weeks")),
+            RotationConfig.STARTS_ON,
+            rs.getString("rotation_starts_on"));
+    Integer weeks = RotationConfig.weeks(config);
+    LocalDate anchor = RotationConfig.startsOn(config);
+    if (weeks == null || anchor == null) {
+      return null;
+    }
+    LocalDate planned = rs.getObject("planned_for", LocalDate.class);
+    if (planned.isBefore(anchor)) {
+      // Planned before the chore became Week by week (this week, after a switch): no one's week.
+      return null;
+    }
+    return new AssignmentResponse.Week(
+        new AssignmentResponse.Person(
+            rs.getObject("week_owner_id", UUID.class), rs.getString("week_owner_name")),
+        RotationConfig.nextBoundary(anchor, weeks, planned).minusDays(1));
   }
 
   /**
@@ -3895,6 +4068,10 @@ public class OccurrenceService {
       ChoreSchedule schedule, LocalDate date, Set<UUID> away, UUID exclude) {
     int needed = peopleNeeded(schedule);
     List<UUID> pool = new ArrayList<>(participantIds(schedule));
+    if (schedule.getAssignmentStrategy() == AssignmentStrategy.ROUND_ROBIN
+        && isWeekByWeek(schedule)) {
+      return weekByWeekPick(schedule, date, pool, away);
+    }
     if (schedule.getAssignmentStrategy() == AssignmentStrategy.FIXED) {
       if (pool.isEmpty() && schedule.getFixedAssignee() != null) {
         pool = List.of(schedule.getFixedAssignee().getId());
@@ -3955,6 +4132,197 @@ public class OccurrenceService {
     return List.of();
   }
 
+  // ---- Week by week and "everyone"
+  // ---------------------------------------------------------------------------------
+
+  static LocalDate min(LocalDate first, LocalDate second) {
+    return first.isBefore(second) ? first : second;
+  }
+
+  private static boolean isWeekByWeek(ChoreSchedule schedule) {
+    return schedule.getKind() == ScheduleKind.CALENDAR
+        && RotationConfig.weeks(schedule.getStrategyConfig()) != null
+        && RotationConfig.startsOn(schedule.getStrategyConfig()) != null;
+  }
+
+  /** The next Week by week period boundary after {@code today}, or null for other chores. */
+  private static LocalDate weekByWeekBoundary(ChoreSchedule schedule, LocalDate today) {
+    if (!isWeekByWeek(schedule)) {
+      return null;
+    }
+    return RotationConfig.nextBoundary(
+        RotationConfig.startsOn(schedule.getStrategyConfig()),
+        RotationConfig.weeks(schedule.getStrategyConfig()),
+        today);
+  }
+
+  /**
+   * Week by week on {@code date}: the period's owner, unless they are away that day, when the next
+   * person in rotation order who isn't away covers it (the owner keeps the rest of the period).
+   * Nobody, when everyone is away.
+   */
+  private List<UUID> weekByWeekPick(
+      ChoreSchedule schedule, LocalDate date, List<UUID> pool, Set<UUID> away) {
+    if (pool.isEmpty()) {
+      return List.of();
+    }
+    UUID owner = weekOwner(schedule, date, pool);
+    if (!away.contains(owner)) {
+      return List.of(owner);
+    }
+    int start = pool.indexOf(owner);
+    for (int step = 1; step < pool.size(); step++) {
+      UUID candidate = pool.get(Math.floorMod(start + step, pool.size()));
+      if (!away.contains(candidate)) {
+        return List.of(candidate);
+      }
+    }
+    return List.of();
+  }
+
+  /**
+   * Who has the Week by week period holding {@code date}: whoever has an earlier day of it (covered
+   * days count for the person they cover for; days given away by hand don't count), so a period
+   * never changes hands part way through. Otherwise the usual rotation rule, counting one turn per
+   * period: the fewest periods (plus offsets and away credit), ties in rotation order.
+   */
+  private UUID weekOwner(ChoreSchedule schedule, LocalDate date, List<UUID> pool) {
+    int weeks = RotationConfig.weeks(schedule.getStrategyConfig());
+    LocalDate anchor = RotationConfig.startsOn(schedule.getStrategyConfig());
+    LocalDate start = RotationConfig.periodStart(anchor, weeks, date);
+    if (schedule.getId() != null) {
+      List<UUID> earlier =
+          jdbc.queryForList(
+              """
+                  SELECT COALESCE(a.away_from_user_id, a.assigned_to_user_id)
+                  FROM chore_assignments a
+                  WHERE a.schedule_id=? AND a.kind_snapshot='CALENDAR'
+                    AND a.planned_for>=? AND a.planned_for<?
+                    AND a.status<>'CANCELLED' AND NOT a.assignees_overridden
+                    AND COALESCE(a.away_from_user_id, a.assigned_to_user_id) IS NOT NULL
+                  ORDER BY a.planned_for DESC LIMIT 1
+                  """,
+              UUID.class,
+              schedule.getId(),
+              start,
+              date);
+      if (!earlier.isEmpty() && pool.contains(earlier.getFirst())) {
+        return earlier.getFirst();
+      }
+    }
+    Map<UUID, Integer> standing = calendarStanding(schedule, start);
+    List<Integer> counts = pool.stream().map(userId -> standing.getOrDefault(userId, 0)).toList();
+    int index = (int) RotationConfig.periodIndex(anchor, weeks, date);
+    return rotate(pool, 1, index, counts, Map.of()).getFirst();
+  }
+
+  /**
+   * Turns had before {@code date}: occurrences for a Take turns chore, periods (of the current
+   * length, history before a switch included) someone did it in for a Week by week one. Covered
+   * days and days given away by hand don't make a period someone's.
+   */
+  private Map<UUID, Integer> turnCounts(ChoreSchedule schedule, LocalDate date) {
+    if (!isWeekByWeek(schedule)) {
+      return calendarCounts(schedule.getId(), date);
+    }
+    Map<UUID, Integer> values = new java.util.HashMap<>();
+    if (schedule.getId() == null) {
+      return values;
+    }
+    LocalDate anchor = RotationConfig.startsOn(schedule.getStrategyConfig());
+    int days = 7 * RotationConfig.weeks(schedule.getStrategyConfig());
+    jdbc.query(
+        """
+            SELECT a.assigned_to_user_id user_id,
+                   COUNT(DISTINCT FLOOR((a.planned_for - ?::date)::numeric / ?)) n
+            FROM chore_assignments a
+            WHERE a.schedule_id=? AND a.kind_snapshot='CALENDAR'
+              AND a.planned_for<? AND a.status<>'CANCELLED'
+              AND a.away_from_user_id IS NULL AND NOT a.assignees_overridden
+              AND a.assigned_to_user_id IS NOT NULL
+            GROUP BY a.assigned_to_user_id
+            """,
+        rs -> {
+          values.put(rs.getObject("user_id", UUID.class), rs.getInt("n"));
+        },
+        anchor,
+        days,
+        schedule.getId(),
+        date);
+    return values;
+  }
+
+  /**
+   * "Everyone": makes the stored people the household's active members again. People still in it
+   * keep their place and offsets; people who joined go at the end, level with the lowest standing
+   * (Week by week: at the next period, which is when they come in); people who left drop out.
+   * Returns whether anything changed (the caller re-plans).
+   */
+  private boolean syncEveryone(ChoreSchedule schedule, LocalDate today) {
+    UUID householdId = schedule.getHousehold().getId();
+    List<UUID> stored = participantIds(schedule);
+    List<UUID> members =
+        jdbc.queryForList(
+            """
+                SELECT user_id FROM household_memberships
+                WHERE household_id=? AND status='ACTIVE'
+                ORDER BY joined_at NULLS FIRST, created_at, user_id
+                """,
+            UUID.class,
+            householdId);
+    List<UUID> staying = stored.stream().filter(members::contains).toList();
+    List<UUID> joiners = members.stream().filter(userId -> !stored.contains(userId)).toList();
+    if (joiners.isEmpty() && staying.size() == stored.size()) {
+      return false;
+    }
+    Map<UUID, Integer> offsets = turnOffsets(schedule.getStrategyConfig());
+    offsets.keySet().retainAll(members);
+    List<UUID> next = new ArrayList<>(staying);
+    next.addAll(joiners);
+    Map<String, Integer> stored0 = new LinkedHashMap<>();
+    if (!joiners.isEmpty()
+        && schedule.getAssignmentStrategy() == AssignmentStrategy.ROUND_ROBIN
+        && schedule.getId() != null) {
+      if (schedule.getKind() == ScheduleKind.CALENDAR) {
+        LocalDate boundary = weekByWeekBoundary(schedule, today);
+        LocalDate at = boundary == null ? today : boundary;
+        Map<UUID, Integer> standing = calendarStanding(schedule, at);
+        Map<UUID, Integer> counts = turnCounts(schedule, at);
+        java.util.OptionalInt floor =
+            staying.stream().mapToInt(userId -> standing.getOrDefault(userId, 0)).min();
+        for (UUID joiner : joiners) {
+          int own = counts.getOrDefault(joiner, 0) + offsets.getOrDefault(joiner, 0);
+          int credit = floor.isEmpty() ? 0 : Math.max(0, floor.getAsInt() - own);
+          if (credit > 0) {
+            offsets.merge(joiner, credit, Integer::sum);
+          }
+        }
+      } else {
+        rebaseTurnOffsets(schedule, next, false)
+            .forEach((userId, offset) -> offsets.put(UUID.fromString(userId), offset));
+      }
+    }
+    offsets.forEach(
+        (userId, offset) -> {
+          if (next.contains(userId) && offset != 0) {
+            stored0.put(userId.toString(), offset);
+          }
+        });
+    Map<String, Object> config =
+        schedule.getStrategyConfig() == null
+            ? new LinkedHashMap<>()
+            : new LinkedHashMap<>(schedule.getStrategyConfig());
+    config.put("participantUserIds", next.stream().map(UUID::toString).toList());
+    if (stored0.isEmpty()) {
+      config.remove(TURN_OFFSETS);
+    } else {
+      config.put(TURN_OFFSETS, stored0);
+    }
+    schedule.setStrategyConfig(config);
+    scheduleRepository.saveAndFlush(schedule);
+    return true;
+  }
+
   /** Calendar turns each participant had before {@code date} (cancelled ones don't count). */
   private Map<UUID, Integer> calendarCounts(UUID scheduleId, LocalDate date) {
     Map<UUID, Integer> values = new java.util.HashMap<>();
@@ -3994,11 +4362,11 @@ public class OccurrenceService {
         continue;
       }
       Map<UUID, Integer> atReturn =
-          plus(calendarCounts(schedule.getId(), period.returnsOn()), offsets, credits);
+          plus(turnCounts(schedule, period.returnsOn()), offsets, credits);
       credits.merge(
           period.userId(), levelCredit(period, periods, participants, atReturn), Integer::sum);
     }
-    return plus(calendarCounts(schedule.getId(), date), offsets, credits);
+    return plus(turnCounts(schedule, date), offsets, credits);
   }
 
   @SafeVarargs

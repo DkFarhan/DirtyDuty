@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react"
 import {
   ArrowDown,
   ArrowUp,
+  CalendarDays,
   Check,
   ChevronRight,
   Scale,
@@ -12,10 +13,14 @@ import {
   UsersRound,
 } from "lucide-react"
 import {
+  MAX_ROTATION_WEEKS,
   allowsGroups,
+  allowsWeekByWeek,
   eachTimeRange,
   ordinalDay,
   specificLabel,
+  weeksExplanation,
+  weeksLabel,
   withField,
   withParticipants,
   type Member,
@@ -35,9 +40,10 @@ function nameFor(member: Member, viewerId: string) {
 const MAX_SEGMENTS = 5
 
 /**
- * "Who does it?": Just me, Take turns (with a people-and-order picker), Balanced, Specific people,
- * or Mix it up. Only combinations the backend accepts are offered: "When it's needed" chores rotate
- * or have one fixed person, and only calendar kinds have more than one person each time.
+ * "Who does it?": Just me, Take turns (with a people-and-order picker), Week by week, Balanced,
+ * Specific people, or Mix it up. Only combinations the backend accepts are offered: "When it's
+ * needed" chores rotate or have one fixed person, only calendar kinds have more than one person
+ * each time, and Week by week is only for chores that repeat on a schedule.
  */
 export function WhoSheet({
   values,
@@ -60,6 +66,8 @@ export function WhoSheet({
 }) {
   const [panel, setPanel] = useState<Panel>("main")
   const [peopleError, setPeopleError] = useState<string | null>(null)
+  /** "Custom" is open for a length other than 1 or 2 weeks, or once it is tapped. */
+  const [customWeeks, setCustomWeeks] = useState(values.rotationWeeks > 2)
   const asNeeded = values.often === "AS_NEEDED"
   const groups = allowsGroups(values.often)
   const active = new Set(members.map((member) => member.userId))
@@ -87,7 +95,7 @@ export function WhoSheet({
       ...people,
       ...members.map((member) => member.userId).filter((userId) => !people.includes(userId)),
     ]
-    const rotation = values.who === "TURNS"
+    const rotation = values.who === "TURNS" || values.who === "WEEKS"
     const balanced = values.who === "BALANCED"
     const toggle = (userId: string) => {
       const selected = people.includes(userId)
@@ -338,32 +346,91 @@ export function WhoSheet({
       </div>
     ) : null
 
+  const peopleLine = (
+    <div className={styles.people}>
+      <span className={styles.avatars}>
+        {people.slice(0, 4).map((userId) => (
+          <Avatar
+            index={members.findIndex((member) => member.userId === userId)}
+            key={userId}
+            name={memberById(userId)?.displayName ?? "?"}
+          />
+        ))}
+      </span>
+      <span className={styles.peopleNames}>
+        {people.length === 0
+          ? "Nobody yet"
+          : people
+              .map((userId) =>
+                userId === viewerId ? "You" : (memberById(userId)?.displayName ?? "Someone"),
+              )
+              .join(", ")}
+      </span>
+      <button className={styles.linkButton} onClick={() => setPanel("people")} type="button">
+        Change
+      </button>
+    </div>
+  )
+
   const peopleSummary = (
     <div className={styles.optionPanel}>
-      <div className={styles.people}>
-        <span className={styles.avatars}>
-          {people.slice(0, 4).map((userId) => (
-            <Avatar
-              index={members.findIndex((member) => member.userId === userId)}
-              key={userId}
-              name={memberById(userId)?.displayName ?? "?"}
-            />
-          ))}
-        </span>
-        <span className={styles.peopleNames}>
-          {people.length === 0
-            ? "Nobody yet"
-            : people
-                .map((userId) =>
-                  userId === viewerId ? "You" : (memberById(userId)?.displayName ?? "Someone"),
-                )
-                .join(", ")}
-        </span>
-        <button className={styles.linkButton} onClick={() => setPanel("people")} type="button">
-          Change
+      {peopleLine}
+      {eachTime}
+    </div>
+  )
+
+  const weeks = values.rotationWeeks
+  const explanation = weeksExplanation(weeks)
+  const setWeeks = (rotationWeeks: number) => set("WEEKS", { rotationWeeks, peopleNeeded: 1 })
+  const weeksPanel = (
+    <div className={styles.eachTime}>
+      <p className={styles.panelLabel} id="who-weeks">
+        Each person has it for
+      </p>
+      <div
+        aria-labelledby="who-weeks"
+        className={styles.segmented}
+        role="group"
+        style={{ ["--segments" as string]: 3 }}
+      >
+        {[1, 2].map((count) => (
+          <button
+            aria-pressed={!customWeeks && weeks === count}
+            className={styles.segment}
+            key={count}
+            onClick={() => {
+              setCustomWeeks(false)
+              setWeeks(count)
+            }}
+            type="button"
+          >
+            {weeksLabel(count)}
+          </button>
+        ))}
+        <button
+          aria-pressed={customWeeks}
+          className={styles.segment}
+          onClick={() => setCustomWeeks(true)}
+          type="button"
+        >
+          Custom
         </button>
       </div>
-      {eachTime}
+      {customWeeks && (
+        <Stepper
+          canDecrease={weeks > 1}
+          canIncrease={weeks < MAX_ROTATION_WEEKS}
+          label="Each person has it for"
+          onDecrease={() => setWeeks(weeks - 1)}
+          onIncrease={() => setWeeks(weeks + 1)}
+          unit={weeks === 1 ? "week" : "weeks"}
+          value={weeks}
+        />
+      )}
+      <div className={styles.explain} data-testid="weeks-explanation">
+        <p className={styles.explainTitle}>{explanation.title}</p>
+        <p className={styles.explainDetail}>{explanation.detail}</p>
+      </div>
     </div>
   )
 
@@ -385,6 +452,16 @@ export function WhoSheet({
           : "Everyone gets a fair turn, in order",
       icon: <UsersRound size={18} />,
     },
+    ...(allowsWeekByWeek(values.often)
+      ? [
+          {
+            value: "WEEKS" as const,
+            title: "Week by week",
+            hint: "One person owns it for a week or two, then the next",
+            icon: <CalendarDays size={18} />,
+          },
+        ]
+      : []),
     {
       value: "BALANCED",
       title: "Balanced",
@@ -485,6 +562,12 @@ export function WhoSheet({
                   option.value === "BALANCED" ||
                   option.value === "RANDOM") &&
                 peopleSummary}
+              {selected && option.value === "WEEKS" && (
+                <div className={styles.optionPanel}>
+                  {peopleLine}
+                  {weeksPanel}
+                </div>
+              )}
             </li>
           )
         })}
