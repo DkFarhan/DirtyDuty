@@ -26,6 +26,7 @@ import {
   type OccurrenceAction,
 } from "@/lib/household/occurrence-actions"
 import { OccurrenceActionSheet } from "../occurrence-action-sheet"
+import { useStartWithBasics } from "../use-start-with-basics"
 import { RequestsCard } from "../requests/requests-card"
 import { useChoreRequests } from "../requests/use-chore-requests"
 import { MyChoresScreenView, type MyChoresTab } from "../redesign/my-chores-screen-view"
@@ -67,6 +68,8 @@ export function MyChoresScreen({ theme = "dark" }: { theme?: HomeVisualTheme } =
     ? householdChoreResource(household.id)
     : "household:none:chores-and-assignments"
   const { revision, invalidate, claim, release } = useDataSync(choreResource)
+  const [hasChores, setHasChores] = useState<boolean | null>(null)
+  const basics = useStartWithBasics("my-chores")
 
   const loadChores = useCallback(async () => {
     if (!household) {
@@ -84,11 +87,14 @@ export function MyChoresScreen({ theme = "dark" }: { theme?: HomeVisualTheme } =
     const hasCurrentData = loadedHouseholdId.current === household.id
     if (!hasCurrentData) setStatus("loading")
     try {
-      const [nextUpcoming, nextCompleted] = await Promise.all([
+      const [nextUpcoming, nextCompleted, choreStatus] = await Promise.all([
         choreApi.myChores(household.id, "UPCOMING"),
         choreApi.myChores(household.id, "COMPLETED"),
+        // Only decides whether "Start with the basics" shows; never blocks the list.
+        choreApi.status(household.id).catch(() => null),
       ])
       if (requestId !== requestSequence.current) return
+      setHasChores(choreStatus ? choreStatus.hasChores : null)
       let reconciledUpcoming = nextUpcoming
       let reconciledCompleted = nextCompleted
       for (const pending of pendingCompletions.current.values()) {
@@ -404,6 +410,8 @@ export function MyChoresScreen({ theme = "dark" }: { theme?: HomeVisualTheme } =
   }, [displayed, targetAssignmentId, visibleStatus])
 
   const viewModel = createMyChoresApplicationViewModel({
+    hasChores,
+    basics: { canManage: basics.canManage, adding: basics.adding, error: basics.error },
     upcoming,
     completed,
     currentUserId: state.currentUser.id,
@@ -442,6 +450,8 @@ export function MyChoresScreen({ theme = "dark" }: { theme?: HomeVisualTheme } =
         }
         onNavigate={onNavigate}
         onRetry={() => void loadChores()}
+        onAddBasics={() => void basics.add()}
+        onMakeOwnChore={basics.makeOwn}
         onSelectTab={setTab}
         tab={tab}
         theme={theme}

@@ -198,6 +198,12 @@ const CHORE_KIND_MESSAGES = new Set([
   "This schedule never produces a date. Check its start date and active months.",
   "Choose either an end date or a number of times, not both.",
   "Schedule end date cannot be before its start date.",
+  "Week by week is only for chores on a schedule. Choose Take turns instead.",
+  "Week by week needs a chore that repeats.",
+  "Week by week is one person at a time.",
+  "Choose between 1 and 8 weeks for each person.",
+  "Everyone only works with Take turns, Week by week, Balanced or Mix it up.",
+  "Choose between 1 and 10 chores to add.",
 ])
 
 function messageFor(

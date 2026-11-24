@@ -169,6 +169,8 @@ describe("ChoreFormScreen · quick create", () => {
         peopleNeeded: 1,
         fixedAssigneeUserId: null,
         participantUserIds: ["user-1", "user-2", "user-3"],
+        everyone: true,
+        rotationWeeks: null,
         kind: "AS_NEEDED",
         intervalCount: null,
         intervalUnit: null,
@@ -323,6 +325,52 @@ describe("ChoreFormScreen · quick create", () => {
       recurrenceRule: "FREQ=MONTHLY;BYDAY=-1FR",
       kind: "CALENDAR",
     })
+  })
+
+  it("chooses Week by week with a custom length and hides it for When it's needed", async () => {
+    await renderForm()
+    fireEvent.change(nameInput(), { target: { value: "Wash dishes" } })
+    fireEvent.click(row("Who"))
+    const sheet = screen.getByRole("dialog", { name: "Who does it?" })
+    const option = within(sheet).getByRole("button", { name: /Week by week/ })
+    expect(option.textContent).toContain("One person owns it for a week or two, then the next")
+    fireEvent.click(option)
+    expect(within(sheet).getByTestId("weeks-explanation").textContent).toBe(
+      "One person for 2 weeks, then the nextGood when someone should own it: dishes, the kitchen, the bathroom. Switches on Mondays.",
+    )
+    expect(within(sheet).getByRole("button", { name: "Change" })).toBeTruthy()
+    fireEvent.click(within(sheet).getByRole("button", { name: "1 week" }))
+    expect(within(sheet).getByTestId("weeks-explanation").textContent).toContain(
+      "One person all week, then the next",
+    )
+    fireEvent.click(within(sheet).getByRole("button", { name: "Custom" }))
+    fireEvent.click(within(sheet).getByRole("button", { name: "More (Each person has it for)" }))
+    fireEvent.click(within(sheet).getByRole("button", { name: "More (Each person has it for)" }))
+    fireEvent.click(screen.getByRole("button", { name: "Done" }))
+    expect(row("Who").textContent).toContain("Week by week · 3 weeks")
+    expect(screen.getByTestId("chore-summary").textContent).toContain(
+      "Week by week: each person has it for 3 weeks, between you, Rubayet and Abubakar.",
+    )
+
+    fireEvent.click(createButton())
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1))
+    expect(sentRequest().schedule).toMatchObject({
+      assignmentStrategy: "ROUND_ROBIN",
+      peopleNeeded: 1,
+      everyone: true,
+      rotationWeeks: 3,
+    })
+
+    fireEvent.click(row("How often"))
+    fireEvent.click(screen.getByRole("button", { name: /When it's needed/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Done" }))
+    expect(row("Who").textContent).toContain("Take turns · everyone")
+    fireEvent.click(row("Who"))
+    expect(
+      within(screen.getByRole("dialog", { name: "Who does it?" })).queryByRole("button", {
+        name: /Week by week/,
+      }),
+    ).toBeNull()
   })
 
   it("opens Who, changes the rotation order, and disables Mix it up for When it's needed", async () => {

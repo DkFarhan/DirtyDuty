@@ -38,6 +38,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -49,6 +50,15 @@ import org.springframework.transaction.annotation.Transactional;
 public class ChoreService {
   static final String BALANCED_NOT_FOR_AS_NEEDED =
       "Balanced isn't available for When needed chores. Choose Take turns instead.";
+  static final String WEEK_BY_WEEK_CALENDAR_ONLY =
+      "Week by week is only for chores on a schedule. Choose Take turns instead.";
+  static final String WEEK_BY_WEEK_REPEATING_ONLY = "Week by week needs a chore that repeats.";
+  static final String WEEK_BY_WEEK_ONE_PERSON = "Week by week is one person at a time.";
+  static final String WEEK_BY_WEEK_LENGTH = "Choose between 1 and 8 weeks for each person.";
+  static final String EVERYONE_NEEDS_ROTATION =
+      "Everyone only works with Take turns, Week by week, Balanced or Mix it up.";
+  static final String BATCH_SIZE = "Choose between 1 and 10 chores to add.";
+  static final int MAX_BATCH = 10;
 
   static final int MAX_CATEGORIES = 40;
   static final int MAX_CATEGORY_NAME_LENGTH = 40;
@@ -212,6 +222,25 @@ public class ChoreService {
     choreRepository.save(chore);
     applySchedule(chore, household, householdId, request.schedule());
     return toResponse(chore);
+  }
+
+  /**
+   * Creates several chores in one go, all or none ("Start with the basics"): any problem with one
+   * of them rolls every one back. Owners and admins only, like a single create.
+   */
+  @Transactional
+  public List<ChoreResponse> createChores(
+      UUID householdId, List<ChoreRequest> requests, Authentication authentication) {
+    lockHousehold(householdId);
+    authorize(householdId, authentication);
+    if (requests == null || requests.isEmpty() || requests.size() > MAX_BATCH) {
+      throw new InvalidHouseholdException(BATCH_SIZE);
+    }
+    List<ChoreResponse> created = new ArrayList<>();
+    for (ChoreRequest request : requests) {
+      created.add(createChore(householdId, request, authentication));
+    }
+    return created;
   }
 
   @Transactional(readOnly = true)
@@ -390,9 +419,33 @@ public class ChoreService {
       throw new InvalidHouseholdException(
           "Choose who does this chore: one fixed person, random, or a rotation.");
     }
+    boolean everyone = Boolean.TRUE.equals(request.everyone());
+    if (everyone
+        && strategy != AssignmentStrategy.ROUND_ROBIN
+        && strategy != AssignmentStrategy.BALANCED
+        && strategy != AssignmentStrategy.RANDOM) {
+      throw new InvalidHouseholdException(EVERYONE_NEEDS_ROTATION);
+    }
     List<UUID> participantIds =
-        request.participantUserIds() == null ? List.of() : request.participantUserIds();
+        everyone
+            ? activeMembersInJoinOrder(householdId)
+            : request.participantUserIds() == null ? List.of() : request.participantUserIds();
     int peopleNeeded = request.peopleNeeded() == null ? 1 : request.peopleNeeded();
+    Integer rotationWeeks = request.rotationWeeks();
+    if (rotationWeeks != null) {
+      if (kind != ScheduleKind.CALENDAR || strategy != AssignmentStrategy.ROUND_ROBIN) {
+        throw new InvalidHouseholdException(WEEK_BY_WEEK_CALENDAR_ONLY);
+      }
+      if (parsedRule != null && parsedRule.isOneTime()) {
+        throw new InvalidHouseholdException(WEEK_BY_WEEK_REPEATING_ONLY);
+      }
+      if (peopleNeeded != 1) {
+        throw new InvalidHouseholdException(WEEK_BY_WEEK_ONE_PERSON);
+      }
+      if (rotationWeeks < 1 || rotationWeeks > RotationConfig.MAX_WEEKS) {
+        throw new InvalidHouseholdException(WEEK_BY_WEEK_LENGTH);
+      }
+    }
     if (kind != ScheduleKind.CALENDAR && peopleNeeded != 1) {
       throw new InvalidHouseholdException("This chore type is done by one person at a time.");
     }
@@ -434,18 +487,44 @@ public class ChoreService {
     occurrenceService.validateScheduleFrequencyChange(
         schedule, previousKind, previousRecurrenceRule, recurrenceRule);
     boolean kindChanged = schedule.getId() != null && previousKind != kind;
+    Integer previousWeeks = RotationConfig.weeks(schedule.getStrategyConfig());
+    boolean weeksChanged =
+        schedule.getId() != null && !Objects.equals(previousWeeks, rotationWeeks);
     boolean assignmentConfigChanged =
         schedule.getId() != null
             && (kindChanged
+                || weeksChanged
                 || schedule.getAssignmentStrategy() != strategy
                 || peopleNeeded(schedule.getStrategyConfig()) != peopleNeeded
                 || !participantIds(schedule.getStrategyConfig()).equals(validatedParticipants));
+    // Week by week periods: a new chore counts them from the Monday of its first week. Switching an
+    // existing chore to or from Week by week, or changing its length or people, re-plans from the
+    // next period boundary, so whoever has it now keeps this period.
+    java.time.LocalDate today =
+        java.time.LocalDate.now(
+            occurrenceService.clock().withZone(ZoneId.of(household.getTimezone())));
+    java.time.LocalDate previousAnchor = RotationConfig.startsOn(schedule.getStrategyConfig());
+    java.time.LocalDate boundary =
+        previousWeeks != null && previousAnchor != null
+            ? RotationConfig.nextBoundary(previousAnchor, previousWeeks, today)
+            : RotationConfig.nextMonday(today);
+    java.time.LocalDate rotationStartsOn = null;
+    if (rotationWeeks != null) {
+      rotationStartsOn =
+          schedule.getId() == null
+              ? RotationConfig.monday(startsOn)
+              : !weeksChanged && previousAnchor != null ? previousAnchor : boundary;
+    }
+    java.time.LocalDate repickFrom =
+        assignmentConfigChanged && (previousWeeks != null || rotationWeeks != null)
+            ? boundary
+            : null;
     // Rotation baselines for the open-copy kinds: a newcomer starts level with the lowest count.
     // A calendar rotation keeps only what away mode stored ("level on return") for people still in
-    // it.
+    // it; Week by week counts periods instead of turns, so a switch or new length starts afresh.
     Map<String, Integer> turnOffsets =
         kind == ScheduleKind.CALENDAR
-            ? keptCalendarOffsets(schedule, validatedParticipants, kindChanged)
+            ? keptCalendarOffsets(schedule, validatedParticipants, kindChanged || weeksChanged)
             : occurrenceService.rebaseTurnOffsets(
                 schedule, validatedParticipants, schedule.getId() == null || kindChanged);
     schedule.setKind(kind);
@@ -465,6 +544,13 @@ public class ChoreService {
     if (turnOffsets != null) {
       config.put(OccurrenceService.TURN_OFFSETS, turnOffsets);
     }
+    if (everyone) {
+      config.put(RotationConfig.EVERYONE, true);
+    }
+    if (rotationWeeks != null) {
+      config.put(RotationConfig.WEEKS, rotationWeeks);
+      config.put(RotationConfig.STARTS_ON, rotationStartsOn.toString());
+    }
     schedule.setStrategyConfig(config);
     schedule.setActive(chore.isActive());
     // A COUNT series keeps its total across rule edits (see anchorCountRemainder); an edit that
@@ -478,7 +564,19 @@ public class ChoreService {
       occurrenceService.anchorCountRemainder(schedule);
     }
     choreScheduleRepository.saveAndFlush(schedule);
-    occurrenceService.synchronizeSchedule(schedule, assignmentConfigChanged, true);
+    occurrenceService.synchronizeSchedule(schedule, assignmentConfigChanged, true, repickFrom);
+  }
+
+  /** Active members, earliest to join first: the rotation order for "everyone". */
+  private List<UUID> activeMembersInJoinOrder(UUID householdId) {
+    return jdbc.queryForList(
+        """
+            SELECT user_id FROM household_memberships
+            WHERE household_id=? AND status='ACTIVE'
+            ORDER BY joined_at NULLS FIRST, created_at, user_id
+            """,
+        UUID.class,
+        householdId);
   }
 
   private static Map<String, Integer> keptCalendarOffsets(
@@ -679,7 +777,9 @@ public class ChoreService {
                         schedule.getKind(),
                         schedule.getIntervalCount(),
                         schedule.getIntervalUnit(),
-                        schedule.getBackstopDays()))
+                        schedule.getBackstopDays(),
+                        RotationConfig.everyone(schedule.getStrategyConfig()),
+                        RotationConfig.weeks(schedule.getStrategyConfig())))
             .orElse(null);
     return new ChoreResponse(
         chore.getId(),

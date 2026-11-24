@@ -2,6 +2,9 @@
 
 import type { CardRequestView } from "@/lib/household/requests"
 import { AwayNote } from "../away-note"
+import { WeekChip } from "../week-chip"
+import { StartWithBasics } from "../start-with-basics"
+import type { WeekChipView } from "@/lib/household/week-by-week"
 import { CancelRequestButton, RequestNote, WaitingChip } from "../requests/request-card-status"
 import type { ReactNode } from "react"
 import type { HomeNavigationDestination, HomeVisualTheme } from "./home-screen-view"
@@ -33,6 +36,8 @@ export interface MyChoreUpcomingViewModel {
   movedFrom?: string | null
   /** "Sam is away, so it skipped to you" (Away mode). */
   awayNote?: string | null
+  /** Week by week: "Your week · until Sun, Dec 7". */
+  weekChip?: WeekChipView | null
   /** Hand-off and swap requests: waiting chip, accepted note, Cancel request (E11). */
   request?: CardRequestView
   /** The viewer may move, skip, undo or reassign this occurrence. */
@@ -66,6 +71,8 @@ export interface MyChoresViewModel {
   /** "When needed" chores the viewer is in the rotation for. */
   householdJobs?: HouseholdJobViewModel[]
   flaggingIds?: string[]
+  /** A household with no chores yet: "Start with the basics" instead of the empty states. */
+  basics?: { canManage: boolean; adding: boolean; error: string | null } | null
 }
 
 export interface MyChoresScreenViewProps {
@@ -85,6 +92,10 @@ export interface MyChoresScreenViewProps {
   requestsSection?: ReactNode
   /** Cancels the viewer's own open request from their card. */
   onCancelRequest?: (requestId: string, choreId: string) => void
+  /** "Add these 4" on the Start with the basics card. */
+  onAddBasics?: () => void
+  /** "I'll make my own": Quick create. */
+  onMakeOwnChore?: () => void
 }
 
 function UpcomingCard({
@@ -151,6 +162,7 @@ function UpcomingCard({
           )}
         </p>
         <AwayNote note={chore.awayNote} />
+        <WeekChip chip={chore.weekChip} />
         {chore.request && (
           <div className={styles.upcomingRequest}>
             <RequestNote kind={chore.request.noteKind} label={chore.request.noteLabel} />
@@ -241,6 +253,7 @@ function AttentionCard({
           )}
         </p>
         <AwayNote note={chore.awayNote} />
+        <WeekChip chip={chore.weekChip} />
         {chore.request && (
           <div className={styles.attentionRequest}>
             <RequestNote kind={chore.request.noteKind} label={chore.request.noteLabel} />
@@ -388,7 +401,18 @@ export function MyChoresScreenView({
   onNavigate,
   requestsSection,
   onCancelRequest,
+  onAddBasics,
+  onMakeOwnChore,
 }: MyChoresScreenViewProps) {
+  const basics = viewModel.basics ? (
+    <StartWithBasics
+      adding={viewModel.basics.adding}
+      canManage={viewModel.basics.canManage}
+      error={viewModel.basics.error}
+      onAdd={onAddBasics}
+      onMakeOwn={onMakeOwnChore}
+    />
+  ) : null
   const jobs = viewModel.householdJobs ?? []
   const upcomingCount =
     viewModel.upcomingChores.length +
@@ -515,7 +539,7 @@ export function MyChoresScreenView({
                       </section>
                     )}
                     {scheduledCount === 0 && jobs.length === 0 ? (
-                      <EmptyState tab="upcoming" />
+                      (basics ?? <EmptyState tab="upcoming" />)
                     ) : scheduledCount === 0 ? null : (
                       <>
                         {viewModel.attentionChore && (
@@ -572,7 +596,7 @@ export function MyChoresScreenView({
 
                 {tab === "completed" &&
                   (completedCount === 0 ? (
-                    <EmptyState tab="completed" />
+                    (basics ?? <EmptyState tab="completed" />)
                   ) : (
                     <section
                       aria-labelledby="recent-wins-title"

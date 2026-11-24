@@ -23,6 +23,9 @@ import java.util.UUID;
  * (Away mode); the card says "{awayFrom} is away, so it skipped to {first assignee}".
  *
  * <p>{@code requests} covers hand-off and swap requests (E11).
+ *
+ * <p>{@code week} is set on a pending occurrence of a Week by week chore: whose week (or weeks) it
+ * falls in and the last day of that period.
  */
 public record AssignmentResponse(
     UUID id,
@@ -52,7 +55,11 @@ public record AssignmentResponse(
     Flag flag,
     Repeat repeat,
     Person awayFrom,
-    Requests requests) {
+    Requests requests,
+    Week week) {
+
+  /** Week by week: {@code owner} has the chore every time until {@code until} (inclusive). */
+  public record Week(Person owner, LocalDate until) {}
 
   /**
    * Hand-off and swap requests (E11) for this viewer. {@code canAsk}: they do it and may ask

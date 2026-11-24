@@ -1,0 +1,154 @@
+/* Uses the screen's own tokens (--accent, --main-text, --secondary-text) so it fits both themes. */
+.card {
+  position: relative;
+  display: grid;
+  gap: 14px;
+  margin: 0 0 24px;
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, var(--secondary-text, var(--body-text)) 26%, transparent);
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.header {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+}
+
+.tile,
+.itemTile {
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+
+.tile {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.title {
+  margin: 2px 0 0;
+  color: var(--main-text);
+  font-family: var(--font-libre-baskerville), "Libre Baskerville", Georgia, serif;
+  font-size: 24px;
+  font-weight: 400;
+  line-height: 1.1;
+}
+
+.intro {
+  margin: 0;
+  color: var(--secondary-text, var(--body-text));
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.list {
+  margin: 0;
+  padding: 4px 12px;
+  border: 1px solid color-mix(in srgb, var(--secondary-text, var(--body-text)) 22%, transparent);
+  border-radius: 16px;
+  list-style: none;
+}
+
+.item {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 50px;
+}
+
+.item + .item {
+  border-top: 1px solid color-mix(in srgb, var(--secondary-text, var(--body-text)) 18%, transparent);
+}
+
+.itemTile {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+}
+
+.itemTitle {
+  overflow: hidden;
+  color: var(--main-text);
+  font-size: 15px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itemOften {
+  color: var(--secondary-text, var(--body-text));
+  font-size: 13px;
+  text-align: right;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.primary,
+.secondary {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-radius: 14px;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.primary {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--screen-bg, #061923);
+}
+
+.secondary {
+  border: 1px solid color-mix(in srgb, var(--secondary-text, var(--body-text)) 40%, transparent);
+  background: transparent;
+  color: var(--main-text);
+}
+
+.primary:disabled,
+.secondary:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.primary:focus-visible,
+.secondary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.error {
+  margin: 0;
+  color: var(--danger, var(--overdue, #ffad99));
+  font-size: 13px;
+}
+
+.footnote {
+  margin: 0;
+  color: var(--secondary-text, var(--body-text));
+  font-size: 12px;
+  text-align: center;
+}

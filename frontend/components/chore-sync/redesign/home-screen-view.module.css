@@ -1273,3 +1273,12 @@
 .upcomingFeedback {
   margin: 4px 0 8px;
 }
+
+/* Start with the basics and "Your weeks" follow the other cards' gutters. */
+.scrollContent .basicsCard {
+  margin: 14px 16px 0;
+}
+
+.scrollContent .myWeeks {
+  margin: 24px 16px 0;
+}

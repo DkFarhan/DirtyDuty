@@ -31,7 +31,7 @@ export function AdminScreen({
   theme?: PreviewTheme
 }) {
   void initialTab
-  const { navigate, editChore } = useChoreSync()
+  const { navigate, editChore, startChoreDraft } = useChoreSync()
   const { activeHousehold: household } = useHouseholds()
   const [chores, setChores] = useState<Chore[]>([])
   const [choreState, setChoreState] = useState<"loading" | "loaded" | "error">("loading")
@@ -416,7 +416,7 @@ export function AdminScreen({
                           const availableAbove = buttonBounds.top
                           const availableBelow = window.innerHeight - buttonBounds.bottom
                           setOpenMenuPlacement(
-                            availableBelow < 148 && availableAbove > availableBelow
+                            availableBelow < 184 && availableAbove > availableBelow
                               ? "above"
                               : "below",
                           )
@@ -441,6 +441,16 @@ export function AdminScreen({
                         type="button"
                       >
                         Edit
+                      </button>
+                      <button
+                        className="w-full px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
+                        onClick={() => {
+                          setOpenMenuId(null)
+                          startChoreDraft({ title: "", copyOf: chore.id, returnTo: "admin" })
+                        }}
+                        type="button"
+                      >
+                        Duplicate chore
                       </button>
                       <button
                         className="w-full px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"

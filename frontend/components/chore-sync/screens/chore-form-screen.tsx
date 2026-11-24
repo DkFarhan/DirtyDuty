@@ -3,34 +3,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import {
   Archive,
-  Bath,
-  BedDouble,
-  CalendarDays,
-  Car,
   ChevronDown,
   ChevronRight,
   ChevronUp,
   CirclePlus,
-  CookingPot,
-  Flower2,
-  Mail,
-  PawPrint,
-  Recycle,
   RefreshCw,
-  Refrigerator,
-  Shirt,
-  ShoppingCart,
   SlidersHorizontal,
-  Snowflake,
-  SprayCan,
   Sparkles,
-  Sprout,
   Tag,
-  Toilet,
-  Trash2,
   UsersRound,
-  Utensils,
-  Wind,
 } from "lucide-react"
 import { ApiError } from "@/lib/auth/api"
 import { useChoreSync } from "@/lib/chore-sync/store"
@@ -46,7 +27,6 @@ import {
   matchSuggestions,
   POPULAR_SUGGESTIONS,
   type ChoreSuggestion,
-  type SuggestionIcon,
 } from "@/lib/household/chore-suggestions"
 import {
   EFFORTS,
@@ -66,6 +46,7 @@ import {
   withField,
   withOften,
   withTitle,
+  copyValues,
   type QuickContext,
   type QuickError,
   type QuickValues,
@@ -79,6 +60,7 @@ import { CategorySheet } from "../chore-form/category-sheet"
 import { Stepper, ToggleRow } from "../chore-form/form-sheet"
 import { HowOftenSheet } from "../chore-form/how-often-sheet"
 import { WhoSheet } from "../chore-form/who-sheet"
+import { SUGGESTION_ICONS } from "../chore-form/suggestion-icons"
 import {
   HouseholdLiveDesignHeader,
   type PreviewTheme,
@@ -87,31 +69,6 @@ import designStyles from "../redesign/household-secondary-design-preview.module.
 import styles from "../chore-form/chore-form.module.css"
 
 type Sheet = "often" | "who" | "category"
-
-const SUGGESTION_ICONS: Record<SuggestionIcon, (size: number) => ReactNode> = {
-  trash: (size) => <Trash2 size={size} />,
-  recycle: (size) => <Recycle size={size} />,
-  dishes: (size) => <Utensils size={size} />,
-  kitchen: (size) => <CookingPot size={size} />,
-  fridge: (size) => <Refrigerator size={size} />,
-  vacuum: (size) => <Wind size={size} />,
-  mop: (size) => <SprayCan size={size} />,
-  dust: (size) => <Sparkles size={size} />,
-  laundry: (size) => <Shirt size={size} />,
-  towels: (size) => <Shirt size={size} />,
-  bed: (size) => <BedDouble size={size} />,
-  bathroom: (size) => <Bath size={size} />,
-  toilet: (size) => <Toilet size={size} />,
-  plants: (size) => <Sprout size={size} />,
-  garden: (size) => <Flower2 size={size} />,
-  shopping: (size) => <ShoppingCart size={size} />,
-  pets: (size) => <PawPrint size={size} />,
-  mail: (size) => <Mail size={size} />,
-  car: (size) => <Car size={size} />,
-  windows: (size) => <SprayCan size={size} />,
-  snow: (size) => <Snowflake size={size} />,
-  calendar: (size) => <CalendarDays size={size} />,
-}
 
 function minutesDown(minutes: number | null) {
   if (minutes === null || minutes <= 5) return null
@@ -214,11 +171,13 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
     const load = async () => {
       try {
         const editing = isEditing && editingChoreId
-        const [nextOptions, loaded, dashboard] = await Promise.all([
+        const copyOf = draft?.copyOf ?? null
+        const [nextOptions, loaded, dashboard, original] = await Promise.all([
           choreApi.options(householdId),
           editing ? choreApi.get(householdId, editingChoreId) : Promise.resolve(null),
           // Only for the edit hero's turn, due and "last done" details; never blocks the form.
           editing ? choreApi.dashboard(householdId).catch(() => null) : Promise.resolve(null),
+          copyOf ? choreApi.get(householdId, copyOf) : Promise.resolve(null),
         ])
         if (cancelled) return
         const loadContext = {
@@ -238,6 +197,12 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
           )
           setChore(loaded)
           setOccurrence(dashboard ? openOccurrence(dashboard, loaded.id) : null)
+        } else if (original) {
+          // Duplicate: the same setup as a new chore; nothing is saved until Create.
+          const result = copyValues(original, loadContext)
+          nextValues = result.values
+          setRemovedMembers(result.removedMembers)
+          setWhoNote(null)
         } else {
           nextValues = initialQuickValues(loadContext)
           if (draft) {

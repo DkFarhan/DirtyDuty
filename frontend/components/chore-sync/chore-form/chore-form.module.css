@@ -1243,3 +1243,26 @@
   border-color: transparent !important;
   background-color: transparent !important;
 }
+
+/* Week by week: what it does, in words (no controls). */
+.explain {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface-strong);
+}
+
+.explainTitle {
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.explainDetail {
+  margin: 0;
+  color: var(--secondary-text);
+  font-size: 12px;
+  line-height: 1.4;
+}

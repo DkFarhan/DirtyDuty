@@ -8,7 +8,11 @@ import java.time.LocalTime;
 import java.util.List;
 import java.util.UUID;
 
-/** {@code recurrenceRule} is null for AFTER_COMPLETION and AS_NEEDED schedules. */
+/**
+ * {@code recurrenceRule} is null for AFTER_COMPLETION and AS_NEEDED schedules. {@code everyone}:
+ * the people are every active member, including people who join later. {@code rotationWeeks}: Week
+ * by week, each person has it for this many weeks (null otherwise).
+ */
 public record ChoreScheduleResponse(
     String recurrenceRule,
     String timezone,
@@ -23,4 +27,6 @@ public record ChoreScheduleResponse(
     ScheduleKind kind,
     Integer intervalCount,
     IntervalUnit intervalUnit,
-    Integer backstopDays) {}
+    Integer backstopDays,
+    boolean everyone,
+    Integer rotationWeeks) {}

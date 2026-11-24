@@ -33,9 +33,13 @@ export type OftenChoice =
 
 /**
  * The "Who" sheet's options. SOMEONE is "Specific people": one person, or several who do it
- * together every time.
+ * together every time. WEEKS is "Week by week": one person has it for a week or more, then the next.
  */
-export type WhoChoice = "ME" | "TURNS" | "BALANCED" | "SOMEONE" | "RANDOM"
+export type WhoChoice = "ME" | "TURNS" | "WEEKS" | "BALANCED" | "SOMEONE" | "RANDOM"
+
+/** Week by week lengths: the "Custom" stepper goes from 1 to this many weeks. */
+export const MAX_ROTATION_WEEKS = 8
+export const DEFAULT_ROTATION_WEEKS = 2
 
 export type EndMode = "NEVER" | "DATE" | "COUNT"
 
@@ -75,8 +79,15 @@ export type QuickValues = {
   keptRule: string | null
   keptEndsOn: string | null
   who: WhoChoice
-  /** Rotation order for TURNS; the pool for BALANCED and RANDOM. */
+  /** Rotation order for TURNS and WEEKS; the pool for BALANCED and RANDOM. */
   participants: string[]
+  /**
+   * The pool is "everyone": every member now and anyone who joins later. Choosing people in
+   * "Change" makes it a fixed list.
+   */
+  everyone: boolean
+  /** Week by week: how many weeks each person has it. */
+  rotationWeeks: number
   /** The ticked people for SOMEONE ("Specific people"); they all do it together. */
   specificPeople: string[]
   /** People per occurrence for TURNS, BALANCED and RANDOM; only calendar kinds use more than one. */
@@ -208,6 +219,8 @@ export function initialQuickValues(context: QuickContext): QuickValues {
     keptEndsOn: null,
     who: shared ? "TURNS" : "ME",
     participants: everyone(context),
+    everyone: true,
+    rotationWeeks: DEFAULT_ROTATION_WEEKS,
     specificPeople: [],
     peopleNeeded: 1,
     priority: "NORMAL",
@@ -312,7 +325,14 @@ export function valuesFromChore(chore: Chore, context: QuickContext): LoadedQuic
       shortfall = { needed: savedNeeded, left: people.length }
     }
   } else {
-    who = strategy === "RANDOM" ? "RANDOM" : strategy === "BALANCED" ? "BALANCED" : "TURNS"
+    who =
+      strategy === "RANDOM"
+        ? "RANDOM"
+        : strategy === "BALANCED"
+          ? "BALANCED"
+          : schedule?.rotationWeeks
+            ? "WEEKS"
+            : "TURNS"
     peopleNeeded = savedNeeded
     if (savedNeeded > 1 && people.length < savedNeeded) {
       shortfall = { needed: savedNeeded, left: people.length }
@@ -343,6 +363,9 @@ export function valuesFromChore(chore: Chore, context: QuickContext): LoadedQuic
       keptEndsOn,
       who,
       participants: usesPool(who) ? people : base.participants,
+      // A saved chore is "everyone" only when it was saved that way; an old list stays a list.
+      everyone: usesPool(who) ? (schedule?.everyone ?? false) : base.everyone,
+      rotationWeeks: schedule?.rotationWeeks ?? DEFAULT_ROTATION_WEEKS,
       specificPeople: who === "SOMEONE" ? people : [],
       peopleNeeded,
       priority: chore.defaultPriority,
@@ -350,6 +373,26 @@ export function valuesFromChore(chore: Chore, context: QuickContext): LoadedQuic
       estimatedMinutes: chore.estimatedMinutes,
       requiresVerification: chore.requiresVerification,
       touched: ["often", "who", "category", "priority", "difficulty", "minutes"],
+    },
+  }
+}
+
+/**
+ * Duplicate chore: a saved chore's setup as a new chore titled "<Title> (copy)". A start date that
+ * has passed moves to the first date a new chore can start.
+ */
+export function copyValues(chore: Chore, context: QuickContext): LoadedQuickValues {
+  const loaded = valuesFromChore(chore, context)
+  const values = loaded.values
+  const firstStart = firstStartsOn(context, values.dueTime)
+  const suffix = " (copy)"
+  return {
+    ...loaded,
+    values: {
+      ...values,
+      title: `${values.title.slice(0, MAX_TITLE_LENGTH - suffix.length)}${suffix}`,
+      startsOn:
+        values.often !== "AS_NEEDED" && values.startsOn < firstStart ? firstStart : values.startsOn,
     },
   }
 }
@@ -363,9 +406,17 @@ export function allowsGroups(often: OftenChoice) {
   return !isOpenCopy(often)
 }
 
-/** Take turns, Balanced and Mix it up pick from a pool of people ("Change" for who's included). */
+/**
+ * Take turns, Week by week, Balanced and Mix it up pick from a pool of people ("Change" for who's
+ * included).
+ */
 export function usesPool(who: WhoChoice) {
-  return who === "TURNS" || who === "BALANCED" || who === "RANDOM"
+  return who === "TURNS" || who === "WEEKS" || who === "BALANCED" || who === "RANDOM"
+}
+
+/** Week by week is for chores that repeat on a schedule: not one-time, After it's done or When needed. */
+export function allowsWeekByWeek(often: OftenChoice) {
+  return often !== "ONCE" && !isOpenCopy(often)
 }
 
 /**
@@ -378,6 +429,9 @@ function compatibleWho(values: QuickValues): QuickValues {
   if (next.often === "AS_NEEDED" && (next.who === "RANDOM" || next.who === "BALANCED")) {
     next = { ...next, who: "TURNS" }
   }
+  // Week by week falls back to Take turns, and is always one person at a time.
+  if (next.who === "WEEKS" && !allowsWeekByWeek(next.often)) next = { ...next, who: "TURNS" }
+  if (next.who === "WEEKS" && next.peopleNeeded !== 1) next = { ...next, peopleNeeded: 1 }
   if (!allowsGroups(next.often)) {
     if (next.peopleNeeded !== 1) next = { ...next, peopleNeeded: 1 }
     if (next.specificPeople.length > 1) {
@@ -389,7 +443,7 @@ function compatibleWho(values: QuickValues): QuickValues {
 
 /** How many people a rotation or random pick can be "each time": 1 to everyone but one. */
 export function eachTimeRange(values: QuickValues, members: Member[]): number {
-  if (!allowsGroups(values.often)) return 1
+  if (!allowsGroups(values.often) || values.who === "WEEKS") return 1
   const count = activePeople(values, members).length
   // A saved chore may already use everyone each time; keep showing that value.
   return Math.max(1, count - 1, Math.min(values.peopleNeeded, count))
@@ -405,13 +459,15 @@ export function withParticipants(
   const count = participants.filter((userId) => active.has(userId)).length
   const peopleNeeded =
     values.peopleNeeded > 1 ? Math.max(1, Math.min(values.peopleNeeded, count - 1)) : 1
-  return withField(values, "who", { participants, peopleNeeded })
+  // Choosing people makes a fixed list: someone who joins later isn't added.
+  return withField(values, "who", { participants, peopleNeeded, everyone: false })
 }
 
 /** Number of people who do it each time, as the request will send it. */
 export function peopleEachTime(values: QuickValues, members: Member[]): number {
   if (values.who === "ME") return 1
   if (values.who === "SOMEONE") return Math.max(1, activeSpecific(values, members).length)
+  if (values.who === "WEEKS") return 1
   return allowsGroups(values.often) ? Math.max(1, values.peopleNeeded) : 1
 }
 
@@ -503,6 +559,7 @@ export function applySuggestion<T extends { id: string; name: string }>(
       ...next,
       who: suggestion.who === "ME" || !shared ? "ME" : suggestion.who,
       participants: everyone(context),
+      everyone: true,
       specificPeople: [],
       peopleNeeded: 1,
     }
@@ -620,6 +677,8 @@ function assignmentFor(
       peopleNeeded: number
       fixedAssigneeUserId: string | null
       participantUserIds: string[]
+      everyone: boolean | null
+      rotationWeeks: number | null
     }
   | QuickError {
   const active = activeIds(context)
@@ -631,6 +690,8 @@ function assignmentFor(
         peopleNeeded: 1,
         fixedAssigneeUserId: context.viewerId,
         participantUserIds: [],
+        everyone: null,
+        rotationWeeks: null,
       }
     case "SOMEONE": {
       const chosen = values.specificPeople.filter((userId) => active.has(userId))
@@ -645,18 +706,35 @@ function assignmentFor(
             peopleNeeded: 1,
             fixedAssigneeUserId: chosen[0],
             participantUserIds: [],
+            everyone: null,
+            rotationWeeks: null,
           }
         : {
             assignmentStrategy: "FIXED",
             peopleNeeded: chosen.length,
             fixedAssigneeUserId: null,
             participantUserIds: chosen,
+            everyone: null,
+            rotationWeeks: null,
           }
     }
     case "TURNS":
+    case "WEEKS":
     case "BALANCED":
     case "RANDOM": {
-      const needed = openCopy ? 1 : Math.max(1, values.peopleNeeded)
+      const weeks = values.who === "WEEKS"
+      if (
+        weeks &&
+        (!Number.isInteger(values.rotationWeeks) ||
+          values.rotationWeeks < 1 ||
+          values.rotationWeeks > MAX_ROTATION_WEEKS)
+      ) {
+        return {
+          field: "who",
+          message: `Choose between 1 and ${MAX_ROTATION_WEEKS} weeks for each person.`,
+        }
+      }
+      const needed = openCopy || weeks ? 1 : Math.max(1, values.peopleNeeded)
       if (people.length < needed) {
         return {
           field: "who",
@@ -666,7 +744,7 @@ function assignmentFor(
       }
       return {
         assignmentStrategy:
-          values.who === "TURNS"
+          values.who === "TURNS" || weeks
             ? "ROUND_ROBIN"
             : values.who === "BALANCED"
               ? "BALANCED"
@@ -674,6 +752,8 @@ function assignmentFor(
         peopleNeeded: needed,
         fixedAssigneeUserId: null,
         participantUserIds: people,
+        everyone: values.everyone ? true : null,
+        rotationWeeks: weeks ? values.rotationWeeks : null,
       }
     }
   }
@@ -903,11 +983,28 @@ export function specificLabel(values: QuickValues, members: Member[], viewerId: 
 }
 
 /** The value shown on the "Who" row. */
+/** "1 week", "3 weeks". */
+export function weeksLabel(weeks: number) {
+  return weeks === 1 ? "1 week" : `${weeks} weeks`
+}
+
+/** The box under Week by week: what it does, in plain words. */
+export function weeksExplanation(weeks: number): { title: string; detail: string } {
+  return {
+    title:
+      weeks === 1
+        ? "One person all week, then the next"
+        : `One person for ${weeks} weeks, then the next`,
+    detail:
+      "Good when someone should own it: dishes, the kitchen, the bathroom. Switches on Mondays.",
+  }
+}
+
 export function whoLabel(values: QuickValues, members: Member[], viewerId: string): string {
   const people = activePeople(values, members)
   const count = people.length
-  const everyoneSelected = count > 1 && count === members.length
-  const group = everyoneSelected ? "everyone" : count === 1 ? "1 person" : `${count} people`
+  // "everyone" means the mode (people who join later too), not a list that happens to be full.
+  const group = values.everyone ? "everyone" : count === 1 ? "1 person" : `${count} people`
   const each = peopleEachTime(values, members)
   const pool = each > 1 ? `${each} at a time` : group
   switch (values.who) {
@@ -917,6 +1014,10 @@ export function whoLabel(values: QuickValues, members: Member[], viewerId: strin
       return specificLabel(values, members, viewerId)
     case "TURNS":
       return count === 0 ? "Take turns · nobody yet" : `Take turns · ${pool}`
+    case "WEEKS":
+      return count === 0
+        ? "Week by week · nobody yet"
+        : `Week by week · ${weeksLabel(values.rotationWeeks)}`
     case "BALANCED":
       return count === 0 ? "Balanced · nobody yet" : `Balanced · ${pool}`
     case "RANDOM":
@@ -1056,6 +1157,21 @@ export function summaryParts(
               ? [strong(eachTime), plain(", taking turns between "), strong(joinNames(names))]
               : [plain("Turns between "), strong(joinNames(names))]
       if (names.length > 1) who.push(plain("."))
+      break
+    case "WEEKS":
+      who =
+        names.length === 0
+          ? [plain("Choose who takes turns.")]
+          : names.length === 1
+            ? [strong(capitalize(names[0])), plain(names[0] === "you" ? " do it." : " does it.")]
+            : [
+                strong("Week by week"),
+                plain(": each person has it for "),
+                strong(weeksLabel(values.rotationWeeks)),
+                plain(", between "),
+                strong(joinNames(names)),
+                plain("."),
+              ]
       break
     case "BALANCED":
       who =

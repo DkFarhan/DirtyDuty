@@ -1,12 +1,14 @@
 package com.dirtyduty.app.controller;
 
 import com.dirtyduty.app.dto.chore.AssignmentResponse;
+import com.dirtyduty.app.dto.chore.ChoreBatchRequest;
 import com.dirtyduty.app.dto.chore.ChoreCategoryOrderRequest;
 import com.dirtyduty.app.dto.chore.ChoreCategoryRequest;
 import com.dirtyduty.app.dto.chore.ChoreCategoryResponse;
 import com.dirtyduty.app.dto.chore.ChoreManagementOptionsResponse;
 import com.dirtyduty.app.dto.chore.ChoreRequest;
 import com.dirtyduty.app.dto.chore.ChoreResponse;
+import com.dirtyduty.app.dto.chore.ChoreStatusResponse;
 import com.dirtyduty.app.dto.chore.DashboardResponse;
 import com.dirtyduty.app.dto.chore.HouseholdMemberStatsResponse;
 import com.dirtyduty.app.dto.chore.MoveAssignmentRequest;
@@ -176,6 +178,23 @@ public class ChoreController {
       Authentication authentication) {
     return ResponseEntity.status(HttpStatus.CREATED)
         .body(choreService.createChore(householdId, request, authentication));
+  }
+
+  /** Whether the household has any chore; any member. */
+  @GetMapping("/chore-status")
+  public ChoreStatusResponse choreStatus(
+      @PathVariable UUID householdId, Authentication authentication) {
+    return occurrenceService.choreStatus(householdId, authentication);
+  }
+
+  /** Creates every chore or none of them; owners and admins only. */
+  @PostMapping("/chores/batch")
+  public ResponseEntity<List<ChoreResponse>> createChores(
+      @PathVariable UUID householdId,
+      @Valid @RequestBody ChoreBatchRequest request,
+      Authentication authentication) {
+    return ResponseEntity.status(HttpStatus.CREATED)
+        .body(choreService.createChores(householdId, request.chores(), authentication));
   }
 
   @GetMapping("/chores/{choreId}")

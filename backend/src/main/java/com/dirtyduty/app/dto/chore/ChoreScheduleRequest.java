@@ -17,6 +17,10 @@ import java.util.UUID;
  * AFTER_COMPLETION uses {@code intervalCount} and {@code intervalUnit}, with {@code startsOn} as
  * the first due date. AS_NEEDED uses {@code backstopEnabled} (default on) and {@code backstopDays}
  * (default 2). Range checks live in ChoreService so the messages are specific.
+ *
+ * <p>{@code everyone} (Take turns, Week by week, Balanced or Mix it up) makes the people every
+ * active member, now and later; {@code participantUserIds} is then ignored. {@code rotationWeeks}
+ * (1 to 8) makes a calendar Take turns chore "Week by week".
  */
 public record ChoreScheduleRequest(
     String recurrenceRule,
@@ -32,7 +36,44 @@ public record ChoreScheduleRequest(
     Integer intervalCount,
     IntervalUnit intervalUnit,
     Boolean backstopEnabled,
-    Integer backstopDays) {
+    Integer backstopDays,
+    Boolean everyone,
+    Integer rotationWeeks) {
+
+  /** A schedule as clients sent it before "everyone" and Week by week existed. */
+  public ChoreScheduleRequest(
+      String recurrenceRule,
+      String timezone,
+      LocalDate startsOn,
+      LocalDate endsOn,
+      LocalTime dueTime,
+      AssignmentStrategy assignmentStrategy,
+      UUID fixedAssigneeUserId,
+      List<UUID> participantUserIds,
+      Integer peopleNeeded,
+      ScheduleKind kind,
+      Integer intervalCount,
+      IntervalUnit intervalUnit,
+      Boolean backstopEnabled,
+      Integer backstopDays) {
+    this(
+        recurrenceRule,
+        timezone,
+        startsOn,
+        endsOn,
+        dueTime,
+        assignmentStrategy,
+        fixedAssigneeUserId,
+        participantUserIds,
+        peopleNeeded,
+        kind,
+        intervalCount,
+        intervalUnit,
+        backstopEnabled,
+        backstopDays,
+        null,
+        null);
+  }
 
   /** A calendar schedule, as clients sent it before chore kinds existed. */
   public ChoreScheduleRequest(
@@ -55,6 +96,8 @@ public record ChoreScheduleRequest(
         fixedAssigneeUserId,
         participantUserIds,
         peopleNeeded,
+        null,
+        null,
         null,
         null,
         null,

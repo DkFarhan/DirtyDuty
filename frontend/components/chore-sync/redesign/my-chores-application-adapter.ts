@@ -12,6 +12,8 @@ import {
 } from "@/lib/household/household-jobs"
 import { hasOccurrenceActions, movedFromLabel } from "@/lib/household/occurrence-actions"
 import { awayNote } from "@/lib/household/away"
+import { weekChip } from "@/lib/household/week-by-week"
+import { showBasics } from "@/lib/household/basics"
 import { assignmentAssigneeNames, assignmentDate } from "../chore-card"
 import type {
   MyChoreCompletedViewModel,
@@ -31,6 +33,10 @@ export interface MyChoresApplicationViewModelInput {
   flaggingIds?: ReadonlySet<string>
   /** The result of the last card action, shown under that card. */
   cardFeedback?: CardFeedback | null
+  /** Whether the household has any chore; false shows Start with the basics. */
+  hasChores?: boolean | null
+  /** Start with the basics: whether the viewer may add chores, and the add request's state. */
+  basics?: { canManage: boolean; adding: boolean; error: string | null }
   status: MyChoresViewStatus
   errorMessage: string | null
   refreshError: string | null
@@ -90,6 +96,7 @@ function mapUpcoming(
     status: assignment.status,
     movedFrom: movedFromLabel(assignment),
     awayNote: awayNote(assignment, input.currentUserId),
+    weekChip: weekChip(assignment, input.currentUserId),
     request: cardRequestView(assignment, input.currentUserId),
     hasActions: hasOccurrenceActions(assignment),
     canComplete:
@@ -170,5 +177,8 @@ export function createMyChoresApplicationViewModel(
       input.completed.length === 1 ? "thing" : "things"
     }, taken care of.`,
     completingIds,
+    basics: showBasics(input.hasChores)
+      ? (input.basics ?? { canManage: false, adding: false, error: null })
+      : null,
   }
 }
