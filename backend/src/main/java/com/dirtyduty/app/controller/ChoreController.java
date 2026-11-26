@@ -1,6 +1,7 @@
 package com.dirtyduty.app.controller;
 
 import com.dirtyduty.app.dto.chore.AssignmentResponse;
+import com.dirtyduty.app.dto.chore.CalendarResponse;
 import com.dirtyduty.app.dto.chore.ChoreBatchRequest;
 import com.dirtyduty.app.dto.chore.ChoreCategoryOrderRequest;
 import com.dirtyduty.app.dto.chore.ChoreCategoryRequest;
@@ -14,11 +15,14 @@ import com.dirtyduty.app.dto.chore.HouseholdMemberStatsResponse;
 import com.dirtyduty.app.dto.chore.MoveAssignmentRequest;
 import com.dirtyduty.app.dto.chore.ReassignAssignmentRequest;
 import com.dirtyduty.app.dto.chore.StepTickRequest;
+import com.dirtyduty.app.service.CalendarService;
 import com.dirtyduty.app.service.ChoreService;
 import com.dirtyduty.app.service.OccurrenceService;
 import jakarta.validation.Valid;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -39,10 +43,34 @@ public class ChoreController {
 
   private final ChoreService choreService;
   private final OccurrenceService occurrenceService;
+  private final CalendarService calendarService;
 
-  public ChoreController(ChoreService choreService, OccurrenceService occurrenceService) {
+  public ChoreController(
+      ChoreService choreService,
+      OccurrenceService occurrenceService,
+      CalendarService calendarService) {
     this.choreService = choreService;
     this.occurrenceService = occurrenceService;
+    this.calendarService = calendarService;
+  }
+
+  /** The household calendar for {@code from}..{@code to} (inclusive; at most 45 days). */
+  @GetMapping("/calendar")
+  public CalendarResponse calendar(
+      @PathVariable UUID householdId,
+      @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+      @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+      Authentication authentication) {
+    return calendarService.calendar(householdId, from, to, authentication);
+  }
+
+  /** One occurrence as the viewer sees it, with the actions they may take (the calendar). */
+  @GetMapping("/assignments/{assignmentId}")
+  public AssignmentResponse assignment(
+      @PathVariable UUID householdId,
+      @PathVariable UUID assignmentId,
+      Authentication authentication) {
+    return occurrenceService.occurrence(householdId, assignmentId, authentication);
   }
 
   @PostMapping("/assignments/{assignmentId}/complete")

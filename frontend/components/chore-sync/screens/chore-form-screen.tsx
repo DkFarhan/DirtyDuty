@@ -217,12 +217,15 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
         } else {
           nextValues = initialQuickValues(loadContext)
           if (draft) {
-            // Started from the Board: its title, and for an event a one-time date and time.
-            nextValues = withTitle(nextValues, draft.title, nextOptions.categories)
+            // Started from the Board (its title, and for an event a one-time date and time) or
+            // a calendar day's "+" (Just once on that day, at the usual time).
+            if (draft.title) {
+              nextValues = withTitle(nextValues, draft.title, nextOptions.categories)
+            }
             if (draft.once) {
               nextValues = withOften(nextValues, "ONCE", {
                 startsOn: draft.once.date,
-                dueTime: draft.once.time,
+                dueTime: draft.once.time ?? nextValues.dueTime,
               })
             }
           }

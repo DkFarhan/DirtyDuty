@@ -3015,27 +3015,35 @@ public class OccurrenceService {
   /** Dates the schedule produces in [from, untilExclusive), honouring COUNT and its re-anchor. */
   private List<LocalDate> scheduleDates(
       ChoreSchedule schedule, LocalDate from, LocalDate untilExclusive) {
-    RecurrenceRule rule = RecurrenceRule.parse(schedule.getRecurrenceRule());
-    if (rule.count().isPresent()
-        && schedule.getCountRebasedOn() != null
-        && schedule.getCountProducedBefore() != null) {
-      int remaining = Math.max(0, rule.count().get() - schedule.getCountProducedBefore());
+    return scheduleDates(
+        RecurrenceRule.parse(schedule.getRecurrenceRule()),
+        schedule.getStartsOn(),
+        schedule.getCountRebasedOn(),
+        schedule.getCountProducedBefore(),
+        from,
+        untilExclusive);
+  }
+
+  /** As above, from the schedule's rule fields (also used by the calendar's projections). */
+  static List<LocalDate> scheduleDates(
+      RecurrenceRule rule,
+      LocalDate startsOn,
+      LocalDate countRebasedOn,
+      Integer countProducedBefore,
+      LocalDate from,
+      LocalDate untilExclusive) {
+    if (rule.count().isPresent() && countRebasedOn != null && countProducedBefore != null) {
+      int remaining = Math.max(0, rule.count().get() - countProducedBefore);
       if (remaining == 0) {
         return List.of();
       }
-      LocalDate anchor =
-          schedule.getCountRebasedOn().isAfter(schedule.getStartsOn())
-              ? schedule.getCountRebasedOn()
-              : schedule.getStartsOn();
-      return rule
-          .withoutCount()
-          .datesBetween(schedule.getStartsOn(), anchor, untilExclusive)
-          .stream()
+      LocalDate anchor = countRebasedOn.isAfter(startsOn) ? countRebasedOn : startsOn;
+      return rule.withoutCount().datesBetween(startsOn, anchor, untilExclusive).stream()
           .limit(remaining)
           .filter(day -> !day.isBefore(from))
           .toList();
     }
-    return rule.datesBetween(schedule.getStartsOn(), from, untilExclusive);
+    return rule.datesBetween(startsOn, from, untilExclusive);
   }
 
   /** Whether an active schedule's rule produces {@code date} (within its end date). */

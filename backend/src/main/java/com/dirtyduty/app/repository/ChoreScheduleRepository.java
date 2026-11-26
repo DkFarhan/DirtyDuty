@@ -26,4 +26,10 @@ public interface ChoreScheduleRepository extends JpaRepository<ChoreSchedule, UU
       @Param("choreId") UUID choreId, @Param("householdId") UUID householdId);
 
   List<ChoreSchedule> findByHousehold_IdAndActiveTrue(UUID householdId);
+
+  /** Active schedules with their chore and category loaded (the calendar's projections). */
+  @Query(
+      "select s from ChoreSchedule s join fetch s.chore c left join fetch c.category "
+          + "where s.household.id = :householdId and s.active = true")
+  List<ChoreSchedule> findActiveWithChores(@Param("householdId") UUID householdId);
 }

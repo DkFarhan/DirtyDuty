@@ -9,6 +9,7 @@ import { StartWithBasics } from "../start-with-basics"
 import type { WeekChipView } from "@/lib/household/week-by-week"
 import { CancelRequestButton, RequestNote, WaitingChip } from "../requests/request-card-status"
 import type { ReactNode } from "react"
+import { CalendarDays } from "lucide-react"
 import type { HomeNavigationDestination, HomeVisualTheme } from "./home-screen-view"
 import { BottomNav } from "../bottom-nav"
 import type { HouseholdJobViewModel } from "@/lib/household/household-jobs"
@@ -104,6 +105,8 @@ export interface MyChoresScreenViewProps {
   onAddBasics?: () => void
   /** "I'll make my own": Quick create. */
   onMakeOwnChore?: () => void
+  /** The household calendar (the button at the top right of the header). */
+  onOpenCalendar?: () => void
 }
 
 function UpcomingCard({
@@ -432,6 +435,7 @@ export function MyChoresScreenView({
   onCancelRequest,
   onAddBasics,
   onMakeOwnChore,
+  onOpenCalendar,
 }: MyChoresScreenViewProps) {
   const basics = viewModel.basics ? (
     <StartWithBasics
@@ -470,6 +474,16 @@ export function MyChoresScreenView({
         <span aria-hidden="true" className={styles.headerFade} />
         <div className={styles.content}>
           <header className={styles.header}>
+            {onOpenCalendar && (
+              <button
+                aria-label="Open the household calendar"
+                className={styles.calendarButton}
+                onClick={onOpenCalendar}
+                type="button"
+              >
+                <CalendarDays aria-hidden="true" size={21} strokeWidth={1.8} />
+              </button>
+            )}
             <p className={styles.eyebrow}>YOUR ROUTINE&nbsp; / &nbsp;THE COMMON ROOM</p>
             <h1>My chores.</h1>
             <p className={styles.subtitle}>A little more room to breathe.</p>

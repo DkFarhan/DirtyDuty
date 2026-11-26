@@ -8,6 +8,7 @@ const authenticatedScreens = new Set<Screen>([
   "join-household",
   "dashboard",
   "my-chores",
+  "calendar",
   "board",
   "board-post",
   "board-post-form",

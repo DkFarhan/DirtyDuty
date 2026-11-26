@@ -2079,10 +2079,14 @@ class RecurringChoreAssignmentAnnouncementIntegrationTest {
     householdId = createHousehold(previousUser);
     addMember(nextUser);
     UUID choreId = createChore(previousUser, "Reassigned chore");
+    // Independent of the time of day: AGGRESSIVE always plans a due-soon reminder, and the first
+    // occurrence is at least 36 hours away (a "now + 4 hours" time wrapped past midnight late in
+    // the UTC day, leaving the occurrence too close for a STANDARD due-soon reminder).
+    jdbc.update("UPDATE chores SET reminder_mode='AGGRESSIVE' WHERE id=?", choreId);
     UUID scheduleId = createSchedule(choreId, "FREQ=DAILY", "FIXED", List.of(previousUser));
     ChoreSchedule schedule = loadSchedule(choreId);
-    schedule.setStartsOn(LocalDate.now(ZoneOffset.UTC).plusDays(1));
-    schedule.setDueTime(LocalTime.now(ZoneOffset.UTC).plusHours(4));
+    schedule.setStartsOn(LocalDate.now(ZoneOffset.UTC).plusDays(2));
+    schedule.setDueTime(LocalTime.NOON);
     scheduleRepository.saveAndFlush(schedule);
     synchronizeSchedule(schedule.getId());
     UUID assignmentId =

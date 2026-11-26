@@ -476,6 +476,7 @@ export function MyChoresScreen({ theme = "dark" }: { theme?: HomeVisualTheme } =
         onRetry={() => void loadChores()}
         onAddBasics={() => void basics.add()}
         onMakeOwnChore={basics.makeOwn}
+        onOpenCalendar={() => navigate("calendar")}
         onSelectTab={setTab}
         tab={tab}
         theme={theme}

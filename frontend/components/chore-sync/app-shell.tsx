@@ -40,6 +40,7 @@ import { BoardPostScreen } from "./screens/board-post-screen"
 import { BoardPostFormScreen } from "./screens/board-post-form-screen"
 import { BoardPastScreen } from "./screens/board-past-screen"
 import { AwayModeScreen } from "./screens/away-mode-screen"
+import { CalendarScreen } from "./screens/calendar-screen"
 
 const authenticationScreens = new Set<Screen>([
   "login",
@@ -249,6 +250,8 @@ function ScreenRouter() {
       return <DashboardScreen theme={resolvedTheme} />
     case "my-chores":
       return <MyChoresScreen theme={resolvedTheme} />
+    case "calendar":
+      return <CalendarScreen theme={resolvedTheme} />
     case "board":
       return <BoardScreen theme={resolvedTheme} />
     case "board-post":

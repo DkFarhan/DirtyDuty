@@ -255,7 +255,37 @@
 }
 
 .header {
+  position: relative;
   padding: var(--tab-header-top) 25px 0;
+}
+
+/* The household calendar (6c): 44px, top right, level with the eyebrow. */
+.calendarButton {
+  position: absolute;
+  top: var(--tab-header-top);
+  right: 25px;
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--selected-tab-border);
+  border-radius: 14px;
+  background: var(--selected-tab);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.calendarButton:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* The eyebrow and title stay clear of the button. */
+.header > .eyebrow,
+.header > h1,
+.header > .subtitle {
+  padding-right: 52px;
 }
 
 .eyebrow,
