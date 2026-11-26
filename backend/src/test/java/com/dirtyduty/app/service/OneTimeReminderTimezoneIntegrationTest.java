@@ -325,8 +325,11 @@ class OneTimeReminderTimezoneIntegrationTest {
     UUID id = UUID.randomUUID();
     jdbc.update(
         """
-            INSERT INTO chores (id, household_id, title, default_priority, difficulty, created_by_user_id)
-            VALUES (?, ?, 'Timezone test chore', 'NORMAL', 1, ?)
+            INSERT INTO chores
+                (id, household_id, title, default_priority, difficulty, created_by_user_id,
+                 reminder_mode)
+            -- Full reminders (E13): these tests count its six slots.
+            VALUES (?, ?, 'Timezone test chore', 'NORMAL', 1, ?, 'AGGRESSIVE')
             """,
         id,
         householdId,

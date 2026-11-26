@@ -288,15 +288,15 @@ class NotificationSchedulerLockingIntegrationTest {
 
   // ---- Reminders ----
 
-  /** The household's reminder slots for this deadline that are still ahead. */
+  /** The reminder slots of the household's chores' levels for this deadline still ahead. */
   private Set<Instant> expectedSlots(UUID householdId, OffsetDateTime dueAt) {
     Instant now = Instant.now();
     return jdbc
         .queryForList(
             """
-                SELECT r.minutes_before_due FROM notification_reminder_rules r
-                JOIN households h ON h.reminder_mode=r.mode
-                WHERE h.id=? AND r.enabled=TRUE
+                SELECT DISTINCT r.minutes_before_due FROM notification_reminder_rules r
+                JOIN chores c ON c.reminder_mode=r.mode
+                WHERE c.household_id=? AND r.enabled=TRUE
                 """,
             Integer.class,
             householdId)

@@ -335,6 +335,38 @@ describe("auth API client", () => {
     })
   })
 
+  it("shows the reminder-level messages on chores and household settings only", async () => {
+    const failure = (message: string, status = 400) =>
+      new Response(JSON.stringify({ message }), {
+        status,
+        headers: { "content-type": "application/json" },
+      })
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ token: "csrf-token", headerName: "X-CSRF-TOKEN" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(failure("Choose a reminder level."))
+      .mockResolvedValueOnce(
+        failure("Only the household owner or an admin can change reminders for new chores.", 403),
+      )
+      .mockResolvedValueOnce(failure("Choose a reminder level."))
+
+    await expect(api.post("/api/households/home-1/chores", { title: "x" })).rejects.toMatchObject({
+      message: "Choose a reminder level.",
+    })
+    await expect(
+      api.put("/api/households/home-1/settings/reminders", { defaultReminderMode: "OFF" }),
+    ).rejects.toMatchObject({
+      message: "Only the household owner or an admin can change reminders for new chores.",
+    })
+    await expect(
+      api.put("/api/households/home-1/settings", { name: "x" }),
+    ).rejects.not.toMatchObject({ message: "Choose a reminder level." })
+  })
+
   it("does not expose other chore-update validation messages", async () => {
     fetchMock
       .mockResolvedValueOnce(

@@ -20,7 +20,8 @@ public record ChoreResponse(
     OffsetDateTime createdAt,
     OffsetDateTime updatedAt,
     ChoreScheduleResponse schedule,
-    List<Step> steps) {
+    List<Step> steps,
+    String reminderMode) {
 
   /** One step of the chore's checklist, in order (E12). */
   public record Step(UUID id, String text) {}

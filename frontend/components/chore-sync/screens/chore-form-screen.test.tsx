@@ -131,7 +131,7 @@ describe("ChoreFormScreen · quick create", () => {
     expect(row("How often").textContent).toContain("Every week · Sat")
     expect(row("Who").textContent).toContain("Take turns · everyone")
     expect(row("Category").textContent).toContain("From the name")
-    expect(row("More options").textContent).toContain("Optional")
+    expect(row("More options").textContent).toContain("Standard reminders")
     expect(createButton().disabled).toBe(true)
     expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy()
   })
@@ -160,6 +160,7 @@ describe("ChoreFormScreen · quick create", () => {
       estimatedMinutes: 5,
       requiresVerification: false,
       steps: [],
+      reminderMode: "STANDARD",
       schedule: {
         recurrenceRule: null,
         timezone: "America/Halifax",
@@ -628,6 +629,60 @@ describe("ChoreFormScreen · quick create", () => {
       fireEvent.click(createButton())
       expect(await screen.findByText("Enter a step, or remove it.")).toBeTruthy()
       expect(mocks.create).not.toHaveBeenCalled()
+    })
+  })
+
+  describe("reminders", () => {
+    it("starts on the household default and sends the level picked in the sheet", async () => {
+      mocks.options.mockResolvedValue({ ...optionsWith(), defaultReminderMode: "FRIENDLY" })
+      await renderForm()
+      fireEvent.change(nameInput(), { target: { value: "Mop" } })
+      expect(row("More options").textContent).toContain("Light reminders")
+      fireEvent.click(row("More options"))
+      expect(row("Reminders").textContent).toContain("Light")
+
+      fireEvent.click(row("Reminders"))
+      const sheet = screen.getByRole("dialog", { name: "Reminders" })
+      const options = within(sheet).getAllByRole("radio")
+      expect(options.map((option) => option.textContent)).toEqual([
+        expect.stringContaining("Off"),
+        expect.stringContaining("Light"),
+        expect.stringContaining("Standard"),
+        expect.stringContaining("Full"),
+        expect.stringContaining("Intense"),
+      ])
+      expect(
+        within(sheet)
+          .getByRole("radio", { name: /^Light/ })
+          .getAttribute("aria-checked"),
+      ).toBe("true")
+      fireEvent.click(within(sheet).getByRole("radio", { name: /^Intense/ }))
+      fireEvent.click(within(sheet).getByRole("button", { name: "Done" }))
+      expect(screen.queryByRole("dialog", { name: "Reminders" })).toBeNull()
+      expect(row("Reminders").textContent).toContain("Intense")
+      expect(row("More options").textContent).toContain("Intense reminders")
+
+      fireEvent.click(createButton())
+      await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1))
+      expect(sentRequest().reminderMode).toBe("INTENSE")
+    })
+
+    it("says a When needed chore with no deadline sends none", async () => {
+      await renderForm()
+      fireEvent.change(nameInput(), { target: { value: "Water plants" } })
+      fireEvent.click(row("How often"))
+      const often = screen.getByRole("dialog")
+      fireEvent.click(within(often).getByRole("button", { name: /When it's needed/ }))
+      fireEvent.click(within(often).getByRole("button", { name: "No deadline" }))
+      fireEvent.click(within(often).getByRole("button", { name: "Done" }))
+      fireEvent.click(row("More options"))
+      expect(row("Reminders").textContent).toContain("No deadline, so none are sent")
+      fireEvent.click(row("Reminders"))
+      expect(
+        within(screen.getByRole("dialog", { name: "Reminders" })).getByText(
+          /has no deadline, so it sends no reminders/,
+        ),
+      ).toBeTruthy()
     })
   })
 

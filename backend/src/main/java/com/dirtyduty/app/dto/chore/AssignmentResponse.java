@@ -26,6 +26,9 @@ import java.util.UUID;
  *
  * <p>{@code week} is set on a pending occurrence of a Week by week chore: whose week (or weeks) it
  * falls in and the last day of that period.
+ *
+ * <p>{@code reminderMode} is the chore's reminder level (E13): OFF, FRIENDLY, STANDARD, AGGRESSIVE
+ * or INTENSE.
  */
 public record AssignmentResponse(
     UUID id,
@@ -57,7 +60,8 @@ public record AssignmentResponse(
     Person awayFrom,
     Requests requests,
     Week week,
-    Steps steps) {
+    Steps steps,
+    String reminderMode) {
 
   /**
    * The chore's checklist on this occurrence (E12), or null when it has none. While it is to do,

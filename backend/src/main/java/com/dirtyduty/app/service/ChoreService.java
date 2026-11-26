@@ -197,7 +197,8 @@ public class ChoreService {
                     new ChoreMemberOptionResponse(
                         membership.getUser().getId(), membership.getUser().getDisplayName()))
             .toList();
-    return new ChoreManagementOptionsResponse(categoriesFor(householdId), activeMembers);
+    return new ChoreManagementOptionsResponse(
+        categoriesFor(householdId), activeMembers, householdDefaultReminderMode(householdId));
   }
 
   @Transactional(readOnly = true)
@@ -222,6 +223,9 @@ public class ChoreService {
     Chore chore = new Chore();
     chore.setHousehold(household);
     chore.setCreatedByUser(actorMembership.getUser());
+    String reminderMode = ReminderModes.parse(request.reminderMode());
+    chore.setReminderMode(
+        reminderMode == null ? householdDefaultReminderMode(householdId) : reminderMode);
     applyChoreFields(chore, householdId, request);
     choreRepository.save(chore);
     applySchedule(chore, household, householdId, request.schedule());
@@ -261,11 +265,17 @@ public class ChoreService {
     authorize(householdId, authentication);
     Chore chore = findMutableChore(householdId, choreId);
     choreSteps.validate(request.steps());
+    String reminderMode = ReminderModes.parse(request.reminderMode());
     applyChoreFields(chore, householdId, request);
     if (request.schedule() != null) {
       applySchedule(chore, chore.getHousehold(), householdId, request.schedule());
     }
     choreSteps.replace(chore.getId(), request.steps());
+    if (reminderMode != null && !reminderMode.equals(chore.getReminderMode())) {
+      chore.setReminderMode(reminderMode);
+      choreRepository.save(chore);
+      cancelPlannedReminders(chore.getId());
+    }
     return toResponse(chore);
   }
 
@@ -713,6 +723,60 @@ public class ChoreService {
         fixedAssigneeId == null ? null : validateActiveMember(householdId, fixedAssigneeId));
   }
 
+  /** The household's level for new chores (E13); STANDARD when it has none. */
+  private String householdDefaultReminderMode(UUID householdId) {
+    String mode =
+        jdbc.query(
+            "SELECT default_reminder_mode FROM households WHERE id=?",
+            rs -> rs.next() ? rs.getString(1) : null,
+            householdId);
+    return mode == null || !ReminderModes.CHOOSABLE.contains(mode) ? ReminderModes.DEFAULT : mode;
+  }
+
+  /**
+   * A chore's reminder level changed (E13): cancels the reminders planned but not yet sent for its
+   * open occurrences, and the notification scheduler plans the new level's on its next run (the
+   * same path as a moved deadline). Sent reminders, and done or skipped occurrences, are untouched;
+   * a slot both levels share is planned again under a versioned key, never sent twice.
+   */
+  private void cancelPlannedReminders(UUID choreId) {
+    String open =
+        """
+            SELECT id FROM chore_assignments
+            WHERE chore_id=? AND status IN ('PENDING', 'SUBMITTED')
+            """;
+    String timed = "('CHORE_DUE_SOON','CHORE_DUE_NOW','CHORE_OVERDUE')";
+    jdbc.update(
+        """
+            UPDATE notification_push_delivery_targets t
+            SET status='CANCELLED', next_attempt_at=NULL, updated_at=NOW()
+            FROM notifications n
+            WHERE t.notification_id=n.id AND n.status='PENDING'
+              AND n.reference_type='CHORE_ASSIGNMENT' AND n.type IN %s
+              AND n.reference_id IN (%s) AND t.status IN ('PENDING','FAILED')
+            """
+            .formatted(timed, open),
+        choreId);
+    jdbc.update(
+        """
+            UPDATE notification_deliveries d SET status='CANCELLED'
+            FROM notifications n
+            WHERE d.notification_id=n.id AND n.status='PENDING'
+              AND n.reference_type='CHORE_ASSIGNMENT' AND n.type IN %s
+              AND n.reference_id IN (%s) AND d.status IN ('PENDING','FAILED')
+            """
+            .formatted(timed, open),
+        choreId);
+    jdbc.update(
+        """
+            UPDATE notifications SET status='CANCELLED'
+            WHERE status='PENDING' AND reference_type='CHORE_ASSIGNMENT' AND type IN %s
+              AND reference_id IN (%s)
+            """
+            .formatted(timed, open),
+        choreId);
+  }
+
   private void lockHousehold(UUID householdId) {
     if (jdbc.query(
             "SELECT id FROM households WHERE id=? FOR UPDATE",
@@ -803,7 +867,8 @@ public class ChoreService {
         chore.getCreatedAt(),
         chore.getUpdatedAt(),
         scheduleResponse,
-        choreSteps.stepsOf(chore.getId()));
+        choreSteps.stepsOf(chore.getId()),
+        chore.getReminderMode());
   }
 
   private List<ChoreCategoryResponse> categoriesFor(UUID householdId) {

@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Bell, LockKeyhole, UsersRound } from "lucide-react"
+import { Bell, ChevronRight, LockKeyhole, UsersRound } from "lucide-react"
 import { ApiError } from "@/lib/auth/api"
 import { useChoreSync } from "@/lib/chore-sync/store"
 import { apiUrl } from "@/lib/auth/api"
@@ -14,6 +14,12 @@ import {
 import { useHouseholds } from "@/lib/household/household-context"
 import { notificationApi, type NotificationStyle } from "@/lib/notifications/api"
 import { PasswordInput } from "@/components/ui/password-input"
+import {
+  reminderLevel,
+  reminderLevelLabel,
+  type ReminderLevel,
+} from "@/lib/household/reminder-levels"
+import { RemindersSheet } from "../chore-form/reminders-sheet"
 import { CategoryManager } from "../category-manager"
 import { useDialogFocus } from "../use-dialog-focus"
 import {
@@ -85,6 +91,10 @@ export function HouseholdSettingsScreen({ theme = "light" }: { theme?: PreviewTh
   const [notificationStyle, setNotificationStyle] = useState<NotificationStyle>("NORMAL")
   const [styleSaved, setStyleSaved] = useState(false)
   const [styleError, setStyleError] = useState("")
+  const [remindersOpen, setRemindersOpen] = useState(false)
+  const [remindersBusy, setRemindersBusy] = useState(false)
+  const [remindersSaved, setRemindersSaved] = useState(false)
+  const [remindersError, setRemindersError] = useState("")
   const [invitations, setInvitations] = useState<HouseholdInvitationSummary[]>([])
   const [invitationStatus, setInvitationStatus] = useState<"loading" | "loaded" | "error">(
     "loading",
@@ -267,6 +277,31 @@ export function HouseholdSettingsScreen({ theme = "light" }: { theme?: PreviewTh
       )
     } finally {
       setBusy(false)
+    }
+  }
+
+  /** Reminders for new chores (E13): saved as soon as the sheet's Done is pressed. */
+  const saveReminders = async (level: ReminderLevel) => {
+    if (!household || remindersBusy || level === reminderLevel(settings?.defaultReminderMode))
+      return
+    const savedHouseholdId = household.id
+    setRemindersBusy(true)
+    setRemindersError("")
+    setRemindersSaved(false)
+    try {
+      const updated = await householdApi.updateReminders(savedHouseholdId, level)
+      setSettings((current) =>
+        current && current.id === savedHouseholdId
+          ? { ...current, defaultReminderMode: updated.defaultReminderMode }
+          : current,
+      )
+      setRemindersSaved(true)
+    } catch (cause) {
+      setRemindersError(
+        cause instanceof ApiError ? cause.message : "Unable to save reminders for new chores.",
+      )
+    } finally {
+      setRemindersBusy(false)
     }
   }
 
@@ -574,6 +609,38 @@ export function HouseholdSettingsScreen({ theme = "light" }: { theme?: PreviewTh
               {styleError && (
                 <p role="alert" className={designStyles.liveError}>
                   {styleError}
+                </p>
+              )}
+
+              <div className={designStyles.fieldLabel}>
+                {"Reminders for new chores"}
+                <button
+                  aria-label={`Reminders for new chores: ${reminderLevelLabel(settings.defaultReminderMode)}`}
+                  className={designStyles.choiceButton}
+                  data-settings-reminders
+                  disabled={!canEditNotificationStyle || remindersBusy}
+                  onClick={() => {
+                    setRemindersSaved(false)
+                    setRemindersError("")
+                    setRemindersOpen(true)
+                  }}
+                  type="button"
+                >
+                  <span>{reminderLevelLabel(settings.defaultReminderMode)}</span>
+                  {canEditNotificationStyle && <ChevronRight aria-hidden="true" size={16} />}
+                </button>
+              </div>
+              <p className={designStyles.helperText}>
+                {"Changes apply to chores you make from now on."}
+              </p>
+              {remindersSaved && (
+                <p role="status" className={designStyles.liveStatus}>
+                  Reminders for new chores saved.
+                </p>
+              )}
+              {remindersError && (
+                <p role="alert" className={designStyles.liveError}>
+                  {remindersError}
                 </p>
               )}
             </section>
@@ -963,6 +1030,17 @@ export function HouseholdSettingsScreen({ theme = "light" }: { theme?: PreviewTh
             )}
           </section>
         </div>
+      )}
+      {remindersOpen && settings && (
+        <RemindersSheet
+          intro="The level a new chore starts with. Each chore can still have its own."
+          level={reminderLevel(settings.defaultReminderMode)}
+          onChange={(level) => void saveReminders(level)}
+          onClose={() => setRemindersOpen(false)}
+          returnFocusTo={() => document.querySelector<HTMLElement>("[data-settings-reminders]")}
+          theme={theme}
+          title="Reminders for new chores"
+        />
       )}
     </div>
   )

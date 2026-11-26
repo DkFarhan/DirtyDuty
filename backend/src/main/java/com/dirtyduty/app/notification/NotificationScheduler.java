@@ -357,8 +357,8 @@ public class NotificationScheduler {
         SELECT DISTINCT household_id FROM (
             SELECT a.household_id
             FROM chore_assignments a
-            JOIN households h ON h.id=a.household_id
-            JOIN notification_reminder_rules r ON r.mode=h.reminder_mode AND r.enabled=TRUE
+            JOIN chores ch ON ch.id=a.chore_id
+            JOIN notification_reminder_rules r ON r.mode=ch.reminder_mode AND r.enabled=TRUE
             WHERE a.status IN ('PENDING', 'SUBMITTED') AND a.due_at IS NOT NULL
             UNION
             SELECT s.household_id
@@ -411,10 +411,15 @@ public class NotificationScheduler {
     if (assignments.isEmpty()) {
       return List.of();
     }
-    String mode = assignments.values().iterator().next().reminderMode();
-    List<ReminderSchedulePlanner.ReminderRule> rules =
-        rulesByMode.computeIfAbsent(mode, this::reminderRules);
-    if (rules.isEmpty()) {
+    // Each chore has its own reminder level (E13); OFF has no rules, so it plans nothing.
+    assignments
+        .values()
+        .removeIf(
+            assignment ->
+                rulesByMode
+                    .computeIfAbsent(assignment.reminderMode(), this::reminderRules)
+                    .isEmpty());
+    if (assignments.isEmpty()) {
       return List.of();
     }
     Map<UUID, List<UUID>> recipients = recipientsByAssignment(householdId);
@@ -425,6 +430,8 @@ public class NotificationScheduler {
     OffsetDateTime planningTime = OffsetDateTime.now(ZoneOffset.UTC);
     List<ReminderCandidate> plan = new ArrayList<>();
     for (Assignment assignment : assignments.values()) {
+      String mode = assignment.reminderMode();
+      List<ReminderSchedulePlanner.ReminderRule> rules = rulesByMode.get(mode);
       for (ReminderSchedulePlanner.PlannedReminder planned :
           ReminderSchedulePlanner.plan(assignment.dueAt(), rules, planningTime)) {
         String eventType = planned.rule().eventType();
@@ -546,9 +553,10 @@ public class NotificationScheduler {
     Map<UUID, Assignment> assignments = new LinkedHashMap<>();
     jdbc.query(
         """
-            SELECT a.id, a.household_id, a.due_at, a.title_snapshot, h.timezone, h.reminder_mode
+            SELECT a.id, a.household_id, a.due_at, a.title_snapshot, h.timezone, ch.reminder_mode
             FROM chore_assignments a
             JOIN households h ON h.id=a.household_id
+            JOIN chores ch ON ch.id=a.chore_id
             WHERE a.status IN ('PENDING', 'SUBMITTED') AND a.due_at IS NOT NULL
               AND a.household_id=?
             ORDER BY a.due_at, a.id

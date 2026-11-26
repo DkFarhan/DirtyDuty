@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import {
   Archive,
+  BellRing,
   ChevronDown,
   ChevronRight,
   ChevronUp,
@@ -47,11 +48,17 @@ import {
   withOften,
   withTitle,
   copyValues,
+  hasDeadline,
   type QuickContext,
   type QuickError,
   type QuickValues,
 } from "@/lib/household/chore-quick-form"
 import { deadlineWords, timeAgo } from "@/lib/household/household-jobs"
+import {
+  NO_DEADLINE_REMINDERS,
+  reminderLevel,
+  reminderLevelLabel,
+} from "@/lib/household/reminder-levels"
 import { useHouseholds } from "@/lib/household/household-context"
 import { householdChoreResource, useDataSync } from "@/lib/data-sync/data-sync-context"
 import { CategoryDialog } from "../category-dialog"
@@ -59,6 +66,7 @@ import { useDialogFocus } from "../use-dialog-focus"
 import { CategorySheet } from "../chore-form/category-sheet"
 import { Stepper } from "../chore-form/form-sheet"
 import { StepsEditor } from "../chore-form/steps-editor"
+import { RemindersSheet } from "../chore-form/reminders-sheet"
 import { HowOftenSheet } from "../chore-form/how-often-sheet"
 import { WhoSheet } from "../chore-form/who-sheet"
 import { SUGGESTION_ICONS } from "../chore-form/suggestion-icons"
@@ -69,7 +77,7 @@ import {
 import designStyles from "../redesign/household-secondary-design-preview.module.css"
 import styles from "../chore-form/chore-form.module.css"
 
-type Sheet = "often" | "who" | "category"
+type Sheet = "often" | "who" | "category" | "reminders"
 
 function minutesDown(minutes: number | null) {
   if (minutes === null || minutes <= 5) return null
@@ -138,9 +146,10 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
 
   const members = useMemo(() => options?.activeMembers ?? [], [options])
   const categories = useMemo(() => options?.categories ?? [], [options])
+  const defaultReminderMode = options?.defaultReminderMode
   const context: QuickContext = useMemo(
-    () => ({ viewerId, members, timezone }),
-    [members, timezone, viewerId],
+    () => ({ viewerId, members, timezone, defaultReminderMode }),
+    [defaultReminderMode, members, timezone, viewerId],
   )
   const dirty = values !== null && savedValues !== "" && JSON.stringify(values) !== savedValues
 
@@ -185,6 +194,7 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
           viewerId,
           members: nextOptions.activeMembers,
           timezone,
+          defaultReminderMode: nextOptions.defaultReminderMode,
         }
         let nextValues: QuickValues
         if (loaded) {
@@ -721,6 +731,16 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
       </label>
       {/* "Ask for a quick check" is hidden (it has no workflow); requiresVerification is kept as it
           is saved, untouched. */}
+      <div>
+        {row({
+          id: "reminders",
+          icon: <BellRing size={18} />,
+          label: "Reminders",
+          hint: hasDeadline(values) ? undefined : "No deadline, so none are sent",
+          value: reminderLevelLabel(values.reminderMode),
+          onClick: () => setSheet("reminders"),
+        })}
+      </div>
       <StepsEditor onChange={update} values={values} />
       {rowError("more")}
     </section>
@@ -786,6 +806,16 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
         </div>
       </div>
 
+      {sheet === "reminders" && (
+        <RemindersSheet
+          level={reminderLevel(values.reminderMode)}
+          note={hasDeadline(values) ? null : NO_DEADLINE_REMINDERS}
+          onChange={(level) => update({ ...values, reminderMode: level })}
+          onClose={() => setSheet(null)}
+          returnFocusTo={rowFocus("reminders")}
+          theme={theme}
+        />
+      )}
       {sheet === "often" && (
         <HowOftenSheet
           editing={isEditing}

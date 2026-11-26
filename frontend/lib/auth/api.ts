@@ -216,6 +216,14 @@ const CHORE_KIND_MESSAGES = new Set([
   "Enter a step, or remove it.",
   "Keep each step to 80 characters.",
   "Choose between 1 and 10 chores to add.",
+  // Reminder levels (E13)
+  "Choose a reminder level.",
+])
+
+/** Reminders for new chores in household settings (E13), as the server words them. */
+const REMINDER_SETTING_MESSAGES = new Set([
+  "Choose a reminder level.",
+  "Only the household owner or an admin can change reminders for new chores.",
 ])
 
 function messageFor(
@@ -348,6 +356,18 @@ function messageFor(
     "message" in payload &&
     typeof payload.message === "string" &&
     CHORE_KIND_MESSAGES.has(payload.message)
+  ) {
+    return payload.message
+  }
+  if (
+    (status === 400 || status === 403) &&
+    method === "PUT" &&
+    /^\/api\/households\/[^/]+\/settings\/reminders$/.test(path) &&
+    payload !== null &&
+    typeof payload === "object" &&
+    "message" in payload &&
+    typeof payload.message === "string" &&
+    REMINDER_SETTING_MESSAGES.has(payload.message)
   ) {
     return payload.message
   }

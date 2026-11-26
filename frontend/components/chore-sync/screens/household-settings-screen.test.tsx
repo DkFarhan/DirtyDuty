@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
     createdAt: "2026-10-01T00:00:00Z",
   },
   settings: vi.fn(),
+  updateReminders: vi.fn(),
   listInvitations: vi.fn(),
   revokeInvitation: vi.fn(),
   setHouseholdStyle: vi.fn(),
@@ -59,6 +60,7 @@ vi.mock("@/lib/household/api", () => ({
     listInvitations: mocks.listInvitations,
     revokeInvitation: mocks.revokeInvitation,
     updateSettings: vi.fn(),
+    updateReminders: mocks.updateReminders,
     deleteHousehold: mocks.deleteHousehold,
   },
 }))
@@ -119,6 +121,7 @@ describe("household settings screen", () => {
       .mockReset()
       .mockImplementation(async (id: string) => (id === "home-a" ? homeASettings : homeBSettings))
     mocks.listInvitations.mockReset().mockResolvedValue([])
+    mocks.updateReminders.mockReset()
     mocks.revokeInvitation.mockReset()
     mocks.setHouseholdStyle.mockReset()
     mocks.navigate.mockReset()
@@ -267,6 +270,42 @@ describe("household settings screen", () => {
       ),
     )
     expect(mocks.setHouseholdStyle).toHaveBeenCalledWith("home-a", "FUNNY")
+  })
+
+  it("sets the reminder level for new chores from its sheet", async () => {
+    mocks.settings.mockResolvedValue({ ...homeASettings, defaultReminderMode: "STANDARD" })
+    mocks.updateReminders.mockResolvedValue({ ...homeASettings, defaultReminderMode: "FRIENDLY" })
+    render(<HouseholdSettingsScreen />)
+    const choice = await screen.findByRole("button", { name: "Reminders for new chores: Standard" })
+    expect(screen.getByText("Changes apply to chores you make from now on.")).toBeTruthy()
+
+    fireEvent.click(choice)
+    const sheet = screen.getByRole("dialog", { name: "Reminders for new chores" })
+    fireEvent.click(within(sheet).getByRole("radio", { name: /^Light/ }))
+    fireEvent.click(within(sheet).getByRole("button", { name: "Done" }))
+
+    expect(mocks.updateReminders).toHaveBeenCalledWith("home-a", "FRIENDLY")
+    expect(
+      await screen.findByRole("button", { name: "Reminders for new chores: Light" }),
+    ).toBeTruthy()
+    expect(screen.getByText("Reminders for new chores saved.")).toBeTruthy()
+
+    // Choosing the level it already has saves nothing.
+    fireEvent.click(screen.getByRole("button", { name: "Reminders for new chores: Light" }))
+    fireEvent.click(screen.getByRole("button", { name: "Done" }))
+    expect(mocks.updateReminders).toHaveBeenCalledTimes(1)
+  })
+
+  it("shows members the level for new chores without letting them change it", async () => {
+    mocks.activeHousehold = { ...mocks.activeHousehold, currentUserRole: "MEMBER" }
+    mocks.settings.mockResolvedValue({
+      ...homeASettings,
+      currentUserRole: "MEMBER",
+      defaultReminderMode: "INTENSE",
+    })
+    render(<HouseholdSettingsScreen />)
+    const choice = await screen.findByRole("button", { name: "Reminders for new chores: Intense" })
+    expect(choice).toHaveProperty("disabled", true)
   })
 
   it("returns to account deletion after household deletion when that flow is pending", async () => {

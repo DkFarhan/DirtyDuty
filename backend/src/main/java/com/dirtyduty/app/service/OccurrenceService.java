@@ -3671,7 +3671,7 @@ public class OccurrenceService {
                        s.strategy_config->>'rotationStartsOn' rotation_starts_on,
                        COALESCE(a.away_from_user_id, a.assigned_to_user_id) week_owner_id,
                        wo.display_name week_owner_name,
-                       a.steps_total, a.steps_ticked
+                       a.steps_total, a.steps_ticked, ch.reminder_mode
                 FROM chore_assignments a
                 LEFT JOIN users au ON au.id=a.away_from_user_id
                 LEFT JOIN users wo ON wo.id=COALESCE(a.away_from_user_id, a.assigned_to_user_id)
@@ -3837,7 +3837,8 @@ public class OccurrenceService {
             pending,
             canComplete,
             (Integer) rs.getObject("steps_total"),
-            (Integer) rs.getObject("steps_ticked")));
+            (Integer) rs.getObject("steps_ticked")),
+        rs.getString("reminder_mode"));
   }
 
   /** Week by week: whose period this occurrence is in, and its last day; null otherwise. */

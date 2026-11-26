@@ -65,6 +65,10 @@ public class Chore {
   @Column(name = "requires_verification", nullable = false)
   private boolean requiresVerification;
 
+  /** Reminder level (E13): OFF, FRIENDLY, STANDARD, AGGRESSIVE or INTENSE. */
+  @Column(name = "reminder_mode", nullable = false, length = 20)
+  private String reminderMode = "STANDARD";
+
   @Column(name = "is_active", nullable = false)
   private boolean active = true;
 
