@@ -7,6 +7,7 @@ import { initialState } from "./mock-data"
 const validReturnScreens = new Set<Screen>([
   "dashboard",
   "my-chores",
+  "calendar",
   "board",
   "household",
   "admin",
@@ -23,7 +24,8 @@ export type AwayTarget = { userId: string; displayName: string } | null
  */
 export type ChoreDraft = {
   title: string
-  once?: { date: string; time: string }
+  /** A one-time date, and a time ("+" on a calendar day leaves the form's default time). */
+  once?: { date: string; time?: string }
   /** Duplicate chore: the chore whose setup the new one starts from ("<Title> (copy)"). */
   copyOf?: string
   returnTo: Screen

@@ -43,8 +43,9 @@ export function HouseholdLiveDesignHeader({
   title: string
   household: string
   onBack: () => void
-  heroEyebrow: string
-  heroTitle: ReactNode
+  /** Omit the hero (with {@link heroTitle}) for a header band alone. */
+  heroEyebrow?: string
+  heroTitle?: ReactNode
   /** Omit when {@link heroDetails} says enough. */
   heroDescription?: string
   heroIcon?: "house" | "sparkles" | "repeat"
@@ -69,27 +70,29 @@ export function HouseholdLiveDesignHeader({
           {action && <div className={styles.headerAction}>{action}</div>}
         </div>
       </header>
-      <div className={styles.liveContent}>
-        <section className={styles.heroCard}>
-          <div className={styles.heroCopy}>
-            <p className={styles.eyebrow}>{heroEyebrow}</p>
-            <h2>{heroTitle}</h2>
-            {heroDetails}
-            {heroDescription && <p>{heroDescription}</p>}
-          </div>
-          <div aria-hidden="true" className={styles.heroOrb}>
-            {heroIconNode ? (
-              heroIconNode
-            ) : heroIcon === "house" ? (
-              <House size={30} />
-            ) : heroIcon === "repeat" ? (
-              <Repeat2 size={30} />
-            ) : (
-              <Sparkles size={29} />
-            )}
-          </div>
-        </section>
-      </div>
+      {heroTitle !== undefined && (
+        <div className={styles.liveContent}>
+          <section className={styles.heroCard}>
+            <div className={styles.heroCopy}>
+              <p className={styles.eyebrow}>{heroEyebrow}</p>
+              <h2>{heroTitle}</h2>
+              {heroDetails}
+              {heroDescription && <p>{heroDescription}</p>}
+            </div>
+            <div aria-hidden="true" className={styles.heroOrb}>
+              {heroIconNode ? (
+                heroIconNode
+              ) : heroIcon === "house" ? (
+                <House size={30} />
+              ) : heroIcon === "repeat" ? (
+                <Repeat2 size={30} />
+              ) : (
+                <Sparkles size={29} />
+              )}
+            </div>
+          </section>
+        </div>
+      )}
     </>
   )
 }

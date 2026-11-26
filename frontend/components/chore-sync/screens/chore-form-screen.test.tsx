@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
   editingChoreId: null as string | null,
   choreDraft: null as {
     title: string
-    once?: { date: string; time: string }
+    once?: { date: string; time?: string }
     returnTo: string
   } | null,
 }))
@@ -120,6 +120,26 @@ describe("ChoreFormScreen · quick create", () => {
   afterEach(() => {
     cleanup()
     vi.useRealTimers()
+    mocks.choreDraft = null
+  })
+
+  it("starts as Just once on a calendar day's date and returns to the calendar", async () => {
+    mocks.choreDraft = { title: "", once: { date: "2026-11-20" }, returnTo: "calendar" }
+    await renderForm()
+    expect(nameInput().value).toBe("")
+    expect(row("How often").textContent).toContain("Just once")
+    expect(row("How often").textContent).toContain("Nov 20")
+
+    fireEvent.change(nameInput(), { target: { value: "Clean the oven" } })
+    fireEvent.click(createButton())
+    await waitFor(() => expect(mocks.create).toHaveBeenCalled())
+    expect(sentRequest().schedule).toMatchObject({
+      recurrenceRule: "FREQ=ONCE",
+      startsOn: "2026-11-20",
+    })
+    // The usual time, which can still be changed.
+    expect(sentRequest().schedule.dueTime).toBeTruthy()
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith("calendar"))
   })
 
   it("shows the page shell with defaults and focuses the name", async () => {

@@ -278,6 +278,11 @@ export const choreApi = {
     api.post<Chore>(`${householdPath(householdId)}/chores/${encodeURIComponent(choreId)}/archive`),
   dashboard: (householdId: string) =>
     api.get<HouseholdDashboard>(`${householdPath(householdId)}/dashboard`),
+  /** One occurrence as the viewer sees it, with the actions they may take. */
+  occurrence: (householdId: string, assignmentId: string) =>
+    api.get<AssignmentDTO>(
+      `${householdPath(householdId)}/assignments/${encodeURIComponent(assignmentId)}`,
+    ),
   myChores: (householdId: string, status: "UPCOMING" | "COMPLETED") =>
     api.get<AssignmentDTO[]>(`${householdPath(householdId)}/my-chores?status=${status}`),
   complete: (householdId: string, assignmentId: string) =>
