@@ -89,6 +89,14 @@ const JOB_MESSAGES = [
   /^Assignment was not found in this household\.$/,
 ]
 
+/** Ticking a chore's checklist steps (E12), as the server words them. */
+const STEP_MESSAGES = [
+  /^This step is no longer on the chore\.$/,
+  /^Steps can only be ticked while the chore is still to do\.$/,
+  /^Only the people doing this chore can tick its steps\.$/,
+  /^Assignment was not found in this household\.$/,
+]
+
 /** Household Board messages from the server that are safe to show as written. */
 const BOARD_MESSAGES = [
   /^Household was not found\.$/,
@@ -203,6 +211,10 @@ const CHORE_KIND_MESSAGES = new Set([
   "Week by week is one person at a time.",
   "Choose between 1 and 8 weeks for each person.",
   "Everyone only works with Take turns, Week by week, Balanced or Mix it up.",
+  // Checklists (E12)
+  "A chore can have at most 15 steps.",
+  "Enter a step, or remove it.",
+  "Keep each step to 80 characters.",
   "Choose between 1 and 10 chores to add.",
 ])
 
@@ -266,6 +278,17 @@ function messageFor(
     "message" in payload &&
     typeof payload.message === "string" &&
     JOB_MESSAGES.some((pattern) => pattern.test(payload.message as string))
+  ) {
+    return payload.message
+  }
+  if (
+    (status === 400 || status === 403 || status === 404) &&
+    /^\/api\/households\/[^/]+\/assignments\/[^/]+\/steps\/[^/]+$/.test(path) &&
+    payload !== null &&
+    typeof payload === "object" &&
+    "message" in payload &&
+    typeof payload.message === "string" &&
+    STEP_MESSAGES.some((pattern) => pattern.test(payload.message as string))
   ) {
     return payload.message
   }

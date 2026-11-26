@@ -1,6 +1,7 @@
 "use client"
 
 import { AwayNote } from "./away-note"
+import { StepsChip } from "./steps-sheet"
 import { RequestNote, WaitingChip } from "./requests/request-card-status"
 import { useEffect, useId, useState } from "react"
 import { Bell, BellCheck, Calendar, Check, CircleAlert, Clock } from "lucide-react"
@@ -17,6 +18,8 @@ export type HouseholdJobCardProps = {
   onComplete?: (id: string) => void
   onFlag?: (id: string) => void
   onOpenActions?: (id: string) => void
+  /** Opens the checklist's tick sheet (E12). */
+  onOpenSteps?: (id: string) => void
 }
 
 /**
@@ -44,6 +47,7 @@ export function HouseholdJobCard({
   onComplete,
   onFlag,
   onOpenActions,
+  onOpenSteps,
 }: HouseholdJobCardProps) {
   const hintId = useId()
   const reminder = useReminderState(job.reminder)
@@ -86,6 +90,11 @@ export function HouseholdJobCard({
         <RequestNote kind={job.request?.noteKind} label={job.request?.noteLabel} />
         <WaitingChip label={job.request?.waitingLabel} />
         <h3 className={styles.title}>{job.title}</h3>
+        <StepsChip
+          chip={job.steps}
+          onOpen={onOpenSteps && (() => onOpenSteps(job.id))}
+          title={job.title}
+        />
         <ul className={styles.meta}>
           <li>
             <Clock aria-hidden="true" size={13} strokeWidth={2.2} />

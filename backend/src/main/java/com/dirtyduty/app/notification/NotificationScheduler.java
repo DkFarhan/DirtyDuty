@@ -124,6 +124,11 @@ public class NotificationScheduler {
    * <p>Lock order in every transaction: households, users, notifications/deliveries, then push
    * subscriptions (updated by providers). Every processing statement is restricted to notifications
    * whose household and recipient are locked.
+   *
+   * <p>Web pushes are never sent inside these transactions: the provider claims the push targets (a
+   * short lease) and writes the notification and delivery rows, the transaction commits and
+   * releases its locks, and only then is the push sent, its results recorded in a separate short
+   * transaction (WebPushNotificationProvider). A slow push service never holds a household lock.
    */
   @Scheduled(
       fixedDelayString = "${app.notifications.scheduler-delay:60000}",
@@ -167,7 +172,7 @@ public class NotificationScheduler {
     }
     log.debug(
         "Notification run: {} ms, {} households written ({} touched), {} people,"
-            + " longest lock held {} ms",
+            + " longest write (with its pushes) {} ms",
         millisSince(started),
         written,
         householdIds.size(),

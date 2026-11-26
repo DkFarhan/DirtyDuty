@@ -3,6 +3,8 @@
 import type { CardRequestView } from "@/lib/household/requests"
 import { AwayNote } from "../away-note"
 import { WeekChip } from "../week-chip"
+import { StepsChip } from "../steps-sheet"
+import type { StepsChipView } from "@/lib/household/steps"
 import { StartWithBasics } from "../start-with-basics"
 import type { WeekChipView } from "@/lib/household/week-by-week"
 import { CancelRequestButton, RequestNote, WaitingChip } from "../requests/request-card-status"
@@ -38,6 +40,8 @@ export interface MyChoreUpcomingViewModel {
   awayNote?: string | null
   /** Week by week: "Your week · until Sun, Dec 7". */
   weekChip?: WeekChipView | null
+  /** "2 of 5 steps" when the chore has a checklist (E12). */
+  steps?: StepsChipView | null
   /** Hand-off and swap requests: waiting chip, accepted note, Cancel request (E11). */
   request?: CardRequestView
   /** The viewer may move, skip, undo or reassign this occurrence. */
@@ -55,6 +59,8 @@ export interface MyChoreCompletedViewModel {
   assignedTo: string
   completedBy: string
   completing?: boolean
+  /** "4 of 5 steps" when the chore had a checklist (E12). */
+  stepsLabel?: string | null
 }
 
 export interface MyChoresViewModel {
@@ -86,6 +92,8 @@ export interface MyChoresScreenViewProps {
   onOpenChoreActions?: (choreId: string, surface?: CardSurface) => void
   /** "Needs doing" on a household job. */
   onFlagJob?: (choreId: string) => void
+  /** Opens a chore's checklist tick sheet (E12). */
+  onOpenSteps?: (choreId: string, surface?: CardSurface) => void
   onRetry: () => void
   onNavigate: (destination: HomeNavigationDestination) => void
   /** "Requests for you" (E11), at the top of the page when there are open requests. */
@@ -105,6 +113,7 @@ function UpcomingCard({
   completing,
   onComplete,
   onOpenActions,
+  onOpenSteps,
   onCancelRequest,
 }: {
   chore: MyChoreUpcomingViewModel
@@ -113,6 +122,7 @@ function UpcomingCard({
   completing: boolean
   onComplete: (choreId: string) => void
   onOpenActions?: (choreId: string) => void
+  onOpenSteps?: (choreId: string) => void
   onCancelRequest?: (requestId: string, choreId: string) => void
 }) {
   const cancelRequestId = onCancelRequest ? (chore.request?.cancelRequestId ?? null) : null
@@ -163,6 +173,11 @@ function UpcomingCard({
         </p>
         <AwayNote note={chore.awayNote} />
         <WeekChip chip={chore.weekChip} />
+        <StepsChip
+          chip={chore.steps}
+          onOpen={onOpenSteps && (() => onOpenSteps(chore.id))}
+          title={chore.title}
+        />
         {chore.request && (
           <div className={styles.upcomingRequest}>
             <RequestNote kind={chore.request.noteKind} label={chore.request.noteLabel} />
@@ -217,6 +232,7 @@ function AttentionCard({
   completing,
   onComplete,
   onOpenActions,
+  onOpenSteps,
   onCancelRequest,
 }: {
   chore: MyChoreUpcomingViewModel
@@ -224,6 +240,7 @@ function AttentionCard({
   completing: boolean
   onComplete: (choreId: string) => void
   onOpenActions?: (choreId: string) => void
+  onOpenSteps?: (choreId: string) => void
   onCancelRequest?: (requestId: string, choreId: string) => void
 }) {
   const showActions = Boolean(chore.hasActions && onOpenActions)
@@ -254,6 +271,11 @@ function AttentionCard({
         </p>
         <AwayNote note={chore.awayNote} />
         <WeekChip chip={chore.weekChip} />
+        <StepsChip
+          chip={chore.steps}
+          onOpen={onOpenSteps && (() => onOpenSteps(chore.id))}
+          title={chore.title}
+        />
         {chore.request && (
           <div className={styles.attentionRequest}>
             <RequestNote kind={chore.request.noteKind} label={chore.request.noteLabel} />
@@ -325,6 +347,12 @@ function CompletedCard({
         {chore.category}
         <span aria-hidden="true"> · </span>
         {chore.dateLabel}
+        {chore.stepsLabel && (
+          <>
+            <span aria-hidden="true"> · </span>
+            <span data-testid="completed-steps">{chore.stepsLabel}</span>
+          </>
+        )}
       </p>
       {chore.durationLabel && <p className={styles.completedDuration}>{chore.durationLabel}</p>}
       <span aria-hidden="true" className={styles.completedDivider} />
@@ -397,6 +425,7 @@ export function MyChoresScreenView({
   onCompleteChore,
   onOpenChoreActions,
   onFlagJob,
+  onOpenSteps,
   onRetry,
   onNavigate,
   requestsSection,
@@ -532,6 +561,7 @@ export function MyChoresScreenView({
                               onOpenActions={
                                 onOpenChoreActions && ((id) => onOpenChoreActions(id, "job"))
                               }
+                              onOpenSteps={onOpenSteps && ((id) => onOpenSteps(id, "job"))}
                               theme={theme}
                             />
                           ))}
@@ -562,6 +592,7 @@ export function MyChoresScreenView({
                               onComplete={onCompleteChore}
                               onCancelRequest={onCancelRequest}
                               onOpenActions={onOpenChoreActions}
+                              onOpenSteps={onOpenSteps}
                               theme={theme}
                             />
                           </section>
@@ -581,6 +612,7 @@ export function MyChoresScreenView({
                                 onComplete={onCompleteChore}
                                 onCancelRequest={onCancelRequest}
                                 onOpenActions={onOpenChoreActions}
+                                onOpenSteps={onOpenSteps}
                                 theme={theme}
                               />
                             ))}

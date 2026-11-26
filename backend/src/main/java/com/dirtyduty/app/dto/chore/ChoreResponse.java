@@ -2,6 +2,7 @@ package com.dirtyduty.app.dto.chore;
 
 import com.dirtyduty.app.entity.enums.ChorePriority;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 public record ChoreResponse(
@@ -18,4 +19,9 @@ public record ChoreResponse(
     OffsetDateTime archivedAt,
     OffsetDateTime createdAt,
     OffsetDateTime updatedAt,
-    ChoreScheduleResponse schedule) {}
+    ChoreScheduleResponse schedule,
+    List<Step> steps) {
+
+  /** One step of the chore's checklist, in order (E12). */
+  public record Step(UUID id, String text) {}
+}

@@ -205,14 +205,16 @@ describe("household settings screen", () => {
     fireEvent.click(trigger)
 
     const namedDialog = screen.getByRole("dialog", { name: "Delete Home A?" })
-    expect(document.activeElement).toBe(
-      within(namedDialog).getByRole("button", { name: "Transfer ownership" }),
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        within(namedDialog).getByRole("button", { name: "Transfer ownership" }),
+      ),
     )
     fireEvent.keyDown(document, { key: "Tab", shiftKey: true })
     expect(document.activeElement).toBe(within(namedDialog).getByRole("button", { name: "Cancel" }))
     fireEvent.keyDown(document, { key: "Escape" })
     expect(screen.queryByRole("dialog")).toBeNull()
-    expect(document.activeElement).toBe(trigger)
+    await waitFor(() => expect(document.activeElement).toBe(trigger))
 
     fireEvent.click(trigger)
 

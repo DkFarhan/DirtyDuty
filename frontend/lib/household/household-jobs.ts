@@ -1,4 +1,5 @@
 import type { CardFeedbackView } from "./card-feedback"
+import { stepsChip, type StepsChipView } from "./steps"
 import { cardRequestView, type CardRequestView } from "./requests"
 import type { AssignmentDTO } from "./chores"
 import { describeChoreSchedule } from "./recurrence"
@@ -11,6 +12,8 @@ import { awayNote } from "./away"
 export type HouseholdJobViewModel = {
   id: string
   title: string
+  /** "2 of 5 steps" when the chore has a checklist (E12). */
+  steps?: StepsChipView | null
   category: string
   /** "Your turn" or "Sam's turn". */
   turnLabel: string
@@ -195,6 +198,7 @@ export function householdJobView(
   return {
     id: assignment.id,
     title: assignment.title,
+    steps: stepsChip(assignment),
     category: assignment.categoryName ?? "Household job",
     turnLabel: !turn ? "Nobody's turn yet" : yourTurn ? "Your turn" : `${turnName}'s turn`,
     awayNote: awayNote(assignment, viewerId),

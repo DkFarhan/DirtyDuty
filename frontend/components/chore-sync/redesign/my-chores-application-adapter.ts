@@ -13,6 +13,7 @@ import {
 import { hasOccurrenceActions, movedFromLabel } from "@/lib/household/occurrence-actions"
 import { awayNote } from "@/lib/household/away"
 import { weekChip } from "@/lib/household/week-by-week"
+import { stepsChip } from "@/lib/household/steps"
 import { showBasics } from "@/lib/household/basics"
 import { assignmentAssigneeNames, assignmentDate } from "../chore-card"
 import type {
@@ -97,6 +98,7 @@ function mapUpcoming(
     movedFrom: movedFromLabel(assignment),
     awayNote: awayNote(assignment, input.currentUserId),
     weekChip: weekChip(assignment, input.currentUserId),
+    steps: stepsChip(assignment),
     request: cardRequestView(assignment, input.currentUserId),
     hasActions: hasOccurrenceActions(assignment),
     canComplete:
@@ -121,6 +123,7 @@ function mapCompleted(
     assignedTo: assignmentAssigneeNames(assignment, input.currentUserId),
     completedBy: assignment.completedByDisplayName ?? (completing ? "You" : "Household member"),
     completing,
+    stepsLabel: stepsChip(assignment)?.text ?? null,
   }
 }
 

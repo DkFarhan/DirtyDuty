@@ -8,6 +8,7 @@ import {
 import { categoryWithRepeat, householdJobView } from "@/lib/household/household-jobs"
 import { hasOccurrenceActions, movedFromLabel } from "@/lib/household/occurrence-actions"
 import { awayNote } from "@/lib/household/away"
+import { stepsChip } from "@/lib/household/steps"
 import { myWeeksLine, weekChip } from "@/lib/household/week-by-week"
 import { showBasics } from "@/lib/household/basics"
 import type { PushHealthState } from "@/lib/notifications/push-health"
@@ -129,6 +130,7 @@ function mapChore(
         : movedFromLabel(assignment),
     awayNote: awayNote(assignment, input.currentUserId),
     weekChip: weekChip(assignment, input.currentUserId),
+    steps: stepsChip(assignment),
     request: cardRequestView(assignment, input.currentUserId),
     hasActions: hasOccurrenceActions(assignment),
     completedBy: assignment.completedByDisplayName,
@@ -210,6 +212,7 @@ export function createHomeApplicationViewModel(
       movedFrom: movedFromLabel(assignment),
       awayNote: awayNote(assignment, input.currentUserId),
       weekChip: weekChip(assignment, input.currentUserId),
+      steps: stepsChip(assignment),
       request: cardRequestView(assignment, input.currentUserId),
       hasActions: hasOccurrenceActions(assignment),
       feedback: feedbackFor(assignment, feedback, "card"),

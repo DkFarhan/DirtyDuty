@@ -70,6 +70,7 @@ public class ChoreService {
   private final HouseholdMembershipRepository membershipRepository;
   private final UserRepository userRepository;
   private final OccurrenceService occurrenceService;
+  private final ChoreStepService choreSteps;
   private final JdbcTemplate jdbc;
 
   public ChoreService(
@@ -79,6 +80,7 @@ public class ChoreService {
       HouseholdMembershipRepository membershipRepository,
       UserRepository userRepository,
       OccurrenceService occurrenceService,
+      ChoreStepService choreSteps,
       JdbcTemplate jdbc) {
     this.choreRepository = choreRepository;
     this.choreCategoryRepository = choreCategoryRepository;
@@ -86,6 +88,7 @@ public class ChoreService {
     this.membershipRepository = membershipRepository;
     this.userRepository = userRepository;
     this.occurrenceService = occurrenceService;
+    this.choreSteps = choreSteps;
     this.jdbc = jdbc;
   }
 
@@ -215,12 +218,14 @@ public class ChoreService {
     lockHousehold(householdId);
     HouseholdMembership actorMembership = authorize(householdId, authentication);
     Household household = actorMembership.getHousehold();
+    choreSteps.validate(request.steps());
     Chore chore = new Chore();
     chore.setHousehold(household);
     chore.setCreatedByUser(actorMembership.getUser());
     applyChoreFields(chore, householdId, request);
     choreRepository.save(chore);
     applySchedule(chore, household, householdId, request.schedule());
+    choreSteps.replace(chore.getId(), request.steps());
     return toResponse(chore);
   }
 
@@ -255,10 +260,12 @@ public class ChoreService {
     lockHousehold(householdId);
     authorize(householdId, authentication);
     Chore chore = findMutableChore(householdId, choreId);
+    choreSteps.validate(request.steps());
     applyChoreFields(chore, householdId, request);
     if (request.schedule() != null) {
       applySchedule(chore, chore.getHousehold(), householdId, request.schedule());
     }
+    choreSteps.replace(chore.getId(), request.steps());
     return toResponse(chore);
   }
 
@@ -795,7 +802,8 @@ public class ChoreService {
         chore.getArchivedAt(),
         chore.getCreatedAt(),
         chore.getUpdatedAt(),
-        scheduleResponse);
+        scheduleResponse,
+        choreSteps.stepsOf(chore.getId()));
   }
 
   private List<ChoreCategoryResponse> categoriesFor(UUID householdId) {

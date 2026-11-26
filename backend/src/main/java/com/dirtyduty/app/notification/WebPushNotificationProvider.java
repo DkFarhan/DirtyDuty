@@ -7,9 +7,11 @@ import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
 import org.jose4j.lang.JoseException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,6 +19,11 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.annotation.Order;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Component
 @Order(2)
@@ -37,6 +44,14 @@ public class WebPushNotificationProvider implements NotificationDeliveryProvider
   private final String privateKey;
   private final String subject;
 
+  /** How long a claimed push is kept from other runs while it is being sent. */
+  private static final String SEND_LEASE = "10 minutes";
+
+  private static final java.time.Duration SEND_LEASE_DURATION = java.time.Duration.ofMinutes(10);
+
+  /** Records send results in a short transaction of their own, after the caller's has ended. */
+  private final TransactionTemplate records;
+
   public WebPushNotificationProvider(
       JdbcTemplate jdbc,
       NotificationCooldownService cooldownService,
@@ -44,7 +59,8 @@ public class WebPushNotificationProvider implements NotificationDeliveryProvider
       QuietHoursService quietHours,
       @Value("${app.notifications.web-push.public-key:}") String publicKey,
       @Value("${app.notifications.web-push.private-key:}") String privateKey,
-      @Value("${app.notifications.web-push.subject:mailto:support@dirtyduty.app}") String subject) {
+      @Value("${app.notifications.web-push.subject:mailto:support@dirtyduty.app}") String subject,
+      PlatformTransactionManager transactionManager) {
     this.jdbc = jdbc;
     this.cooldownService = cooldownService;
     this.webPushClient = webPushClient;
@@ -53,6 +69,8 @@ public class WebPushNotificationProvider implements NotificationDeliveryProvider
     this.publicKey = publicKey;
     this.privateKey = privateKey;
     this.subject = subject;
+    this.records = new TransactionTemplate(transactionManager);
+    this.records.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
   }
 
   public boolean isConfigured() {
@@ -209,85 +227,175 @@ public class WebPushNotificationProvider implements NotificationDeliveryProvider
     if (!cooldownService.isAvailable(notification, now, notification.deduplicationKey())) {
       return;
     }
+    if (subscriptions.isEmpty()) {
+      updateAggregateDeliveryStatus(notificationId, false);
+      return;
+    }
+    // Claim the targets (and the delivery) for a short lease, so no other run or request picks
+    // them while the push is on its way; the lease ends when the results are recorded, or lapses
+    // into an ordinary retry if this process stops before then.
+    jdbc.update(
+        """
+            UPDATE notification_push_delivery_targets
+            SET next_attempt_at=NOW() + CAST(? AS interval), updated_at=NOW()
+            WHERE notification_id=? AND subscription_id = ANY(CAST(? AS uuid[]))
+            """,
+        SEND_LEASE,
+        notificationId,
+        uuidArray(subscriptions.stream().map(Subscription::id).toList()));
+    jdbc.update(
+        """
+            UPDATE notification_deliveries SET next_attempt_at=NOW() + CAST(? AS interval)
+            WHERE notification_id=? AND channel='WEB_PUSH'
+            """,
+        SEND_LEASE,
+        notificationId);
     String payload = serialize(notification);
+    afterCommit(() -> sendAndRecord(notificationId, subscriptions, payload));
+  }
+
+  /**
+   * Sends a claimed push to its subscriptions with no transaction (and so no lock) open, then
+   * records every result in one short transaction of its own.
+   */
+  private void sendAndRecord(
+      UUID notificationId, List<Subscription> subscriptions, String payload) {
+    List<TargetResult> results = new ArrayList<>();
     for (Subscription subscription : subscriptions) {
+      if (Thread.currentThread().isInterrupted()) {
+        results.add(TargetResult.released(subscription.id()));
+        continue;
+      }
       try {
-        int status =
-            webPushClient.send(
-                publicKey,
-                privateKey,
-                subject,
-                subscription.endpoint(),
-                subscription.publicKey(),
-                subscription.authSecret(),
-                payload.getBytes(StandardCharsets.UTF_8));
+        int status = send(subscription, payload);
         if (status >= 200 && status < 300) {
-          recordTargetResult(notificationId, subscription.id(), "SENT", null, true);
-          jdbc.update(
-              "UPDATE push_subscriptions SET last_used_at=NOW() WHERE id=?", subscription.id());
+          results.add(new TargetResult(subscription.id(), "SENT", null, true, false));
         } else if (status == 404 || status == 410) {
-          recordTargetResult(notificationId, subscription.id(), "CANCELLED", "GONE", false);
-          jdbc.update("UPDATE push_subscriptions SET active=FALSE WHERE id=?", subscription.id());
+          results.add(new TargetResult(subscription.id(), "CANCELLED", "GONE", false, true));
         } else {
-          recordTargetResult(
-              notificationId, subscription.id(), "FAILED", "PROVIDER_REJECTED", false);
+          results.add(
+              new TargetResult(subscription.id(), "FAILED", "PROVIDER_REJECTED", false, false));
           logger.warn("Web Push target delivery was rejected (HTTP {}).", status);
         }
       } catch (IOException
           | GeneralSecurityException
           | JoseException
           | ExecutionException exception) {
-        recordTargetResult(notificationId, subscription.id(), "FAILED", "PROVIDER_ERROR", false);
+        results.add(new TargetResult(subscription.id(), "FAILED", "PROVIDER_ERROR", false, false));
         logger.warn("Web Push target delivery failed (provider error).");
       } catch (InterruptedException exception) {
         Thread.currentThread().interrupt();
-        recordTargetResult(notificationId, subscription.id(), "FAILED", "INTERRUPTED", false);
+        results.add(new TargetResult(subscription.id(), "FAILED", "INTERRUPTED", false, false));
         logger.warn("Web Push target delivery was interrupted.");
-        break;
       } catch (IllegalArgumentException exception) {
         // A stored subscription whose keys can't be decoded will never work: drop it, and never
         // let it fail the request that triggered the push (e.g. creating a post).
-        recordTargetResult(
-            notificationId, subscription.id(), "CANCELLED", "INVALID_SUBSCRIPTION", false);
-        jdbc.update("UPDATE push_subscriptions SET active=FALSE WHERE id=?", subscription.id());
+        results.add(
+            new TargetResult(subscription.id(), "CANCELLED", "INVALID_SUBSCRIPTION", false, true));
         logger.warn("Web Push target has an invalid subscription key; it was deactivated.");
       }
     }
-    updateAggregateDeliveryStatus(notificationId);
+    records.executeWithoutResult(
+        status -> {
+          for (TargetResult result : results) {
+            if (result.status() == null) {
+              jdbc.update(
+                  """
+                      UPDATE notification_push_delivery_targets
+                      SET next_attempt_at=NULL, updated_at=NOW()
+                      WHERE notification_id=? AND subscription_id=?
+                        AND status IN ('PENDING', 'FAILED')
+                      """,
+                  notificationId,
+                  result.subscriptionId());
+              continue;
+            }
+            recordTargetResult(
+                notificationId,
+                result.subscriptionId(),
+                result.status(),
+                result.error(),
+                result.accepted());
+            if (result.accepted()) {
+              jdbc.update(
+                  "UPDATE push_subscriptions SET last_used_at=NOW() WHERE id=?",
+                  result.subscriptionId());
+            } else if (result.deactivate()) {
+              jdbc.update(
+                  "UPDATE push_subscriptions SET active=FALSE WHERE id=?", result.subscriptionId());
+            }
+          }
+          updateAggregateDeliveryStatus(
+              notificationId, results.stream().anyMatch(TargetResult::accepted));
+        });
+  }
+
+  private int send(Subscription subscription, String payload)
+      throws IOException,
+          GeneralSecurityException,
+          JoseException,
+          ExecutionException,
+          InterruptedException {
+    return webPushClient.send(
+        publicKey,
+        privateKey,
+        subject,
+        subscription.endpoint(),
+        subscription.publicKey(),
+        subscription.authSecret(),
+        payload.getBytes(StandardCharsets.UTF_8));
+  }
+
+  /**
+   * Runs push sends once the caller's transaction has committed (its household, person and row
+   * locks released), or straight away when there is none. A failure is logged, never thrown: the
+   * caller's work is already saved, and the lease turns an unrecorded push into a retry.
+   */
+  private void afterCommit(Runnable work) {
+    Runnable guarded =
+        () -> {
+          try {
+            work.run();
+          } catch (RuntimeException exception) {
+            logger.warn("Recording a Web Push result failed; it will be retried.", exception);
+          }
+        };
+    if (TransactionSynchronizationManager.isActualTransactionActive()
+        && TransactionSynchronizationManager.isSynchronizationActive()) {
+      TransactionSynchronizationManager.registerSynchronization(
+          new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+              guarded.run();
+            }
+          });
+    } else {
+      guarded.run();
+    }
+  }
+
+  private static String uuidArray(List<UUID> ids) {
+    return ids.stream().map(UUID::toString).collect(Collectors.joining(",", "{", "}"));
   }
 
   /**
    * Sends one grouped morning push (push only: there is no notification row behind it) to every
-   * active subscription of the person. Returns SENT when any subscription accepted it, CANCELLED
-   * when push is off or there is nowhere to send it, FAILED otherwise.
+   * active subscription of the person, after the caller's transaction commits, and records the
+   * digest's outcome: SENT when any subscription accepted it, CANCELLED when push is off or there
+   * is nowhere to send it, FAILED otherwise. Until then the digest is leased (its send time moved
+   * ahead) so no other run sends it too; the original send time is put back with the outcome.
    */
-  public String sendDigest(UUID recipientUserId, String title, String body, String targetPath) {
-    if (!isConfigured()) {
-      return "CANCELLED";
-    }
-    Boolean enabled =
-        jdbc.queryForObject(
-            "SELECT COALESCE((SELECT push_enabled FROM notification_preferences WHERE user_id=?), FALSE)",
-            Boolean.class,
-            recipientUserId);
-    if (!Boolean.TRUE.equals(enabled)) {
-      return "CANCELLED";
-    }
-    List<Subscription> subscriptions =
-        jdbc.query(
-            """
-                SELECT id, endpoint, public_key, auth_secret FROM push_subscriptions
-                WHERE user_id=? AND active=TRUE ORDER BY id
-                """,
-            (rs, row) ->
-                new Subscription(
-                    rs.getObject("id", UUID.class),
-                    rs.getString("endpoint"),
-                    rs.getString("public_key"),
-                    rs.getString("auth_secret")),
-            recipientUserId);
+  public void sendDigest(
+      UUID digestId,
+      OffsetDateTime sendAt,
+      UUID recipientUserId,
+      String title,
+      String body,
+      String targetPath) {
+    List<Subscription> subscriptions = digestSubscriptions(recipientUserId);
     if (subscriptions.isEmpty()) {
-      return "CANCELLED";
+      recordDigest(digestId, sendAt, "CANCELLED");
+      return;
     }
     String payload;
     try {
@@ -295,43 +403,93 @@ public class WebPushNotificationProvider implements NotificationDeliveryProvider
     } catch (JsonProcessingException exception) {
       throw new IllegalStateException("Unable to serialize a grouped push.", exception);
     }
-    boolean accepted = false;
-    for (Subscription subscription : subscriptions) {
-      try {
-        int status =
-            webPushClient.send(
-                publicKey,
-                privateKey,
-                subject,
-                subscription.endpoint(),
-                subscription.publicKey(),
-                subscription.authSecret(),
-                payload.getBytes(StandardCharsets.UTF_8));
-        if (status >= 200 && status < 300) {
-          accepted = true;
-          jdbc.update(
-              "UPDATE push_subscriptions SET last_used_at=NOW() WHERE id=?", subscription.id());
-        } else if (status == 404 || status == 410) {
-          jdbc.update("UPDATE push_subscriptions SET active=FALSE WHERE id=?", subscription.id());
-        } else {
-          logger.warn("Grouped Web Push was rejected (HTTP {}).", status);
-        }
-      } catch (IOException
-          | GeneralSecurityException
-          | JoseException
-          | ExecutionException exception) {
-        logger.warn("Grouped Web Push failed (provider error).");
-      } catch (InterruptedException exception) {
-        Thread.currentThread().interrupt();
-        logger.warn("Grouped Web Push was interrupted.");
-        break;
-      } catch (IllegalArgumentException exception) {
-        jdbc.update("UPDATE push_subscriptions SET active=FALSE WHERE id=?", subscription.id());
-        logger.warn(
-            "Grouped Web Push skipped a subscription with an invalid key; it was deactivated.");
-      }
+    jdbc.update(
+        "UPDATE notification_push_digests SET send_at=? WHERE id=?",
+        quietHours.now().plus(SEND_LEASE_DURATION),
+        digestId);
+    afterCommit(
+        () -> {
+          boolean accepted = false;
+          List<UUID> used = new ArrayList<>();
+          List<UUID> gone = new ArrayList<>();
+          for (Subscription subscription : subscriptions) {
+            try {
+              int status = send(subscription, payload);
+              if (status >= 200 && status < 300) {
+                accepted = true;
+                used.add(subscription.id());
+              } else if (status == 404 || status == 410) {
+                gone.add(subscription.id());
+              } else {
+                logger.warn("Grouped Web Push was rejected (HTTP {}).", status);
+              }
+            } catch (IOException
+                | GeneralSecurityException
+                | JoseException
+                | ExecutionException exception) {
+              logger.warn("Grouped Web Push failed (provider error).");
+            } catch (InterruptedException exception) {
+              Thread.currentThread().interrupt();
+              logger.warn("Grouped Web Push was interrupted.");
+              break;
+            } catch (IllegalArgumentException exception) {
+              gone.add(subscription.id());
+              logger.warn(
+                  "Grouped Web Push skipped a subscription with an invalid key; it was"
+                      + " deactivated.");
+            }
+          }
+          String outcome = accepted ? "SENT" : "FAILED";
+          records.executeWithoutResult(
+              status -> {
+                used.forEach(
+                    id ->
+                        jdbc.update(
+                            "UPDATE push_subscriptions SET last_used_at=NOW() WHERE id=?", id));
+                gone.forEach(
+                    id -> jdbc.update("UPDATE push_subscriptions SET active=FALSE WHERE id=?", id));
+                recordDigest(digestId, sendAt, outcome);
+              });
+        });
+  }
+
+  private List<Subscription> digestSubscriptions(UUID recipientUserId) {
+    if (!isConfigured()) {
+      return List.of();
     }
-    return accepted ? "SENT" : "FAILED";
+    Boolean enabled =
+        jdbc.queryForObject(
+            "SELECT COALESCE((SELECT push_enabled FROM notification_preferences WHERE user_id=?), FALSE)",
+            Boolean.class,
+            recipientUserId);
+    if (!Boolean.TRUE.equals(enabled)) {
+      return List.of();
+    }
+    return jdbc.query(
+        """
+            SELECT id, endpoint, public_key, auth_secret FROM push_subscriptions
+            WHERE user_id=? AND active=TRUE ORDER BY id
+            """,
+        (rs, row) ->
+            new Subscription(
+                rs.getObject("id", UUID.class),
+                rs.getString("endpoint"),
+                rs.getString("public_key"),
+                rs.getString("auth_secret")),
+        recipientUserId);
+  }
+
+  private void recordDigest(UUID digestId, OffsetDateTime sendAt, String status) {
+    jdbc.update(
+        """
+            UPDATE notification_push_digests
+            SET status=?, send_at=?, sent_at=CASE WHEN ?='SENT' THEN NOW() ELSE sent_at END
+            WHERE id=?
+            """,
+        status,
+        sendAt,
+        status,
+        digestId);
   }
 
   public PushTestResult sendTest(
@@ -395,6 +553,7 @@ public class WebPushNotificationProvider implements NotificationDeliveryProvider
                 END,
                 last_error=?, updated_at=NOW()
             WHERE notification_id=? AND subscription_id=?
+              AND (status IN ('PENDING', 'FAILED') OR ?)
             """,
         status,
         accepted,
@@ -402,10 +561,15 @@ public class WebPushNotificationProvider implements NotificationDeliveryProvider
         status,
         error,
         notificationId,
-        subscriptionId);
+        subscriptionId,
+        accepted);
   }
 
-  private void updateAggregateDeliveryStatus(UUID notificationId) {
+  /**
+   * Sets the delivery from its targets. A delivery cancelled while its push was on the way (the
+   * chore was done meanwhile) stays cancelled unless the push was in fact accepted.
+   */
+  private void updateAggregateDeliveryStatus(UUID notificationId, boolean accepted) {
     AggregateTargetState targets =
         jdbc.query(
             """
@@ -442,12 +606,14 @@ public class WebPushNotificationProvider implements NotificationDeliveryProvider
                     next_attempt_at=?,
                     last_error=?
                 WHERE notification_id=? AND channel='WEB_PUSH'
+                  AND (status<>'CANCELLED' OR ?)
                 """,
         status,
         status,
         targets.nextAttemptAt(),
         error,
-        notificationId);
+        notificationId,
+        accepted);
   }
 
   public enum PushTestResult {
@@ -525,6 +691,14 @@ public class WebPushNotificationProvider implements NotificationDeliveryProvider
   private record PushPayload(String title, String body, String targetPath) {}
 
   private record Subscription(UUID id, String endpoint, String publicKey, String authSecret) {}
+
+  /** One target's send result; a null status releases the claim without an attempt. */
+  private record TargetResult(
+      UUID subscriptionId, String status, String error, boolean accepted, boolean deactivate) {
+    static TargetResult released(UUID subscriptionId) {
+      return new TargetResult(subscriptionId, null, null, false, false);
+    }
+  }
 
   private record NotificationDeliveryState(
       UUID notificationId,

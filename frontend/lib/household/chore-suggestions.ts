@@ -52,9 +52,109 @@ export type ChoreSuggestion = {
   /** 1 (Quick) to 5 (Big job). */
   difficulty: number
   minutes: number
+  /** Suggested checklist steps (E12), filled in on create; most chores have none. */
+  steps?: readonly string[]
 }
 
-export const CHORE_SUGGESTIONS: readonly ChoreSuggestion[] = [
+/** Suggested steps for the built-in chores where a checklist helps (3 to 6 short steps). */
+const SUGGESTED_STEPS: Readonly<Record<string, readonly string[]>> = {
+  "Wash dishes": [
+    "Scrape and stack the plates",
+    "Glasses and cups first",
+    "Plates, bowls and cutlery",
+    "Pots and pans last",
+    "Wipe the sink and drying rack",
+  ],
+  Vacuum: [
+    "Pick things up off the floor",
+    "Vacuum each room",
+    "Under the sofa and beds",
+    "Empty the vacuum",
+  ],
+  Laundry: [
+    "Sort lights and darks",
+    "Check the pockets",
+    "Wash",
+    "Dry or hang up",
+    "Fold and put away",
+  ],
+  "Clean bathroom": [
+    "Clear the counters",
+    "Scrub the toilet",
+    "Sink and mirror",
+    "Shower or tub",
+    "Mop the floor",
+    "Restock toilet paper",
+  ],
+  "Clean garbage bin": ["Empty the bin", "Rinse it out", "Scrub with soap", "Dry it and add a bag"],
+  "Clean the fridge": [
+    "Throw out old food",
+    "Take out shelves and drawers",
+    "Wipe the inside",
+    "Wash shelves and drawers",
+    "Put everything back",
+  ],
+  "Clean the stove": [
+    "Take off grates and knobs",
+    "Soak the grates",
+    "Wipe the cooktop",
+    "Knobs and front panel",
+  ],
+  "Clean the microwave": [
+    "Steam a bowl of water and lemon",
+    "Wipe the inside",
+    "Wash the turntable",
+    "Wipe the outside",
+  ],
+  "Mop the floors": [
+    "Sweep or vacuum first",
+    "Mix the cleaner",
+    "Mop from the far corner out",
+    "Let it dry",
+  ],
+  "Clean the toilet": [
+    "Cleaner in the bowl",
+    "Scrub under the rim",
+    "Seat, lid and handle",
+    "Wipe around the base",
+  ],
+  "Clean the shower": [
+    "Spray the walls and glass",
+    "Scrub tiles and grout",
+    "Clear the drain",
+    "Rinse and squeegee",
+  ],
+  "Clean the windows": [
+    "Dust frames and sills",
+    "Spray the glass",
+    "Wipe top to bottom",
+    "Dry the edges",
+  ],
+  "Change bed sheets": [
+    "Strip the bed",
+    "Fresh sheets on",
+    "Fresh pillowcases",
+    "Wash the old set",
+  ],
+  "Clean the litter box": ["Scoop the litter", "Top up fresh litter", "Sweep around the box"],
+  "Wash the car": [
+    "Rinse it down",
+    "Wash top to bottom",
+    "Clean the wheels",
+    "Dry it",
+    "Vacuum inside",
+  ],
+  "Deep clean": [
+    "Dust high places first",
+    "Wipe doors and light switches",
+    "Kitchen appliances inside and out",
+    "Scrub the bathrooms",
+    "Vacuum under the furniture",
+    "Mop every floor",
+  ],
+}
+
+const BASE_SUGGESTIONS: readonly ChoreSuggestion[] = [
   {
     title: "Take out garbage",
     icon: "trash",
@@ -375,7 +475,32 @@ export const CHORE_SUGGESTIONS: readonly ChoreSuggestion[] = [
     difficulty: 3,
     minutes: 45,
   },
+  {
+    title: "Deep clean",
+    icon: "vacuum",
+    category: "Cleaning",
+    often: { type: "MONTHLY" },
+    dueTime: "12:00",
+    who: "TURNS",
+    difficulty: 5,
+    minutes: 120,
+  },
 ]
+
+export const CHORE_SUGGESTIONS: readonly ChoreSuggestion[] = BASE_SUGGESTIONS.map((suggestion) =>
+  SUGGESTED_STEPS[suggestion.title]
+    ? { ...suggestion, steps: SUGGESTED_STEPS[suggestion.title] }
+    : suggestion,
+)
+
+/** The suggested steps for a chore named exactly like a built-in one (any case), or none. */
+export function suggestedStepsFor(title: string): readonly string[] {
+  const wanted = title.trim().toLowerCase()
+  if (!wanted) return []
+  return (
+    CHORE_SUGGESTIONS.find((suggestion) => suggestion.title.toLowerCase() === wanted)?.steps ?? []
+  )
+}
 
 /** The "Popular" chips shown before anything is typed, in display order. */
 export const POPULAR_SUGGESTIONS: readonly ChoreSuggestion[] = [

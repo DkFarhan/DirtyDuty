@@ -66,7 +66,7 @@ class AccountDeletionLockingIntegrationTest {
   private final List<UUID> householdIds = new ArrayList<>();
 
   @Test
-  void accountDeletionSerializesWithAccountLevelPushRetry() throws Exception {
+  void accountDeletionIsNotHeldUpByAnInFlightPushRetryAndLeavesNothingBehind() throws Exception {
     User user = createUser("push-retry-delete");
     UUID notificationId = UUID.randomUUID();
     jdbc.update(
@@ -104,10 +104,8 @@ class AccountDeletionLockingIntegrationTest {
 
     CountDownLatch pushLookupComplete = new CountDownLatch(1);
     CountDownLatch releasePush = new CountDownLatch(1);
-    AtomicInteger schedulerPid = new AtomicInteger();
     doAnswer(
             invocation -> {
-              schedulerPid.set(jdbc.queryForObject("SELECT pg_backend_pid()", Integer.class));
               pushLookupComplete.countDown();
               await(releasePush, "push retry release");
               return 201;
@@ -131,22 +129,20 @@ class AccountDeletionLockingIntegrationTest {
                       .executeWithoutResult(status -> notificationScheduler.run()));
       assertThat(pushLookupComplete.await(10, TimeUnit.SECONDS)).isTrue();
 
-      AtomicInteger deletionPid = new AtomicInteger();
+      // The push goes after the scheduler's transaction (and its user lock) has ended, so
+      // deleting the account doesn't wait for a slow push service.
       Future<?> deletion =
           executor.submit(
               () ->
                   new TransactionTemplate(transactionManager)
-                      .executeWithoutResult(
-                          status -> {
-                            deletionPid.set(
-                                jdbc.queryForObject("SELECT pg_backend_pid()", Integer.class));
-                            deleteAccount(user);
-                          }));
-      assertThat(awaitBlockedBy(schedulerPid.get())).isTrue();
+                      .executeWithoutResult(status -> deleteAccount(user)));
+      deletion.get(5, TimeUnit.SECONDS);
+      assertThat(accountStatus(user.getId())).isEqualTo("DELETED");
 
+      // The push's result is recorded against rows the deletion already removed: nothing
+      // comes back.
       releasePush.countDown();
       scheduler.get(10, TimeUnit.SECONDS);
-      deletion.get(10, TimeUnit.SECONDS);
     } finally {
       releasePush.countDown();
       executor.shutdownNow();

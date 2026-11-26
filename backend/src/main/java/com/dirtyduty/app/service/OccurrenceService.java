@@ -68,6 +68,7 @@ public class OccurrenceService {
   private final AwayPeriods awayPeriods;
   private final EffortLedger effortLedger;
   private final ChoreRequestService choreRequests;
+  private final ChoreStepService choreSteps;
   private final int horizonDays;
 
   /**
@@ -89,6 +90,7 @@ public class OccurrenceService {
       AwayPeriods awayPeriods,
       EffortLedger effortLedger,
       ChoreRequestService choreRequests,
+      ChoreStepService choreSteps,
       @Value("${app.chores.occurrence-horizon-days:30}") int horizonDays) {
     if (horizonDays < 1 || horizonDays > 90) {
       throw new IllegalArgumentException("Occurrence horizon must be between 1 and 90 days.");
@@ -102,6 +104,7 @@ public class OccurrenceService {
     this.awayPeriods = awayPeriods;
     this.effortLedger = effortLedger;
     this.choreRequests = choreRequests;
+    this.choreSteps = choreSteps;
     this.horizonDays = horizonDays;
   }
 
@@ -2546,6 +2549,8 @@ public class OccurrenceService {
               + "WHERE id=? AND household_id=? AND status IN ('PENDING','SUBMITTED')",
           assignmentId,
           householdId);
+      // History keeps how much of the checklist was ticked ("4 of 5 steps").
+      choreSteps.snapshot(assignmentId);
       cancelPendingNotifications(assignmentId);
       if (openCopyKind && schedule != null) {
         ZoneId zone = ZoneId.of(schedule.getTimezone());
@@ -2588,6 +2593,64 @@ public class OccurrenceService {
     }
     choreRequests.closeChanged(householdId, actor.getUser().getId());
     return assignmentResponse(assignmentId, actor.getUser().getId());
+  }
+
+  // ---- Checklist ticks (E12) -------------------------------------------------------------------
+
+  static final String STEP_NOT_FOUND = "This step is no longer on the chore.";
+  static final String STEP_NOT_OPEN = "Steps can only be ticked while the chore is still to do.";
+  static final String STEP_NOT_YOURS = "Only the people doing this chore can tick its steps.";
+
+  /**
+   * Ticks or unticks one step on an open occurrence. Who may tick is who may complete it: its
+   * assignees, or anyone in the rotation for When needed. Ticks are shared, so on a group chore
+   * everyone sees who ticked each step. Someone outside the household gets "not found".
+   */
+  @Transactional
+  public AssignmentResponse tickStep(
+      UUID householdId,
+      UUID assignmentId,
+      UUID stepId,
+      boolean ticked,
+      Authentication authentication) {
+    UUID viewerId = memberOrNotFound(householdId, authentication);
+    lockHousehold(householdId);
+    List<String> statuses =
+        jdbc.queryForList(
+            "SELECT status FROM chore_assignments WHERE id=? AND household_id=? FOR UPDATE",
+            String.class,
+            assignmentId,
+            householdId);
+    if (statuses.isEmpty()) {
+      throw new ResourceNotFoundException("Assignment was not found in this household.");
+    }
+    if (!choreSteps.belongsTo(stepId, assignmentId)) {
+      throw new ResourceNotFoundException(STEP_NOT_FOUND);
+    }
+    String status = statuses.getFirst();
+    if (!"PENDING".equals(status) && !"SUBMITTED".equals(status)) {
+      throw new InvalidHouseholdException(STEP_NOT_OPEN);
+    }
+    AssignmentResponse current = assignmentResponse(assignmentId, viewerId);
+    if (!current.canComplete()) {
+      throw new HouseholdAccessDeniedException(STEP_NOT_YOURS);
+    }
+    choreSteps.setTick(
+        assignmentId,
+        stepId,
+        viewerId,
+        ticked,
+        OffsetDateTime.now(clock).withOffsetSameInstant(ZoneOffset.UTC));
+    return assignmentResponse(assignmentId, viewerId);
+  }
+
+  /** The viewer's id when they are an active member; "not found" for anyone else. */
+  private UUID memberOrNotFound(UUID householdId, Authentication authentication) {
+    try {
+      return requireActiveMember(householdId, authentication).getUser().getId();
+    } catch (HouseholdAccessDeniedException exception) {
+      throw new ResourceNotFoundException("Assignment was not found in this household.");
+    }
   }
 
   // ---- Single-occurrence actions -------------------------------------------------------------
@@ -3607,7 +3670,8 @@ public class OccurrenceService {
                        s.strategy_config->>'rotationWeeks' rotation_weeks,
                        s.strategy_config->>'rotationStartsOn' rotation_starts_on,
                        COALESCE(a.away_from_user_id, a.assigned_to_user_id) week_owner_id,
-                       wo.display_name week_owner_name
+                       wo.display_name week_owner_name,
+                       a.steps_total, a.steps_ticked
                 FROM chore_assignments a
                 LEFT JOIN users au ON au.id=a.away_from_user_id
                 LEFT JOIN users wo ON wo.id=COALESCE(a.away_from_user_id, a.assigned_to_user_id)
@@ -3764,7 +3828,16 @@ public class OccurrenceService {
             rs.getString("request_note_user") == null
                 ? null
                 : UUID.fromString(rs.getString("request_note_user"))),
-        pending && !rs.getBoolean("assignees_overridden") ? week(rs) : null);
+        pending && !rs.getBoolean("assignees_overridden") ? week(rs) : null,
+        // Checklist (E12): who can tick is who can complete.
+        choreSteps.stateFor(
+            id,
+            rs.getObject("chore_id", UUID.class),
+            householdId,
+            pending,
+            canComplete,
+            (Integer) rs.getObject("steps_total"),
+            (Integer) rs.getObject("steps_ticked")));
   }
 
   /** Week by week: whose period this occurrence is in, and its last day; null otherwise. */

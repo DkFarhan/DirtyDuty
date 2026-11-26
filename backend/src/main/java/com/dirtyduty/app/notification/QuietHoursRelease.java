@@ -188,7 +188,7 @@ public class QuietHoursRelease {
     }
   }
 
-  /** Sends the grouped pushes that are due for these people. */
+  /** Sends the grouped pushes that are due for these people (after the caller commits). */
   public void sendDue(Collection<UUID> recipientIds) {
     if (recipientIds.isEmpty()) {
       return;
@@ -199,7 +199,7 @@ public class QuietHoursRelease {
     List<Digest> due =
         jdbc.query(
             """
-                SELECT id, recipient_user_id, title, message, target_path
+                SELECT id, send_at, recipient_user_id, title, message, target_path
                 FROM notification_push_digests
                 WHERE status='PENDING' AND send_at<=? AND recipient_user_id IN (%s)
                 ORDER BY send_at, created_at
@@ -209,24 +209,22 @@ public class QuietHoursRelease {
             (rs, row) ->
                 new Digest(
                     rs.getObject("id", UUID.class),
+                    rs.getObject("send_at", OffsetDateTime.class),
                     rs.getObject("recipient_user_id", UUID.class),
                     rs.getString("title"),
                     rs.getString("message"),
                     rs.getString("target_path")),
             args.toArray());
+    // Each goes once this transaction commits (no lock held while it's on its way); the
+    // provider records how it went.
     for (Digest digest : due) {
-      String status =
-          webPush.sendDigest(
-              digest.recipientId(), digest.title(), digest.message(), digest.targetPath());
-      jdbc.update(
-          """
-              UPDATE notification_push_digests
-              SET status=?, sent_at=CASE WHEN ?='SENT' THEN NOW() ELSE sent_at END
-              WHERE id=?
-              """,
-          status,
-          status,
-          digest.id());
+      webPush.sendDigest(
+          digest.id(),
+          digest.sendAt(),
+          digest.recipientId(),
+          digest.title(),
+          digest.message(),
+          digest.targetPath());
     }
   }
 
@@ -639,5 +637,10 @@ public class QuietHoursRelease {
   private record Ranked(Held item, int importance) {}
 
   private record Digest(
-      UUID id, UUID recipientId, String title, String message, String targetPath) {}
+      UUID id,
+      OffsetDateTime sendAt,
+      UUID recipientId,
+      String title,
+      String message,
+      String targetPath) {}
 }

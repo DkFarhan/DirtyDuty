@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react"
+import { render, screen, waitFor } from "@testing-library/react"
 import { useRef } from "react"
 import { describe, expect, it, vi } from "vitest"
 import { useDialogFocus } from "./use-dialog-focus"
@@ -22,11 +22,11 @@ function FocusTrapHarness({ disabled }: { disabled: boolean }) {
 }
 
 describe("useDialogFocus", () => {
-  it("traps Tab and Shift+Tab inside when controls become enabled after container focus", () => {
+  it("traps Tab and Shift+Tab inside when controls become enabled after container focus", async () => {
     const view = render(<FocusTrapHarness disabled />)
     const dialog = screen.getByRole("region", { name: "Test dialog" })
 
-    expect(document.activeElement).toBe(dialog)
+    await waitFor(() => expect(document.activeElement).toBe(dialog))
     const disabledTab = new KeyboardEvent("keydown", {
       bubbles: true,
       cancelable: true,

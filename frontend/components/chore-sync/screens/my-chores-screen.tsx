@@ -26,6 +26,7 @@ import {
   type OccurrenceAction,
 } from "@/lib/household/occurrence-actions"
 import { OccurrenceActionSheet } from "../occurrence-action-sheet"
+import { useChoreSteps } from "../use-chore-steps"
 import { useStartWithBasics } from "../use-start-with-basics"
 import { RequestsCard } from "../requests/requests-card"
 import { useChoreRequests } from "../requests/use-chore-requests"
@@ -382,6 +383,28 @@ export function MyChoresScreen({ theme = "dark" }: { theme?: HomeVisualTheme } =
 
   const actionTarget = upcoming.find((assignment) => assignment.id === actionTargetId) ?? null
 
+  // Checklists (E12): the tick sheet, and "Mark done anyway?" before completing with steps left.
+  const choreSteps = useChoreSteps({
+    householdId: household?.id ?? null,
+    householdTimezone: household?.timezone ?? "UTC",
+    viewer: { userId: state.currentUser.id, displayName: state.currentUser.name },
+    theme: theme === "dark" ? "dark" : "light",
+    find: (id) =>
+      upcomingRef.current.find((assignment) => assignment.id === id) ??
+      completedRef.current.find((assignment) => assignment.id === id) ??
+      null,
+    apply: (next) => {
+      if (!upcomingRef.current.some((assignment) => assignment.id === next.id)) return
+      requestSequence.current += 1
+      upcomingRef.current = upcomingRef.current.map((assignment) =>
+        assignment.id === next.id ? next : assignment,
+      )
+      setUpcoming(upcomingRef.current)
+    },
+    complete: (id, surface) => void completeAssignment(id, surface),
+    isCompleting: (id) => (household ? completingIds.has(`${household.id}:${id}`) : false),
+  })
+
   // Hand-off and swap requests (E11): the card at the top, and Cancel request on my own cards.
   const requests = useChoreRequests(household?.id ?? null, household?.timezone ?? "UTC")
   const cancelRequest = async (requestId: string, choreId: string, surface: CardSurface) => {
@@ -431,7 +454,8 @@ export function MyChoresScreen({ theme = "dark" }: { theme?: HomeVisualTheme } =
     <>
       <MyChoresScreenView
         activeDestination="my-chores"
-        onCompleteChore={(id, surface) => void completeAssignment(id, surface)}
+        onCompleteChore={(id, surface) => choreSteps.requestComplete(id, surface)}
+        onOpenSteps={(id, surface) => choreSteps.openSteps(id, surface)}
         onOpenChoreActions={(id, surface = "card") => {
           setActionSurface(surface)
           setActionTargetId(id)
@@ -464,6 +488,11 @@ export function MyChoresScreen({ theme = "dark" }: { theme?: HomeVisualTheme } =
           householdTimezone={household.timezone}
           viewerId={state.currentUser.id}
           onClose={() => setActionTargetId(null)}
+          onOpenSteps={() => {
+            const target = actionTarget.id
+            setActionTargetId(null)
+            choreSteps.openSteps(target, actionSurface)
+          }}
           onSubmit={(action) => {
             const target = actionTarget.id
             setActionTargetId(null)
@@ -482,6 +511,7 @@ export function MyChoresScreen({ theme = "dark" }: { theme?: HomeVisualTheme } =
           theme={theme}
         />
       )}
+      {choreSteps.elements}
     </>
   )
 }

@@ -245,14 +245,16 @@ describe("PrivacySecurityScreen", () => {
     expect(dialog.textContent).not.toContain("StrongPassword123!")
     expect(mocks.deleteAccount).not.toHaveBeenCalled()
 
-    expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Cancel" }))
+    await waitFor(() =>
+      expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Cancel" })),
+    )
     fireEvent.keyDown(document, { key: "Tab", shiftKey: true })
     expect(document.activeElement).toBe(
       within(dialog).getByRole("button", { name: "Permanently delete account" }),
     )
     fireEvent.keyDown(document, { key: "Escape" })
     expect(screen.queryByRole("dialog")).toBeNull()
-    expect(document.activeElement).toBe(reviewButton)
+    await waitFor(() => expect(document.activeElement).toBe(reviewButton))
     expect(mocks.deleteAccount).not.toHaveBeenCalled()
     expect((screen.getByLabelText("Account email") as HTMLInputElement).value).toBe(
       "USER@Example.COM",

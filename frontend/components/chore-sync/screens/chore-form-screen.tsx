@@ -57,7 +57,8 @@ import { householdChoreResource, useDataSync } from "@/lib/data-sync/data-sync-c
 import { CategoryDialog } from "../category-dialog"
 import { useDialogFocus } from "../use-dialog-focus"
 import { CategorySheet } from "../chore-form/category-sheet"
-import { Stepper, ToggleRow } from "../chore-form/form-sheet"
+import { Stepper } from "../chore-form/form-sheet"
+import { StepsEditor } from "../chore-form/steps-editor"
 import { HowOftenSheet } from "../chore-form/how-often-sheet"
 import { WhoSheet } from "../chore-form/who-sheet"
 import { SUGGESTION_ICONS } from "../chore-form/suggestion-icons"
@@ -718,12 +719,9 @@ export function ChoreFormScreen({ theme = "light" }: { theme?: PreviewTheme }) {
           value={values.description}
         />
       </label>
-      <ToggleRow
-        checked={values.requiresVerification}
-        hint="Someone confirms it was done"
-        label="Ask for a quick check"
-        onChange={(requiresVerification) => update({ ...values, requiresVerification })}
-      />
+      {/* "Ask for a quick check" is hidden (it has no workflow); requiresVerification is kept as it
+          is saved, untouched. */}
+      <StepsEditor onChange={update} values={values} />
       {rowError("more")}
     </section>
   )
