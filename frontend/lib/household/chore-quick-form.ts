@@ -6,7 +6,12 @@ import type {
   IntervalUnit,
   ScheduleKind,
 } from "./chores"
-import { findCategoryByName, guessCategoryName, type ChoreSuggestion } from "./chore-suggestions"
+import {
+  findCategoryByName,
+  guessCategoryName,
+  suggestedStepsFor,
+  type ChoreSuggestion,
+} from "./chore-suggestions"
 import {
   INTERVAL_UNIT,
   MAX_COUNT,
@@ -96,7 +101,87 @@ export type QuickValues = {
   difficulty: number
   estimatedMinutes: number | null
   requiresVerification: boolean
+  /** The optional checklist (E12), in order. */
+  steps: StepDraft[]
+  /**
+   * The user changed the steps (or they came from a saved chore): a name that matches a built-in
+   * suggestion no longer fills them in.
+   */
+  stepsEdited: boolean
   touched: QuickField[]
+}
+
+/** One step in the form. {@link key} is for React; {@link id} is the saved step's id, if any. */
+export type StepDraft = { key: string; id: string | null; text: string; suggested: boolean }
+
+export const MAX_STEPS = 15
+export const MAX_STEP_LENGTH = 80
+
+let stepKeySeed = 0
+function stepKey() {
+  stepKeySeed += 1
+  return `step-${stepKeySeed}`
+}
+
+function draftsFrom(texts: readonly string[], suggested: boolean): StepDraft[] {
+  return texts.map((text) => ({ key: stepKey(), id: null, text, suggested }))
+}
+
+/**
+ * On create, a name that matches a built-in suggestion with steps fills them in (marked
+ * "Suggested") until the user changes the steps; any other name clears suggested ones.
+ */
+function withSuggestedSteps(values: QuickValues, texts: readonly string[]): QuickValues {
+  if (values.stepsEdited) return values
+  const same =
+    values.steps.length === texts.length &&
+    values.steps.every((step, index) => step.text === texts[index])
+  return same ? values : { ...values, steps: draftsFrom(texts, true) }
+}
+
+/** Adds a step at the end; blank text or a full list changes nothing. */
+export function addStep(values: QuickValues, text: string): QuickValues {
+  const trimmed = text.trim().slice(0, MAX_STEP_LENGTH)
+  if (!trimmed || values.steps.length >= MAX_STEPS) return values
+  return {
+    ...values,
+    steps: [...values.steps, { key: stepKey(), id: null, text: trimmed, suggested: false }],
+    stepsEdited: true,
+  }
+}
+
+export function removeStep(values: QuickValues, key: string): QuickValues {
+  return { ...values, steps: values.steps.filter((step) => step.key !== key), stepsEdited: true }
+}
+
+/** Renames a step; a saved step keeps its id, so its ticks stay. */
+export function renameStep(values: QuickValues, key: string, text: string): QuickValues {
+  return {
+    ...values,
+    steps: values.steps.map((step) =>
+      step.key === key ? { ...step, text: text.slice(0, MAX_STEP_LENGTH), suggested: false } : step,
+    ),
+    stepsEdited: true,
+  }
+}
+
+/** Moves a step up (-1) or down (+1), or to another step's place when dragged. */
+export function moveStep(values: QuickValues, key: string, to: number): QuickValues {
+  const from = values.steps.findIndex((step) => step.key === key)
+  if (from < 0 || to < 0 || to >= values.steps.length || to === from) return values
+  const steps = [...values.steps]
+  const [moved] = steps.splice(from, 1)
+  steps.splice(to, 0, moved)
+  return { ...values, steps, stepsEdited: true }
+}
+
+/** Removes every suggested step at once ("Suggested · Remove all"). */
+export function clearSuggestedSteps(values: QuickValues): QuickValues {
+  return { ...values, steps: values.steps.filter((step) => !step.suggested), stepsEdited: true }
+}
+
+export function stepsLabel(count: number) {
+  return count === 1 ? "1 step" : `${count} steps`
 }
 
 export type Member = { userId: string; displayName: string }
@@ -227,6 +312,8 @@ export function initialQuickValues(context: QuickContext): QuickValues {
     difficulty: 3,
     estimatedMinutes: null,
     requiresVerification: false,
+    steps: [],
+    stepsEdited: false,
     touched: [],
   }
 }
@@ -372,6 +459,14 @@ export function valuesFromChore(chore: Chore, context: QuickContext): LoadedQuic
       difficulty: chore.difficulty,
       estimatedMinutes: chore.estimatedMinutes,
       requiresVerification: chore.requiresVerification,
+      // A saved chore's steps are the user's: a name change never replaces them.
+      steps: (chore.steps ?? []).map((step) => ({
+        key: stepKey(),
+        id: step.id,
+        text: step.text,
+        suggested: false,
+      })),
+      stepsEdited: true,
       touched: ["often", "who", "category", "priority", "difficulty", "minutes"],
     },
   }
@@ -391,6 +486,8 @@ export function copyValues(chore: Chore, context: QuickContext): LoadedQuickValu
     values: {
       ...values,
       title: `${values.title.slice(0, MAX_TITLE_LENGTH - suffix.length)}${suffix}`,
+      // The copy is a new chore, so its steps are new steps.
+      steps: values.steps.map((step) => ({ ...step, key: stepKey(), id: null })),
       startsOn:
         values.often !== "AS_NEEDED" && values.startsOn < firstStart ? firstStart : values.startsOn,
     },
@@ -477,10 +574,10 @@ export function withTitle<T extends { id: string; name: string }>(
   title: string,
   categories: readonly T[],
 ): QuickValues {
-  if (values.categorySource !== "guess") return { ...values, title }
+  const named = withSuggestedSteps({ ...values, title }, suggestedStepsFor(title))
+  if (values.categorySource !== "guess") return named
   return {
-    ...values,
-    title,
+    ...named,
     categoryId: findCategoryByName(categories, guessCategoryName(title))?.id ?? null,
   }
 }
@@ -521,7 +618,10 @@ export function applySuggestion<T extends { id: string; name: string }>(
   context: QuickContext,
 ): QuickValues {
   const touched = new Set(values.touched)
-  let next: QuickValues = { ...values, title: suggestion.title }
+  let next: QuickValues = withSuggestedSteps(
+    { ...values, title: suggestion.title },
+    suggestion.steps ?? [],
+  )
   if (!touched.has("often")) {
     const often = suggestion.often
     const dueTime = suggestion.dueTime ?? next.dueTime
@@ -759,6 +859,16 @@ function assignmentFor(
   }
 }
 
+/** The first problem with the steps, worded as the server words it, or null. */
+export function stepsError(steps: readonly StepDraft[]): string | null {
+  if (steps.length > MAX_STEPS) return "A chore can have at most 15 steps."
+  if (steps.some((step) => step.text.trim() === "")) return "Enter a step, or remove it."
+  if (steps.some((step) => step.text.trim().length > MAX_STEP_LENGTH)) {
+    return "Keep each step to 80 characters."
+  }
+  return null
+}
+
 /** The request for the backend, or the first problem to show next to its control. */
 export function buildQuickRequest(
   values: QuickValues,
@@ -817,6 +927,9 @@ export function buildQuickRequest(
     }
   }
 
+  const stepError = stepsError(values.steps)
+  if (stepError) return { error: { field: "more", message: stepError } }
+
   const noDeadline = often === "AS_NEEDED" && !values.backstopEnabled
   const endsOn =
     often !== "CUSTOM"
@@ -835,6 +948,7 @@ export function buildQuickRequest(
       difficulty: values.difficulty,
       estimatedMinutes: minutes,
       requiresVerification: values.requiresVerification,
+      steps: values.steps.map((step) => ({ id: step.id, text: step.text.trim() })),
       schedule: {
         recurrenceRule: recurrenceRuleFor(values),
         timezone: context.timezone,
@@ -1036,13 +1150,15 @@ export function moreLabel(values: QuickValues, editing: boolean): string {
     values.touched.includes("difficulty") ||
     values.touched.includes("minutes") ||
     values.description.trim() !== "" ||
-    values.requiresVerification
+    values.requiresVerification ||
+    values.steps.length > 0
   if (!changed) return "Optional"
   const parts = [
     PRIORITIES.find((priority) => priority.value === values.priority)?.label ?? "Normal",
     EFFORTS[values.difficulty - 1] ?? "Moderate",
   ]
   if (values.estimatedMinutes !== null) parts.push(`${values.estimatedMinutes} min`)
+  if (values.steps.length > 0) parts.push(stepsLabel(values.steps.length))
   return parts.join(" · ")
 }
 

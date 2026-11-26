@@ -1,0 +1,217 @@
+/* Steps (optional) in More options. Uses the form page tokens (--ink, --muted, --accent, --line,
+   --surface-strong, --surface-soft, --accent-soft) so it fits both themes. */
+.editor {
+  display: grid;
+  gap: 8px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.title {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.title span {
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.textButton {
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: grid;
+  grid-template-columns: 20px 18px minmax(0, 1fr) 44px 44px 44px;
+  align-items: start;
+  gap: 2px;
+  padding: 0 0 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-strong);
+}
+
+.item[data-suggested] {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+}
+
+.item[data-dragging] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.grip {
+  display: grid;
+  height: 44px;
+  place-items: center;
+  color: var(--muted);
+  cursor: grab;
+  touch-action: none;
+}
+
+.number {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  outline: none;
+  background: transparent;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.input::placeholder {
+  color: var(--muted);
+}
+
+.input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.stepText {
+  display: block;
+  padding: 11px 8px;
+  border-color: transparent;
+  line-height: 1.4;
+  resize: none;
+  overflow: hidden;
+  font-family: inherit;
+}
+
+.number {
+  line-height: 44px;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.suggestedTag {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.iconButton {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: var(--muted);
+}
+
+.iconButton:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+.iconButton:disabled {
+  opacity: 0.3;
+}
+
+.addRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.addRow .input {
+  border-color: var(--line);
+  background: var(--surface-strong);
+  padding: 0 12px;
+  border-radius: 14px;
+}
+
+.addButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.addButton:disabled {
+  opacity: 0.5;
+}
+
+@media (max-width: 360px) {
+  .item {
+    grid-template-columns: 18px minmax(0, 1fr) 40px 40px 40px;
+  }
+
+  .number {
+    display: none;
+  }
+
+  .iconButton {
+    width: 40px;
+  }
+}

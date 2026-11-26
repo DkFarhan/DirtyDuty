@@ -3,6 +3,8 @@
 import type { CardRequestView } from "@/lib/household/requests"
 import { AwayNote } from "../away-note"
 import { MyWeeksRow, WeekChip } from "../week-chip"
+import { StepsChip } from "../steps-sheet"
+import type { StepsChipView } from "@/lib/household/steps"
 import { StartWithBasics } from "../start-with-basics"
 import type { MyWeeksLine, WeekChipView } from "@/lib/household/week-by-week"
 import { CancelRequestButton, RequestNote, WaitingChip } from "../requests/request-card-status"
@@ -33,6 +35,8 @@ export interface HomeChoreViewModel {
   awayNote?: string | null
   /** Week by week: "Your week · until Sun, Dec 7". */
   weekChip?: WeekChipView | null
+  /** "2 of 5 steps" when the chore has a checklist (E12). */
+  steps?: StepsChipView | null
   /** Hand-off and swap requests: waiting chip, accepted note, Cancel request (E11). */
   request?: CardRequestView
   /** The viewer may move, skip, undo or reassign this occurrence. */
@@ -56,6 +60,7 @@ export interface HomeUpcomingChoreViewModel {
   awayNote?: string | null
   /** Week by week: "Your week · until Sun, Dec 7". */
   weekChip?: WeekChipView | null
+  steps?: StepsChipView | null
   /** Hand-off and swap requests: waiting chip, accepted note, Cancel request (E11). */
   request?: CardRequestView
   hasActions?: boolean
@@ -127,6 +132,8 @@ export interface HomeScreenViewProps {
   onOpenChoreActions?: (choreId: string, surface?: CardSurface) => void
   /** "Needs doing" on a household job. */
   onFlagJob?: (choreId: string) => void
+  /** Opens a chore's checklist tick sheet (E12). */
+  onOpenSteps?: (choreId: string, surface?: CardSurface) => void
   onRetry: () => void
   onRetryNotificationCount?: () => void
   onPushAction?: () => void
@@ -158,6 +165,7 @@ function ChoreCard({
   theme,
   onComplete,
   onOpenActions,
+  onOpenSteps,
   onCancelRequest,
   attention = false,
   today = false,
@@ -166,6 +174,7 @@ function ChoreCard({
   theme: HomeVisualTheme
   onComplete: (choreId: string) => void
   onOpenActions?: (choreId: string) => void
+  onOpenSteps?: (choreId: string) => void
   onCancelRequest?: (requestId: string, choreId: string) => void
   attention?: boolean
   today?: boolean
@@ -206,6 +215,11 @@ function ChoreCard({
         </p>
         <AwayNote note={chore.awayNote} />
         <WeekChip chip={chore.weekChip} />
+        <StepsChip
+          chip={chore.steps}
+          onOpen={onOpenSteps && (() => onOpenSteps(chore.id))}
+          title={chore.title}
+        />
         <RequestNote kind={chore.request?.noteKind} label={chore.request?.noteLabel} />
         <WaitingChip label={chore.request?.waitingLabel} />
         {showActions && (
@@ -286,6 +300,7 @@ export function HomeScreenView({
   onCompleteChore,
   onOpenChoreActions,
   onFlagJob,
+  onOpenSteps,
   onRetry,
   onRetryNotificationCount = onRetry,
   onPushAction = onRetry,
@@ -559,6 +574,7 @@ export function HomeScreenView({
                       onCancelRequest={onCancelRequest}
                       onComplete={onCompleteChore}
                       onOpenActions={onOpenChoreActions}
+                      onOpenSteps={onOpenSteps}
                     />
                   ))}
                 </div>
@@ -590,6 +606,7 @@ export function HomeScreenView({
                       onCancelRequest={onCancelRequest}
                       onComplete={onCompleteChore}
                       onOpenActions={onOpenChoreActions}
+                      onOpenSteps={onOpenSteps}
                       today
                     />
                   ))}
@@ -613,6 +630,7 @@ export function HomeScreenView({
                       onComplete={(id) => onCompleteChore(id, "job")}
                       onFlag={onFlagJob}
                       onOpenActions={onOpenChoreActions && ((id) => onOpenChoreActions(id, "job"))}
+                      onOpenSteps={onOpenSteps && ((id) => onOpenSteps(id, "job"))}
                       theme={theme}
                     />
                   ))}
@@ -662,6 +680,11 @@ export function HomeScreenView({
                               </p>
                               <AwayNote note={chore.awayNote} />
                               <WeekChip chip={chore.weekChip} />
+                              <StepsChip
+                                chip={chore.steps}
+                                onOpen={onOpenSteps && (() => onOpenSteps(chore.id))}
+                                title={chore.title}
+                              />
                               <RequestNote
                                 kind={chore.request?.noteKind}
                                 label={chore.request?.noteLabel}

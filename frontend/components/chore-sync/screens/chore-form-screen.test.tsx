@@ -127,7 +127,7 @@ describe("ChoreFormScreen · quick create", () => {
     expect(screen.getByRole("heading", { name: "Create a chore" })).toBeTruthy()
     expect(screen.getByText("Real household")).toBeTruthy()
     expect(screen.getByText("Household · New routine")).toBeTruthy()
-    expect(document.activeElement).toBe(nameInput())
+    await waitFor(() => expect(document.activeElement).toBe(nameInput()))
     expect(row("How often").textContent).toContain("Every week · Sat")
     expect(row("Who").textContent).toContain("Take turns · everyone")
     expect(row("Category").textContent).toContain("From the name")
@@ -159,6 +159,7 @@ describe("ChoreFormScreen · quick create", () => {
       difficulty: 2,
       estimatedMinutes: 5,
       requiresVerification: false,
+      steps: [],
       schedule: {
         recurrenceRule: null,
         timezone: "America/Halifax",
@@ -516,7 +517,7 @@ describe("ChoreFormScreen · quick create", () => {
     expect(row("Category").textContent).not.toContain("From the name")
   })
 
-  it("expands More options and sends priority, effort, minutes, notes and the check", async () => {
+  it("expands More options and sends priority, effort, minutes and notes", async () => {
     await renderForm()
     fireEvent.change(nameInput(), { target: { value: "Deep clean oven" } })
     fireEvent.click(row("More options"))
@@ -527,7 +528,9 @@ describe("ChoreFormScreen · quick create", () => {
     fireEvent.click(within(more).getByRole("button", { name: "More (Takes about)" }))
     fireEvent.click(within(more).getByRole("button", { name: "More (Takes about)" }))
     fireEvent.change(within(more).getByLabelText("Notes"), { target: { value: "Gloves on" } })
-    fireEvent.click(within(more).getByRole("switch", { name: /Ask for a quick check/ }))
+    // "Ask for a quick check" has no workflow, so it isn't offered; the field stays as it was.
+    expect(within(more).queryByRole("switch", { name: /quick check/i })).toBeNull()
+    expect(screen.queryByText(/Ask for a quick check/)).toBeNull()
     expect(row("More options").textContent).toContain("High · Heavy · 10 min")
 
     fireEvent.click(createButton())
@@ -537,7 +540,94 @@ describe("ChoreFormScreen · quick create", () => {
       difficulty: 4,
       estimatedMinutes: 10,
       description: "Gloves on",
-      requiresVerification: true,
+      requiresVerification: false,
+    })
+  })
+
+  describe("steps", () => {
+    const stepNames = () =>
+      within(screen.getByRole("list", { name: "Steps" }))
+        .getAllByRole("textbox")
+        .map((input) => (input as HTMLInputElement).value)
+
+    it("fills in a suggestion's steps on create, marked Suggested and easy to remove", async () => {
+      await renderForm()
+      fireEvent.click(
+        within(screen.getByRole("list", { name: "Popular" })).getByRole("button", {
+          name: "Clean bathroom",
+        }),
+      )
+      expect(row("More options").textContent).toContain("6 steps")
+      fireEvent.click(row("More options"))
+      expect(stepNames()).toEqual([
+        "Clear the counters",
+        "Scrub the toilet",
+        "Sink and mirror",
+        "Shower or tub",
+        "Mop the floor",
+        "Restock toilet paper",
+      ])
+      const steps = screen.getByRole("list", { name: "Steps" })
+      expect(within(steps).getAllByText("Suggested")).toHaveLength(6)
+      fireEvent.click(screen.getByRole("button", { name: "Remove suggested" }))
+      expect(screen.queryByRole("list", { name: "Steps" })).toBeNull()
+      // Once the user has changed the steps, a matching name no longer fills them in.
+      fireEvent.change(nameInput(), { target: { value: "Laundry" } })
+      expect(screen.queryByRole("list", { name: "Steps" })).toBeNull()
+    })
+
+    it("follows a typed name until the user edits the steps, then never overwrites them", async () => {
+      await renderForm()
+      fireEvent.change(nameInput(), { target: { value: "laundry" } })
+      fireEvent.click(row("More options"))
+      expect(stepNames()).toHaveLength(5)
+      fireEvent.change(nameInput(), { target: { value: "Laundry day" } })
+      expect(screen.queryByRole("list", { name: "Steps" })).toBeNull()
+      fireEvent.change(nameInput(), { target: { value: "Laundry" } })
+      fireEvent.change(screen.getByRole("textbox", { name: "Step 1" }), {
+        target: { value: "Sort by colour" },
+      })
+      fireEvent.change(nameInput(), { target: { value: "Clean the fridge" } })
+      expect(stepNames()[0]).toBe("Sort by colour")
+      expect(stepNames()).toHaveLength(5)
+      // The edited step is no longer marked Suggested; the other four still are.
+      expect(
+        within(screen.getByRole("list", { name: "Steps" })).getAllByText("Suggested"),
+      ).toHaveLength(4)
+    })
+
+    it("adds, reorders and removes steps and sends them in order", async () => {
+      await renderForm()
+      fireEvent.change(nameInput(), { target: { value: "Tidy the garage" } })
+      fireEvent.click(row("More options"))
+      const add = screen.getByRole("textbox", { name: "New step" })
+      fireEvent.change(add, { target: { value: "Sweep" } })
+      fireEvent.keyDown(add, { key: "Enter" })
+      fireEvent.change(add, { target: { value: "  Bins out " } })
+      fireEvent.click(screen.getByRole("button", { name: "Add" }))
+      fireEvent.change(add, { target: { value: "Shelves" } })
+      fireEvent.click(screen.getByRole("button", { name: "Add" }))
+      expect(stepNames()).toEqual(["Sweep", "Bins out", "Shelves"])
+      fireEvent.click(screen.getByRole("button", { name: "Move step 3 up" }))
+      fireEvent.click(screen.getByRole("button", { name: "Remove step 1: Sweep" }))
+      expect(stepNames()).toEqual(["Shelves", "Bins out"])
+      expect(row("More options").textContent).toContain("2 steps")
+      fireEvent.click(createButton())
+      await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1))
+      expect(sentRequest().steps).toEqual([
+        { id: null, text: "Shelves" },
+        { id: null, text: "Bins out" },
+      ])
+    })
+
+    it("asks for text in an emptied step instead of saving it", async () => {
+      await renderForm()
+      fireEvent.change(nameInput(), { target: { value: "Vacuum" } })
+      fireEvent.click(row("More options"))
+      fireEvent.change(screen.getByRole("textbox", { name: "Step 2" }), { target: { value: " " } })
+      fireEvent.click(createButton())
+      expect(await screen.findByText("Enter a step, or remove it.")).toBeTruthy()
+      expect(mocks.create).not.toHaveBeenCalled()
     })
   })
 
@@ -615,6 +705,10 @@ describe("ChoreFormScreen · quick create", () => {
         participantUserIds: ["user-1", "user-2", "user-gone"],
         active: true,
       },
+      steps: [
+        { id: "step-a", text: "Tie the bag" },
+        { id: "step-b", text: "Fresh bag in" },
+      ],
     }
 
     beforeEach(() => {
@@ -657,7 +751,7 @@ describe("ChoreFormScreen · quick create", () => {
       expect(row("How often").textContent).toContain("Custom")
       expect(row("Who").textContent).toContain("Take turns · 2 people")
       expect(screen.getByText(/Someone who left the household was taken off/)).toBeTruthy()
-      expect(row("More options").textContent).toContain("Normal · Light · 5 min")
+      expect(row("More options").textContent).toContain("Normal · Light · 5 min · 2 steps")
       expect(
         screen.getByText("Changes apply to upcoming chores. Completed ones stay as they are."),
       ).toBeTruthy()
@@ -676,6 +770,11 @@ describe("ChoreFormScreen · quick create", () => {
             dueTime: "20:00",
             participantUserIds: ["user-1", "user-2"],
           }),
+          // Saved steps keep their ids, so their ticks stay; a name never replaces them.
+          steps: [
+            { id: "step-a", text: "Tie the bag" },
+            { id: "step-b", text: "Fresh bag in" },
+          ],
         }),
       )
     })

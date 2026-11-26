@@ -251,13 +251,13 @@ describe("admin screen household isolation", () => {
     const dialog = screen.getByRole("dialog", { name: "Archive chore?" })
     const cancelButton = within(dialog).getByRole("button", { name: "Cancel" })
     const archiveButton = within(dialog).getByRole("button", { name: "Archive" })
-    expect(document.activeElement).toBe(cancelButton)
+    await waitFor(() => expect(document.activeElement).toBe(cancelButton))
     fireEvent.keyDown(document, { key: "Tab", shiftKey: true })
     expect(document.activeElement).toBe(archiveButton)
     fireEvent.keyDown(document, { key: "Escape" })
 
     expect(screen.queryByRole("dialog")).toBeNull()
-    expect(document.activeElement).toBe(trigger)
+    await waitFor(() => expect(document.activeElement).toBe(trigger))
   })
 
   it("raises only the card whose action menu is open", async () => {

@@ -2,9 +2,16 @@ import { describe, expect, it } from "vitest"
 import type { Chore } from "./chores"
 import { CHORE_SUGGESTIONS } from "./chore-suggestions"
 import {
+  addStep,
   allowsWeekByWeek,
   applySuggestion,
   buildQuickRequest,
+  clearSuggestedSteps,
+  copyValues,
+  moveStep,
+  removeStep,
+  renameStep,
+  stepsError,
   initialQuickValues,
   moreLabel,
   oftenLabel,
@@ -790,5 +797,65 @@ describe("Week by week and everyone", () => {
       context,
     )
     expect(saved.values.everyone).toBe(false)
+  })
+})
+
+describe("steps (E12)", () => {
+  it("fills a matching suggestion's steps on create and stops once the user edits them", () => {
+    const named = withTitle(initialQuickValues(context), "clean the fridge", categories)
+    expect(named.steps.map((step) => step.text)).toEqual(suggestion("Clean the fridge").steps)
+    expect(named.steps.every((step) => step.suggested && step.id === null)).toBe(true)
+    expect(withTitle(named, "Clean the fridge door", categories).steps).toEqual([])
+    const edited = removeStep(named, named.steps[0].key)
+    expect(withTitle(edited, "Laundry", categories).steps).toHaveLength(4)
+    expect(applySuggestion(edited, suggestion("Laundry"), categories, context).steps).toHaveLength(
+      4,
+    )
+    expect(clearSuggestedSteps(named).steps).toEqual([])
+  })
+
+  it("maps a saved chore's steps with their ids and never replaces them", () => {
+    const chore: Chore = {
+      ...savedChore,
+      title: "Clean bathroom",
+      steps: [
+        { id: "s-1", text: "Mirror" },
+        { id: "s-2", text: "Sink" },
+      ],
+    }
+    const loaded = valuesFromChore(chore, context).values
+    expect(loaded.steps.map(({ id, text }) => ({ id, text }))).toEqual(chore.steps)
+    expect(loaded.stepsEdited).toBe(true)
+    // The saved steps on an otherwise complete form (the fixture's schedule is partial).
+    const values = { ...named("Clean bathroom"), steps: loaded.steps, stepsEdited: true }
+    const renamed = renameStep(
+      withTitle(values, "Laundry", categories),
+      values.steps[1].key,
+      "Taps",
+    )
+    const moved = moveStep(addStep(renamed, " Floor "), renamed.steps[1].key, 0)
+    const result = buildQuickRequest(moved, context)
+    if ("error" in result) throw new Error(result.error.message)
+    expect(result.request.steps).toEqual([
+      { id: "s-2", text: "Taps" },
+      { id: "s-1", text: "Mirror" },
+      { id: null, text: "Floor" },
+    ])
+    expect(moreLabel(moved, true)).toContain("3 steps")
+    // A copy is a new chore with new steps.
+    expect(copyValues(chore, context).values.steps.every((step) => step.id === null)).toBe(true)
+  })
+
+  it("caps steps at 15 and 80 characters and reports blank ones", () => {
+    let values = initialQuickValues(context)
+    for (let index = 0; index < 16; index++) values = addStep(values, `Step ${index}`)
+    expect(values.steps).toHaveLength(15)
+    expect(addStep(values, "One more")).toBe(values)
+    expect(addStep(initialQuickValues(context), "x".repeat(90)).steps[0].text).toHaveLength(80)
+    expect(stepsError([{ key: "k", id: null, text: "  ", suggested: false }])).toBe(
+      "Enter a step, or remove it.",
+    )
+    const blank = renameStep(addStep(named("Sweep"), "Porch"), "missing", "")
+    expect(stepsError(blank.steps)).toBeNull()
   })
 })

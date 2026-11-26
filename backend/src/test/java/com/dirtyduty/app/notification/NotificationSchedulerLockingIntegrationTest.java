@@ -141,6 +141,112 @@ class NotificationSchedulerLockingIntegrationTest {
     assertThat(reminderRows(occurrenceId)).isEqualTo(expected.size());
   }
 
+  @Test
+  void aSlowPushIsSentAfterTheHouseholdLockIsReleasedAndRecordedOnce() throws Exception {
+    Fixture home = createHousehold("lock-push");
+    jdbc.update(
+        "INSERT INTO notification_preferences (user_id, push_enabled) VALUES (?, TRUE)",
+        home.ownerId());
+    String endpoint = "https://push.example.test/slow-" + UUID.randomUUID();
+    jdbc.update(
+        "INSERT INTO push_subscriptions (user_id, endpoint, public_key, auth_secret)"
+            + " VALUES (?, ?, ?, ?)",
+        home.ownerId(),
+        endpoint,
+        java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(new byte[65]),
+        java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(new byte[16]));
+    UUID notificationId = UUID.randomUUID();
+    jdbc.update(
+        """
+            INSERT INTO notifications
+                (id, recipient_user_id, type, category, title, message, status, reference_type,
+                 reference_id, scheduled_at, expires_at, deduplication_key)
+            VALUES (?, ?, 'HOUSEHOLD_JOINED', 'GENERAL', 'Title', 'Body', 'PENDING', 'HOUSEHOLD',
+                    ?, NOW() - INTERVAL '1 minute', NOW() + INTERVAL '1 hour', ?)
+            """,
+        notificationId,
+        home.ownerId(),
+        home.householdId(),
+        "slow-push-" + notificationId);
+    jdbc.update(
+        "INSERT INTO notification_deliveries (notification_id, channel, status)"
+            + " VALUES (?, 'IN_APP', 'PENDING')",
+        notificationId);
+
+    CountDownLatch sending = new CountDownLatch(1);
+    CountDownLatch finishSend = new CountDownLatch(1);
+    doAnswer(
+            invocation -> {
+              sending.countDown();
+              assertThat(finishSend.await(10, TimeUnit.SECONDS)).isTrue();
+              return 201;
+            })
+        .when(webPushClient)
+        .send(any(), any(), any(), eq(endpoint), any(), any(), any());
+
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    Future<?> run = executor.submit(() -> notificationScheduler.run());
+    try {
+      assertThat(sending.await(10, TimeUnit.SECONDS)).isTrue();
+      // The push is on its way: the household, its member and the notification are all free,
+      // and the notification and its claimed push target are already committed.
+      Duration waited =
+          timed(
+              () ->
+                  new TransactionTemplate(transactionManager)
+                      .executeWithoutResult(
+                          status -> {
+                            jdbc.execute("SET LOCAL lock_timeout = '500ms'");
+                            membershipExitCleanupService.lockHousehold(home.householdId());
+                            jdbc.queryForList(
+                                "SELECT id FROM users WHERE id=? FOR UPDATE",
+                                UUID.class,
+                                home.ownerId());
+                            jdbc.queryForList(
+                                "SELECT id FROM notifications WHERE id=? FOR UPDATE",
+                                UUID.class,
+                                notificationId);
+                            jdbc.update(
+                                "UPDATE households SET description=? WHERE id=?",
+                                "Saved while a push was sending",
+                                home.householdId());
+                          }));
+      assertThat(waited).isLessThan(SHORT);
+      assertThat(
+              jdbc.queryForObject(
+                  "SELECT status FROM notifications WHERE id=?", String.class, notificationId))
+          .isEqualTo("SENT");
+      assertThat(pushTargetStatus(notificationId)).isEqualTo("PENDING");
+    } finally {
+      finishSend.countDown();
+      try {
+        run.get(20, TimeUnit.SECONDS);
+      } finally {
+        executor.shutdownNow();
+      }
+    }
+
+    // The result is recorded after the send, and the next run doesn't send it again.
+    assertThat(pushTargetStatus(notificationId)).isEqualTo("SENT");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT status FROM notification_deliveries WHERE notification_id=?"
+                    + " AND channel='WEB_PUSH'",
+                String.class,
+                notificationId))
+        .isEqualTo("SENT");
+    notificationScheduler.run();
+    org.mockito.Mockito.verify(webPushClient, org.mockito.Mockito.times(1))
+        .send(any(), any(), any(), eq(endpoint), any(), any(), any());
+  }
+
+  private String pushTargetStatus(UUID notificationId) {
+    return jdbc.queryForObject(
+        "SELECT status FROM notification_push_delivery_targets WHERE notification_id=?",
+        String.class,
+        notificationId);
+  }
+
   // ---- A run paused while it plans this household's reminders (no locks held) ----
 
   private PausedRun startRunPausedInPlanning(UUID householdId) throws InterruptedException {
@@ -336,6 +442,7 @@ class NotificationSchedulerLockingIntegrationTest {
     for (UUID userId : userIds) {
       jdbc.update("DELETE FROM notifications WHERE recipient_user_id=?", userId);
       jdbc.update("DELETE FROM notification_preferences WHERE user_id=?", userId);
+      jdbc.update("DELETE FROM push_subscriptions WHERE user_id=?", userId);
       jdbc.update("DELETE FROM users WHERE id=?", userId);
     }
     householdIds.clear();

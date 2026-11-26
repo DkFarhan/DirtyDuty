@@ -56,7 +56,22 @@ public record AssignmentResponse(
     Repeat repeat,
     Person awayFrom,
     Requests requests,
-    Week week) {
+    Week week,
+    Steps steps) {
+
+  /**
+   * The chore's checklist on this occurrence (E12), or null when it has none. While it is to do,
+   * {@code items} lists every step with who ticked it; ticks are shared by everyone doing it. A
+   * done occurrence keeps only its counts ("4 of 5 steps"), and {@code items} is null. {@code
+   * canTick}: the viewer may tick (its assignees; anyone in the rotation for When needed).
+   */
+  public record Steps(int total, int ticked, boolean canTick, List<StepItem> items) {}
+
+  /**
+   * @param tickedBy who ticked it ("Former member" once they have left), or null when unticked
+   */
+  public record StepItem(
+      UUID id, String text, boolean ticked, Person tickedBy, OffsetDateTime tickedAt) {}
 
   /** Week by week: {@code owner} has the chore every time until {@code until} (inclusive). */
   public record Week(Person owner, LocalDate until) {}

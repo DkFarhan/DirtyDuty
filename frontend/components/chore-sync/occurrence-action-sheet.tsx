@@ -8,6 +8,7 @@ import {
   Check,
   Ellipsis,
   Handshake,
+  ListChecks,
   RotateCcw,
   SkipForward,
   UsersRound,
@@ -76,6 +77,7 @@ export function OccurrenceActionSheet({
   onSubmit,
   onRequestSent,
   onCancelRequest,
+  onOpenSteps,
 }: {
   assignment: AssignmentDTO
   householdId: string
@@ -89,6 +91,8 @@ export function OccurrenceActionSheet({
   onRequestSent?: (request: ChoreRequestDTO, message: string) => void
   /** Cancels the viewer's own open request on this chore (E11). */
   onCancelRequest?: (requestId: string) => void
+  /** Opens the chore's checklist tick sheet (E12). */
+  onOpenSteps?: () => void
 }) {
   const actions = assignment.actions
   const [panel, setPanel] = useState<Panel>("menu")
@@ -268,6 +272,19 @@ export function OccurrenceActionSheet({
 
         {panel === "menu" && (
           <ul className={styles.menu}>
+            {onOpenSteps && assignment.status === "PENDING" && assignment.steps?.items && (
+              <li>
+                <button className={styles.menuItem} onClick={onOpenSteps} type="button">
+                  <ListChecks aria-hidden="true" size={20} />
+                  <span className={styles.menuCopy}>
+                    <span>Steps</span>
+                    <span className={styles.menuHint}>
+                      {assignment.steps.ticked} of {assignment.steps.total} ticked
+                    </span>
+                  </span>
+                </button>
+              </li>
+            )}
             {myOpenRequest && onCancelRequest && (
               <li>
                 <button

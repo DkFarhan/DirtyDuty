@@ -236,6 +236,10 @@ public class AuthService {
         user.getId());
     jdbcTemplate.update(
         "UPDATE board_lists SET created_by_user_id=NULL WHERE created_by_user_id=?", user.getId());
+    // Checklist ticks stay on their chores ("Former member"), without saying who ticked them.
+    jdbcTemplate.update(
+        "UPDATE chore_step_ticks SET ticked_by_user_id=NULL WHERE ticked_by_user_id=?",
+        user.getId());
     String deletedEmail = "deleted-" + UUID.randomUUID() + "@deleted.local";
     user.setEmail(deletedEmail);
     user.setDisplayName("Deleted User");

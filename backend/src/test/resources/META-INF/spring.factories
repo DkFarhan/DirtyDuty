@@ -1,0 +1,2 @@
+# Every test context checks it is pointed at a test database before anything connects.
+org.springframework.context.ApplicationContextInitializer=com.dirtyduty.app.TestDatabaseGuard

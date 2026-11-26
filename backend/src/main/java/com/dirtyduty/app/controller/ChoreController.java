@@ -13,6 +13,7 @@ import com.dirtyduty.app.dto.chore.DashboardResponse;
 import com.dirtyduty.app.dto.chore.HouseholdMemberStatsResponse;
 import com.dirtyduty.app.dto.chore.MoveAssignmentRequest;
 import com.dirtyduty.app.dto.chore.ReassignAssignmentRequest;
+import com.dirtyduty.app.dto.chore.StepTickRequest;
 import com.dirtyduty.app.service.ChoreService;
 import com.dirtyduty.app.service.OccurrenceService;
 import jakarta.validation.Valid;
@@ -50,6 +51,18 @@ public class ChoreController {
       @PathVariable UUID assignmentId,
       Authentication authentication) {
     return occurrenceService.complete(householdId, assignmentId, authentication);
+  }
+
+  /** Ticks or unticks one checklist step on an open occurrence (E12). */
+  @PutMapping("/assignments/{assignmentId}/steps/{stepId}")
+  public AssignmentResponse tickStep(
+      @PathVariable UUID householdId,
+      @PathVariable UUID assignmentId,
+      @PathVariable UUID stepId,
+      @Valid @RequestBody StepTickRequest request,
+      Authentication authentication) {
+    return occurrenceService.tickStep(
+        householdId, assignmentId, stepId, request.ticked(), authentication);
   }
 
   /** "Needs doing" on a When needed chore's open occurrence. */

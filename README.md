@@ -214,10 +214,10 @@ independent Dark/Light, Upcoming/Completed, and state controls.
 ```bash
 cd backend
 ./mvnw spotless:check
-./mvnw clean verify
+./scripts/test-local.sh   # clean verify against a throwaway database
 ```
 
-Use the Docker Compose setup in `backend/docker-compose.yml` if you need a local PostgreSQL 17 database for backend verification.
+Use the Docker Compose setup in `backend/docker-compose.yml` for the local PostgreSQL 17 database. Tests refuse to run against the development database; see `backend/README.md`.
 Run `python3 -m unittest scripts.test_deployment_helpers` to check the
 deployment helper's input validation, image manifest, environment preservation,
 and backup evidence rules.

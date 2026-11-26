@@ -71,6 +71,30 @@ export type Chore = {
   createdAt: string
   updatedAt: string
   schedule: ChoreSchedule | null
+  /** The chore's optional checklist, in order (E12). Absent from older responses. */
+  steps?: ChoreStep[]
+}
+
+/** One step of a chore's checklist (E12). */
+export type ChoreStep = { id: string; text: string }
+
+/** The checklist on one occurrence (E12). */
+export type AssignmentSteps = {
+  total: number
+  ticked: number
+  /** The viewer may tick: its assignees, or anyone in the rotation for When needed. */
+  canTick: boolean
+  /** Every step with its tick while it's to do; null once done (only the counts are kept). */
+  items: AssignmentStepItem[] | null
+}
+
+export type AssignmentStepItem = {
+  id: string
+  text: string
+  ticked: boolean
+  /** Who ticked it; userId is null once they have left ("Former member"). */
+  tickedBy: { userId: string | null; displayName: string } | null
+  tickedAt: string | null
 }
 
 export type ChoreRequest = {
@@ -83,6 +107,11 @@ export type ChoreRequest = {
   requiresVerification: boolean
   /** {@link ChoreSchedule.everyone}: every member, now and later (participantUserIds is ignored). */
   schedule: Omit<ChoreSchedule, "active"> & { backstopEnabled?: boolean | null }
+  /**
+   * The whole checklist in order; an existing step keeps its id (and its ticks). Leaving it out
+   * keeps the chore's steps as they are.
+   */
+  steps?: { id: string | null; text: string }[]
 }
 
 export type AssignmentDTO = {
@@ -132,6 +161,8 @@ export type AssignmentDTO = {
     /** "HH:mm" or null. */
     dueTime: string | null
   } | null
+  /** The chore's checklist on this occurrence (E12); absent or null when it has none. */
+  steps?: AssignmentSteps | null
 }
 
 /**
@@ -255,6 +286,12 @@ export const choreApi = {
   flag: (householdId: string, assignmentId: string) =>
     api.post<AssignmentDTO>(
       `${householdPath(householdId)}/assignments/${encodeURIComponent(assignmentId)}/flag`,
+    ),
+  /** Ticks or unticks one checklist step (E12). */
+  tickStep: (householdId: string, assignmentId: string, stepId: string, ticked: boolean) =>
+    api.put<AssignmentDTO>(
+      `${householdPath(householdId)}/assignments/${encodeURIComponent(assignmentId)}/steps/${encodeURIComponent(stepId)}`,
+      { ticked },
     ),
   reassign: (householdId: string, assignmentId: string, userIds: string[]) =>
     api.put<AssignmentDTO>(

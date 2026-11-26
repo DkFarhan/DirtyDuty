@@ -34,6 +34,7 @@ import {
   type OccurrenceAction,
 } from "@/lib/household/occurrence-actions"
 import { OccurrenceActionSheet } from "../occurrence-action-sheet"
+import { useChoreSteps } from "../use-chore-steps"
 import { RequestsCard } from "../requests/requests-card"
 import { useChoreRequests } from "../requests/use-chore-requests"
 import { takeRequestFocus } from "@/lib/household/requests"
@@ -469,6 +470,28 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
     }
   }
 
+  // Checklists (E12): the tick sheet, and "Mark done anyway?" before completing with steps left.
+  const choreSteps = useChoreSteps({
+    householdId: household?.id ?? null,
+    householdTimezone: household?.timezone ?? "UTC",
+    viewer: { userId: state.currentUser.id, displayName: state.currentUser.name },
+    theme: theme === "dark" ? "dark" : "light",
+    find: (id) =>
+      household && dashboardHouseholdIdRef.current === household.id
+        ? findDashboardAssignment(dashboardRef.current, id)
+        : null,
+    apply: (next) => {
+      if (!household || dashboardHouseholdIdRef.current !== household.id || !dashboardRef.current) {
+        return
+      }
+      requestSequence.current += 1
+      dashboardRef.current = updateDashboardAssignment(dashboardRef.current, next)
+      setDashboard(dashboardRef.current)
+    },
+    complete: (id, surface) => void completeAssignment(id, surface),
+    isCompleting: (id) => (household ? completingIds.has(`${household.id}:${id}`) : false),
+  })
+
   const setInviteOpen = useCallback((open: boolean) => {
     if (!open) setInviteHousehold(null)
   }, [])
@@ -524,7 +547,8 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
             />
           )
         }
-        onCompleteChore={(id, surface) => void completeAssignment(id, surface)}
+        onCompleteChore={(id, surface) => choreSteps.requestComplete(id, surface)}
+        onOpenSteps={(id, surface) => choreSteps.openSteps(id, surface)}
         onCancelRequest={(requestId, choreId) => void cancelRequest(requestId, choreId, "card")}
         requestsSection={
           <RequestsCard
@@ -558,6 +582,11 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
           householdTimezone={household.timezone}
           viewerId={state.currentUser.id}
           onClose={() => setActionTargetId(null)}
+          onOpenSteps={() => {
+            const target = actionTargetId
+            setActionTargetId(null)
+            choreSteps.openSteps(target, actionSurface)
+          }}
           onSubmit={(action) => {
             const target = actionTargetId
             setActionTargetId(null)
@@ -579,6 +608,7 @@ export function DashboardScreen({ theme = "dark" }: { theme?: HomeVisualTheme } 
           theme={theme}
         />
       )}
+      {choreSteps.elements}
       {household && canInvite && (
         <InviteHousemateDialog
           household={inviteHousehold ?? household}
