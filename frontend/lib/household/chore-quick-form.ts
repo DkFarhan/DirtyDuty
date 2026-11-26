@@ -4,8 +4,10 @@ import type {
   ChorePriority,
   ChoreRequest,
   IntervalUnit,
+  ReminderMode,
   ScheduleKind,
 } from "./chores"
+import { reminderLevel, reminderLevelLabel } from "./reminder-levels"
 import {
   findCategoryByName,
   guessCategoryName,
@@ -108,6 +110,11 @@ export type QuickValues = {
    * suggestion no longer fills them in.
    */
   stepsEdited: boolean
+  /**
+   * The reminder level (E13). A new chore starts with the household default; null when a saved
+   * chore's level is unknown (an older server), so saving leaves it as it is.
+   */
+  reminderMode: ReminderMode | null
   touched: QuickField[]
 }
 
@@ -178,6 +185,11 @@ export function moveStep(values: QuickValues, key: string, to: number): QuickVal
 /** Removes every suggested step at once ("Suggested · Remove all"). */
 export function clearSuggestedSteps(values: QuickValues): QuickValues {
   return { ...values, steps: values.steps.filter((step) => !step.suggested), stepsEdited: true }
+}
+
+/** Whether the chore has a due time, so reminders apply: all but When needed without a deadline. */
+export function hasDeadline(values: Pick<QuickValues, "often" | "backstopEnabled">) {
+  return values.often !== "AS_NEEDED" || values.backstopEnabled
 }
 
 export function stepsLabel(count: number) {
@@ -274,6 +286,8 @@ export type QuickContext = {
   today?: string
   /** "HH:mm" now in the household timezone; defaults to the clock (or 00:00 with a fixed today). */
   now?: string
+  /** The household's level for new chores (E13); Standard when unknown. */
+  defaultReminderMode?: ReminderMode
 }
 
 function everyone(context: QuickContext) {
@@ -314,6 +328,7 @@ export function initialQuickValues(context: QuickContext): QuickValues {
     requiresVerification: false,
     steps: [],
     stepsEdited: false,
+    reminderMode: reminderLevel(context.defaultReminderMode),
     touched: [],
   }
 }
@@ -467,6 +482,7 @@ export function valuesFromChore(chore: Chore, context: QuickContext): LoadedQuic
         suggested: false,
       })),
       stepsEdited: true,
+      reminderMode: chore.reminderMode ?? null,
       touched: ["often", "who", "category", "priority", "difficulty", "minutes"],
     },
   }
@@ -949,6 +965,10 @@ export function buildQuickRequest(
       estimatedMinutes: minutes,
       requiresVerification: values.requiresVerification,
       steps: values.steps.map((step) => ({ id: step.id, text: step.text.trim() })),
+      // An unknown or CUSTOM level is left out, so the server keeps it.
+      ...(values.reminderMode && values.reminderMode !== "CUSTOM"
+        ? { reminderMode: values.reminderMode }
+        : {}),
       schedule: {
         recurrenceRule: recurrenceRuleFor(values),
         timezone: context.timezone,
@@ -1152,13 +1172,18 @@ export function moreLabel(values: QuickValues, editing: boolean): string {
     values.description.trim() !== "" ||
     values.requiresVerification ||
     values.steps.length > 0
-  if (!changed) return "Optional"
+  // The reminder level shows whenever the chore has a due time (E13).
+  const reminders = hasDeadline(values)
+    ? `${reminderLevelLabel(values.reminderMode)} reminders`
+    : null
+  if (!changed) return reminders ?? "Optional"
   const parts = [
     PRIORITIES.find((priority) => priority.value === values.priority)?.label ?? "Normal",
     EFFORTS[values.difficulty - 1] ?? "Moderate",
   ]
   if (values.estimatedMinutes !== null) parts.push(`${values.estimatedMinutes} min`)
   if (values.steps.length > 0) parts.push(stepsLabel(values.steps.length))
+  if (reminders) parts.push(reminders)
   return parts.join(" · ")
 }
 

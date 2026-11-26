@@ -1,5 +1,6 @@
 import { api } from "@/lib/auth/api"
 import type { NotificationStyle } from "@/lib/notifications/api"
+import type { ReminderMode } from "./chores"
 
 export type Household = {
   id: string
@@ -12,6 +13,8 @@ export type Household = {
 export type HouseholdSettings = Household & {
   description: string | null
   notificationStyle: NotificationStyle
+  /** The reminder level new chores get (E13). Absent from older responses. */
+  defaultReminderMode?: ReminderMode
 }
 
 export type CreateHouseholdInput = {
@@ -96,6 +99,12 @@ export const householdApi = {
     api.put<HouseholdSettings>(
       `/api/households/${encodeURIComponent(householdId)}/settings`,
       input,
+    ),
+  /** Owners and admins: the reminder level new chores get (E13). Existing chores keep theirs. */
+  updateReminders: (householdId: string, defaultReminderMode: ReminderMode) =>
+    api.put<HouseholdSettings>(
+      `/api/households/${encodeURIComponent(householdId)}/settings/reminders`,
+      { defaultReminderMode },
     ),
   leave: (householdId: string, newOwnerUserId?: string) =>
     api.post<void>(

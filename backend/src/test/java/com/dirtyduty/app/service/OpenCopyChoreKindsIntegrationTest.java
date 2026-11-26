@@ -76,7 +76,9 @@ class OpenCopyChoreKindsIntegrationTest {
     UUID householdId = UUID.randomUUID();
     householdIds.add(householdId);
     jdbc.update(
-        "INSERT INTO households (id, name, timezone, created_by_user_id) VALUES (?, 'Kinds', 'UTC', ?)",
+        // New chores get Full reminders (E13): these tests count its slots.
+        "INSERT INTO households (id, name, timezone, created_by_user_id, default_reminder_mode)"
+            + " VALUES (?, 'Kinds', 'UTC', ?, 'AGGRESSIVE')",
         householdId,
         owner);
     addMember(householdId, owner, "OWNER");

@@ -1,5 +1,6 @@
 package com.dirtyduty.app.controller;
 
+import com.dirtyduty.app.dto.household.HouseholdRemindersRequest;
 import com.dirtyduty.app.dto.household.HouseholdSettingsRequest;
 import com.dirtyduty.app.dto.household.HouseholdSettingsResponse;
 import com.dirtyduty.app.dto.household.LeaveHouseholdRequest;
@@ -38,6 +39,15 @@ public class HouseholdSettingsController {
       @Valid @RequestBody HouseholdSettingsRequest request,
       Authentication authentication) {
     return settingsService.update(householdId, request, authentication);
+  }
+
+  /** Owners and admins: the reminder level new chores get. Existing chores keep theirs. */
+  @PutMapping("/settings/reminders")
+  public HouseholdSettingsResponse updateReminders(
+      @PathVariable UUID householdId,
+      @RequestBody HouseholdRemindersRequest request,
+      Authentication authentication) {
+    return settingsService.updateReminders(householdId, request, authentication);
   }
 
   @PostMapping("/leave")

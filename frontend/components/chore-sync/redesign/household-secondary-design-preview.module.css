@@ -685,6 +685,43 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 19%, transparent);
 }
 
+/* A row that opens a sheet, styled like the fields around it (Reminders for new chores). */
+.choiceButton {
+  display: flex;
+  width: 100%;
+  min-height: 43px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-strong) 85%, transparent);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.choiceButton svg {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.choiceButton:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 19%, transparent);
+}
+
+.choiceButton:disabled {
+  cursor: default;
+  opacity: 0.66;
+}
+
 .fieldLabel input:disabled,
 .fieldLabel textarea:disabled,
 .fieldLabel select:disabled {

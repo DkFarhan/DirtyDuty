@@ -30,7 +30,15 @@ export type ChoreMemberOption = {
 export type ChoreManagementOptions = {
   categories: ChoreCategory[]
   activeMembers: ChoreMemberOption[]
+  /** The reminder level a new chore starts with (E13). Absent from older responses. */
+  defaultReminderMode?: ReminderMode
 }
+
+/**
+ * A chore's reminder level (E13): Off, Light, Standard, Full or Intense. CUSTOM is stored by the
+ * server but can't be chosen.
+ */
+export type ReminderMode = "OFF" | "FRIENDLY" | "STANDARD" | "AGGRESSIVE" | "INTENSE" | "CUSTOM"
 
 export type ChoreSchedule = {
   /** Null for "After it's done" and "When needed" chores. */
@@ -73,6 +81,8 @@ export type Chore = {
   schedule: ChoreSchedule | null
   /** The chore's optional checklist, in order (E12). Absent from older responses. */
   steps?: ChoreStep[]
+  /** Its reminder level (E13). Absent from older responses. */
+  reminderMode?: ReminderMode
 }
 
 /** One step of a chore's checklist (E12). */
@@ -112,6 +122,8 @@ export type ChoreRequest = {
    * keeps the chore's steps as they are.
    */
   steps?: { id: string | null; text: string }[]
+  /** The reminder level (E13); left out, a new chore takes the household default. */
+  reminderMode?: ReminderMode
 }
 
 export type AssignmentDTO = {
@@ -163,6 +175,8 @@ export type AssignmentDTO = {
   } | null
   /** The chore's checklist on this occurrence (E12); absent or null when it has none. */
   steps?: AssignmentSteps | null
+  /** The chore's reminder level (E13). */
+  reminderMode?: ReminderMode
 }
 
 /**

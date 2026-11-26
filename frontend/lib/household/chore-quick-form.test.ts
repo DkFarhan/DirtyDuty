@@ -8,6 +8,7 @@ import {
   buildQuickRequest,
   clearSuggestedSteps,
   copyValues,
+  hasDeadline,
   moveStep,
   removeStep,
   renameStep,
@@ -27,6 +28,7 @@ import {
   type QuickContext,
   type QuickValues,
 } from "./chore-quick-form"
+import { REMINDER_LEVELS, reminderLevel, reminderLevelLabel } from "./reminder-levels"
 
 const members = [
   { userId: "farhan", displayName: "Farhan" },
@@ -100,7 +102,8 @@ describe("defaults", () => {
     })
     expect(oftenLabel(values)).toBe("Every week · Sat")
     expect(whoLabel(values, members, "farhan")).toBe("Take turns · everyone")
-    expect(moreLabel(values, false)).toBe("Optional")
+    expect(moreLabel(values, false)).toBe("Standard reminders")
+    expect(values.reminderMode).toBe("STANDARD")
   })
 
   it("is just me in a single-member household", () => {
@@ -554,7 +557,7 @@ describe("editing", () => {
   it("prefills a simple weekly chore and sends it back unchanged", () => {
     const { values } = valuesFromChore(chore({}), context)
     expect(values).toMatchObject({ often: "WEEKLY", anchorWeekday: "MO", dueTime: "19:30" })
-    expect(moreLabel(values, true)).toBe("High · Light · 5 min")
+    expect(moreLabel(values, true)).toBe("High · Light · 5 min · Standard reminders")
     expect(requestFor(values)).toMatchObject({
       title: "Take out garbage",
       description: "Bags under the sink",
@@ -567,6 +570,21 @@ describe("editing", () => {
         participantUserIds: ["rubayet", "farhan"],
       },
     })
+  })
+
+  it("round-trips the chore's reminder level and leaves an unknown one to the server", () => {
+    const intense = valuesFromChore({ ...chore({}), reminderMode: "INTENSE" }, context).values
+    expect(intense.reminderMode).toBe("INTENSE")
+    expect(moreLabel(intense, true)).toBe("High · Light · 5 min · Intense reminders")
+    expect(requestFor(intense).reminderMode).toBe("INTENSE")
+    expect(requestFor({ ...intense, reminderMode: "OFF" }).reminderMode).toBe("OFF")
+    // An older response without a level, or CUSTOM, is not sent back, so the server keeps it.
+    expect(requestFor(valuesFromChore(chore({}), context).values)).not.toHaveProperty(
+      "reminderMode",
+    )
+    const custom = valuesFromChore({ ...chore({}), reminderMode: "CUSTOM" }, context).values
+    expect(requestFor(custom)).not.toHaveProperty("reminderMode")
+    expect(moreLabel(custom, true)).toContain("Custom reminders")
   })
 
   it("shows a rule the simple options can't express as Custom and round-trips it", () => {
@@ -857,5 +875,45 @@ describe("steps (E12)", () => {
     )
     const blank = renameStep(addStep(named("Sweep"), "Porch"), "missing", "")
     expect(stepsError(blank.steps)).toBeNull()
+  })
+})
+
+describe("reminder levels (E13)", () => {
+  it("maps each level to its label and what it sends", () => {
+    expect(REMINDER_LEVELS.map((level) => [level.mode, level.label])).toEqual([
+      ["OFF", "Off"],
+      ["FRIENDLY", "Light"],
+      ["STANDARD", "Standard"],
+      ["AGGRESSIVE", "Full"],
+      ["INTENSE", "Intense"],
+    ])
+    expect(REMINDER_LEVELS.find((level) => level.mode === "STANDARD")?.description).toBe(
+      "A heads-up a few hours before, at the due time, and once if it's overdue",
+    )
+    expect(reminderLevelLabel("AGGRESSIVE")).toBe("Full")
+    expect(reminderLevelLabel(undefined)).toBe("Standard")
+    expect(reminderLevel("CUSTOM")).toBe("STANDARD")
+  })
+
+  it("starts a new chore on the household default, Standard when unknown", () => {
+    const light = named(
+      "Sweep porch",
+      initialQuickValues({ ...context, defaultReminderMode: "FRIENDLY" }),
+    )
+    expect(light.reminderMode).toBe("FRIENDLY")
+    expect(moreLabel(light, false)).toBe("Light reminders")
+    expect(requestFor(light).reminderMode).toBe("FRIENDLY")
+    expect(initialQuickValues(context).reminderMode).toBe("STANDARD")
+    expect(initialQuickValues({ ...context, defaultReminderMode: "CUSTOM" }).reminderMode).toBe(
+      "STANDARD",
+    )
+  })
+
+  it("leaves reminders out of the summary for a When needed chore with no deadline", () => {
+    const values = withOften(named("Water plants"), "AS_NEEDED", { backstopEnabled: false })
+    expect(hasDeadline(values)).toBe(false)
+    expect(moreLabel(values, false)).toBe("Optional")
+    // Still stored, so it applies if a deadline is turned on later.
+    expect(requestFor(values).reminderMode).toBe("STANDARD")
   })
 })

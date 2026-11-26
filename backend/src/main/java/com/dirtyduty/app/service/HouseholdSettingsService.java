@@ -1,5 +1,6 @@
 package com.dirtyduty.app.service;
 
+import com.dirtyduty.app.dto.household.HouseholdRemindersRequest;
 import com.dirtyduty.app.dto.household.HouseholdSettingsRequest;
 import com.dirtyduty.app.dto.household.HouseholdSettingsResponse;
 import com.dirtyduty.app.dto.household.LeaveHouseholdRequest;
@@ -49,7 +50,8 @@ public class HouseholdSettingsService {
     HouseholdMembership membership = activeMembership(householdId, authentication);
     return jdbc.queryForObject(
         """
-                SELECT id, name, description, timezone, notification_style, created_at
+                SELECT id, name, description, timezone, notification_style,
+                       default_reminder_mode, created_at
                 FROM households WHERE id=?
                 """,
         (rs, row) ->
@@ -59,6 +61,7 @@ public class HouseholdSettingsService {
                 rs.getString("description"),
                 rs.getString("timezone"),
                 rs.getString("notification_style"),
+                rs.getString("default_reminder_mode"),
                 membership.getRole(),
                 rs.getObject("created_at", OffsetDateTime.class)),
         householdId);
@@ -105,6 +108,31 @@ public class HouseholdSettingsService {
                 """,
         name,
         description,
+        OffsetDateTime.now(ZoneOffset.UTC),
+        householdId);
+    return get(householdId, authentication);
+  }
+
+  /**
+   * Sets the reminder level new chores get (E13). Owners and admins only. Only chores made from now
+   * on are affected: each existing chore keeps its own level.
+   */
+  @Transactional
+  public HouseholdSettingsResponse updateReminders(
+      UUID householdId, HouseholdRemindersRequest request, Authentication authentication) {
+    HouseholdMembership membership = activeMembership(householdId, authentication);
+    if (membership.getRole() != HouseholdRole.OWNER
+        && membership.getRole() != HouseholdRole.ADMIN) {
+      throw new HouseholdAccessDeniedException(
+          "Only the household owner or an admin can change reminders for new chores.");
+    }
+    String mode = ReminderModes.parse(request == null ? null : request.defaultReminderMode());
+    if (mode == null) {
+      throw new InvalidHouseholdException(ReminderModes.INVALID);
+    }
+    jdbc.update(
+        "UPDATE households SET default_reminder_mode=?, updated_at=? WHERE id=?",
+        mode,
         OffsetDateTime.now(ZoneOffset.UTC),
         householdId);
     return get(householdId, authentication);

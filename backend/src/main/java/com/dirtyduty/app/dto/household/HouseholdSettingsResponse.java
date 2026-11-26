@@ -10,5 +10,7 @@ public record HouseholdSettingsResponse(
     String description,
     String timezone,
     String notificationStyle,
+    /* The reminder level new chores get (E13): OFF, FRIENDLY, STANDARD, AGGRESSIVE or INTENSE. */
+    String defaultReminderMode,
     HouseholdRole currentUserRole,
     OffsetDateTime createdAt) {}
